@@ -15,6 +15,7 @@ import { CoachPanel } from '@/src/features/teacher/CoachPanel';
 import { COACH_PANEL_GUTTER, COACH_PANEL_MAX_WIDTH } from '@/src/features/teacher/coachLayout';
 import { useCoachStore } from '@/src/features/teacher/coachStore';
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
+import { nativeDriver } from '@/src/lib/animation/nativeDriver';
 import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 
@@ -55,7 +56,7 @@ export function CoachOverlay({ bottomOffset }: { bottomOffset: number }) {
       toValue: open ? 1 : 0,
       friction: 8,
       tension: 86,
-      useNativeDriver: true,
+      useNativeDriver: nativeDriver,
     }).start(({ finished }) => {
       if (finished && !open) setShown(false);
     });

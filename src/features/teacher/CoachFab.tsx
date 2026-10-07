@@ -14,6 +14,7 @@ import {
   yBounds,
 } from '@/src/features/teacher/coachLayout';
 import { useCoachStore } from '@/src/features/teacher/coachStore';
+import { nativeDriver } from '@/src/lib/animation/nativeDriver';
 import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 
@@ -81,7 +82,7 @@ export function CoachFab({ bottomOffset }: { bottomOffset: number }) {
     Animated.timing(fade, {
       toValue: open ? 0 : 1,
       duration: open ? 180 : 160,
-      useNativeDriver: true,
+      useNativeDriver: nativeDriver,
     }).start();
   }, [fade, open]);
 
@@ -111,7 +112,7 @@ export function CoachFab({ bottomOffset }: { bottomOffset: number }) {
     if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
       if (!drag.current.moved) {
         drag.current.moved = true;
-        Animated.spring(scale, { toValue: 1.08, useNativeDriver: true, friction: 7 }).start();
+        Animated.spring(scale, { toValue: 1.08, useNativeDriver: nativeDriver, friction: 7 }).start();
       }
     }
     if (!drag.current.moved) return;
@@ -125,7 +126,7 @@ export function CoachFab({ bottomOffset }: { bottomOffset: number }) {
   const onRelease = (canOpen: boolean) => {
     const moved = drag.current.moved;
     drag.current.active = false;
-    Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 7 }).start();
+    Animated.spring(scale, { toValue: 1, useNativeDriver: nativeDriver, friction: 7 }).start();
     if (!open && moved) {
       const nextSide = snapSide(live.current.x, width);
       const nextY = clampY(live.current.y, height, insets.top, bottomOffset);

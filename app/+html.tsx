@@ -16,6 +16,9 @@ export default function Root({ children }: { children: ReactNode }) {
           content="TYT, AYT ve KPSS için test, AI koç, çalışma eşleşmeleri ve sistem sınavları. Aynı hesap telefon ve web’de."
         />
         <link rel="canonical" href={APP_URL} />
+        <link rel="icon" href="/favicon.png" type="image/png" />
+        <link rel="shortcut icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href="/favicon.png" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#C45C26" />
         <meta name="mobile-web-app-capable" content="yes" />
@@ -35,11 +38,11 @@ export default function Root({ children }: { children: ReactNode }) {
 }
 
 const responsiveBackground = `
+@font-face {
+  font-family: ionicons;
+  src: url('/fonts/Ionicons.ttf') format('truetype');
+  font-display: block;
+}
 body {
   background-color: #F4F1EA;
-}
-@media (prefers-color-scheme: dark) {
-  body {
-    background-color: #0E1520;
-  }
 }`;

@@ -18,6 +18,7 @@ export const useThemeStore = create<ThemeState>()(
     {
       name: 'kocum-theme',
       storage: createJSONStorage(() => AsyncStorage),
+      skipHydration: true,
     },
   ),
 );

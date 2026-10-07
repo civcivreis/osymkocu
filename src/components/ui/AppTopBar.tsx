@@ -5,6 +5,7 @@ import { Pressable, View } from 'react-native';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
 import { useNotifications } from '@/src/features/study/useStudyTogether';
 import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
+import { useHydrated } from '@/src/lib/layout/useHydrated';
 import { greetingForHour } from '@/src/lib/time/greeting';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 import { useAuthStore } from '@/src/stores/authStore';
@@ -36,7 +37,9 @@ export function AppTopBar() {
   const session = useAuthStore((s) => s.session);
   const notifications = useNotifications();
   const name = profile?.display_name || session?.user.user_metadata?.display_name || 'öğrenci';
+  const hydrated = useHydrated();
   const home = pathname === '/home' || pathname === '/' || pathname === '/index';
+  const greeting = greetingForHour(hydrated ? new Date().getHours() : 12, String(name));
 
   if (!showTopBar) return null;
 
@@ -58,7 +61,7 @@ export function AppTopBar() {
           {home ? (
             <>
               <AppText variant="title" numberOfLines={1}>
-                {greetingForHour(new Date().getHours(), String(name))}
+                {greeting}
               </AppText>
               {profile?.exam_year ? (
                 <AppText variant="caption" tone="muted">

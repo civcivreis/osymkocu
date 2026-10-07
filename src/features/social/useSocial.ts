@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { chatPreview } from '@/src/features/social/chatMedia';
+import { retainChannel } from '@/src/lib/realtime/retainChannel';
 import { getSupabase } from '@/src/lib/supabase/client';
 import { useAuthStore } from '@/src/stores/authStore';
 
@@ -462,18 +463,15 @@ export function useOpenRooms() {
 
   useEffect(() => {
     if (!userId) return;
-    const channel = getSupabase()
-      .channel(`open-rooms-${userId}-${Math.random().toString(36).slice(2, 8)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'study_session_members' }, () => {
-        void client.invalidateQueries({ queryKey: ['open-rooms'] });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'study_sessions' }, () => {
-        void client.invalidateQueries({ queryKey: ['open-rooms'] });
-      })
-      .subscribe();
-    return () => {
-      void getSupabase().removeChannel(channel);
-    };
+    return retainChannel(`open-rooms:${userId}`, (channel) =>
+      channel
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'study_session_members' }, () => {
+          void client.invalidateQueries({ queryKey: ['open-rooms'] });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'study_sessions' }, () => {
+          void client.invalidateQueries({ queryKey: ['open-rooms'] });
+        }),
+    );
   }, [client, userId]);
 
   return query;

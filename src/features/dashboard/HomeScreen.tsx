@@ -3,6 +3,9 @@ import { router } from 'expo-router';
 import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { Animated, Pressable, View } from 'react-native';
 
+import { nativeDriver } from '@/src/lib/animation/nativeDriver';
+import { useHydrated } from '@/src/lib/layout/useHydrated';
+
 import { AppText } from '@/src/components/ui/AppText';
 import { Button } from '@/src/components/ui/Button';
 import { Card } from '@/src/components/ui/Card';
@@ -62,7 +65,8 @@ export function HomeScreen() {
   const session = useAuthStore((s) => s.session);
   const xpProgress = getLevelProgress(profile?.current_xp ?? 0);
   const name = profile?.display_name || session?.user.user_metadata?.display_name || 'öğrenci';
-  const hour = new Date().getHours();
+  const hydrated = useHydrated();
+  const hour = hydrated ? new Date().getHours() : 12;
   const planQuery = useTodayPlan();
   const streakQuery = useStreak();
   const examQuery = useExamName();
@@ -399,8 +403,8 @@ function TaskRow({
       scale.setValue(0.55);
       glow.setValue(0);
       Animated.parallel([
-        Animated.spring(scale, { toValue: 1, friction: 5, tension: 140, useNativeDriver: true }),
-        Animated.timing(glow, { toValue: 1, duration: 280, useNativeDriver: true }),
+        Animated.spring(scale, { toValue: 1, friction: 5, tension: 140, useNativeDriver: nativeDriver }),
+        Animated.timing(glow, { toValue: 1, duration: 280, useNativeDriver: nativeDriver }),
       ]).start();
     }
     wasDone.current = done;

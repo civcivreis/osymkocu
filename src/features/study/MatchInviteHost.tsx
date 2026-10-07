@@ -8,6 +8,7 @@ import { StudyMatchSheet } from '@/src/features/study/StudyMatchSheet';
 import { respondMatchOffer, type MatchOffer } from '@/src/features/study/useStudyPresence';
 import { useRespondStudy } from '@/src/features/study/useStudyTogether';
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
+import { retainChannel } from '@/src/lib/realtime/retainChannel';
 import { getSupabase } from '@/src/lib/supabase/client';
 import { useAuthStore } from '@/src/stores/authStore';
 import { toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
@@ -51,17 +52,13 @@ export function MatchInviteHost() {
       setOffer((data as MatchOffer | null) ?? null);
     };
     void pull();
-    const channel = getSupabase()
-      .channel(`match-invite-host-${userId}`)
-      .on(
+    return retainChannel(`match-invite-host:${userId}`, (channel) =>
+      channel.on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
         () => void pull(),
-      )
-      .subscribe();
-    return () => {
-      void getSupabase().removeChannel(channel);
-    };
+      ),
+    );
   }, [autoMatch, setOffer, userId]);
 
   const incomingId = incoming?.requestId;

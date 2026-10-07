@@ -4,6 +4,8 @@ import { useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useHydrated } from '@/src/lib/layout/useHydrated';
+
 import { SeoHead } from '@/src/features/seo/SeoHead';
 import { BrandLogo } from '@/src/features/web/landing/BrandLogo';
 import { LandingContainer } from '@/src/features/web/landing/LandingContainer';
@@ -38,7 +40,8 @@ const FEATURES = [
 
 function useLandingWidth() {
   const { width } = useWindowDimensions();
-  if (Platform.OS === 'web' && typeof window === 'undefined') return 1280;
+  const hydrated = useHydrated();
+  if (Platform.OS === 'web' && !hydrated) return 1280;
   return width > 0 ? width : 1280;
 }
 

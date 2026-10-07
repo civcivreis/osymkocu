@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { chatPreview } from '@/src/features/social/chatMedia';
+import { retainChannel } from '@/src/lib/realtime/retainChannel';
 import { getSupabase } from '@/src/lib/supabase/client';
+import { isMissingRpcError, isRpcMissing, markRpcMissing } from '@/src/lib/supabase/rpcStatus';
 import { useAuthStore } from '@/src/stores/authStore';
 
 export type InboxKind = 'group' | 'dm';
@@ -40,8 +42,8 @@ export type InboxPayload = {
   dms: InboxDm[];
 };
 
-function rpcMissing(message: string) {
-  return message.includes('Could not find the function') || message.includes('schema cache') || message.includes('PGRST202');
+function rpcMissing(error: { message?: string; code?: string; status?: number } | null) {
+  return isMissingRpcError(error);
 }
 
 function metaKey(userId: string) {
@@ -274,14 +276,21 @@ export function useInbox() {
   const query = useQuery({
     queryKey: ['inbox', userId],
     enabled: Boolean(userId),
-    refetchInterval: 6000,
+    retry: (count, error) => count < 1 && !rpcMissing(error as { message?: string }),
+    refetchInterval: isRpcMissing('get_inbox') ? false : 6000,
     queryFn: async () => {
       const supabase = getSupabase();
       await supabase.rpc('pulse_exam_chats');
       const meta = await loadMeta(userId!);
+      if (isRpcMissing('get_inbox')) {
+        return applyHidden(await fallbackInbox(userId!), meta.hidden);
+      }
       const { data, error } = await supabase.rpc('get_inbox');
       if (error) {
-        if (rpcMissing(error.message)) return applyHidden(await fallbackInbox(userId!), meta.hidden);
+        if (rpcMissing(error)) {
+          markRpcMissing('get_inbox');
+          return applyHidden(await fallbackInbox(userId!), meta.hidden);
+        }
         throw error;
       }
       const payload = data as InboxPayload;
@@ -295,21 +304,18 @@ export function useInbox() {
 
   useEffect(() => {
     if (!userId) return;
-    const channel = getSupabase()
-      .channel(`inbox-list-${userId}-${Math.random().toString(36).slice(2, 8)}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'exam_chat_messages' }, () => {
-        void client.invalidateQueries({ queryKey: ['inbox', userId] });
-        void client.invalidateQueries({ queryKey: ['group-messages'] });
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dm_messages' }, () => {
-        void client.invalidateQueries({ queryKey: ['inbox', userId] });
-        void client.invalidateQueries({ queryKey: ['dm-conversations'] });
-        void client.invalidateQueries({ queryKey: ['dm-messages'] });
-      })
-      .subscribe();
-    return () => {
-      void getSupabase().removeChannel(channel);
-    };
+    return retainChannel(`inbox:${userId}`, (channel) =>
+      channel
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'exam_chat_messages' }, () => {
+          void client.invalidateQueries({ queryKey: ['inbox', userId] });
+          void client.invalidateQueries({ queryKey: ['group-messages'] });
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dm_messages' }, () => {
+          void client.invalidateQueries({ queryKey: ['inbox', userId] });
+          void client.invalidateQueries({ queryKey: ['dm-conversations'] });
+          void client.invalidateQueries({ queryKey: ['dm-messages'] });
+        }),
+    );
   }, [client, userId]);
 
   return query;
@@ -324,8 +330,8 @@ export function useMarkThreadRead() {
         p_kind: input.kind,
         p_thread: input.thread,
       });
-      if (error && !rpcMissing(error.message)) throw error;
-      if (userId && error && rpcMissing(error.message)) {
+      if (error && !rpcMissing(error)) throw error;
+      if (userId && error && rpcMissing(error)) {
         const meta = await loadMeta(userId);
         meta.reads[threadId(input.kind, input.thread)] = new Date().toISOString();
         await saveMeta(userId, meta);
@@ -344,8 +350,8 @@ export function useToggleThreadPin() {
         p_kind: input.kind,
         p_thread: input.thread,
       });
-      if (error && !rpcMissing(error.message)) throw error;
-      if (userId && error && rpcMissing(error.message)) {
+      if (error && !rpcMissing(error)) throw error;
+      if (userId && error && rpcMissing(error)) {
         const meta = await loadMeta(userId);
         const id = threadId(input.kind, input.thread);
         meta.pins = meta.pins.includes(id) ? meta.pins.filter((item) => item !== id) : [...meta.pins, id];
@@ -365,8 +371,8 @@ export function useToggleThreadMute() {
         p_kind: input.kind,
         p_thread: input.thread,
       });
-      if (error && !rpcMissing(error.message)) throw error;
-      if (userId && error && rpcMissing(error.message)) {
+      if (error && !rpcMissing(error)) throw error;
+      if (userId && error && rpcMissing(error)) {
         const meta = await loadMeta(userId);
         const id = threadId(input.kind, input.thread);
         meta.mutes = meta.mutes.includes(id) ? meta.mutes.filter((item) => item !== id) : [...meta.mutes, id];

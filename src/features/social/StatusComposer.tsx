@@ -8,6 +8,7 @@ import { subjectGlyph, taggedName } from '@/src/features/social/identity';
 import { usePublishPost } from '@/src/features/social/useSocial';
 import { useStudySubjects } from '@/src/features/study/usePractice';
 import { moderateContent } from '@/src/lib/moderation/profanity';
+import { nativeDriver } from '@/src/lib/animation/nativeDriver';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 import { useAuthStore } from '@/src/stores/authStore';
 import { toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
@@ -47,7 +48,7 @@ export function StatusComposer() {
   const handle = taggedName(profile?.display_name, profile?.display_tag);
 
   useEffect(() => {
-    Animated.timing(panel, { toValue: picker ? 1 : 0, duration: 160, useNativeDriver: true }).start();
+    Animated.timing(panel, { toValue: picker ? 1 : 0, duration: 160, useNativeDriver: nativeDriver }).start();
   }, [panel, picker]);
 
   const toggle = (next: Picker) => setPicker((current) => (current === next ? null : next));

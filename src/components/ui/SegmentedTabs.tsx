@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, View } from 'react-native';
 
+import { nativeDriver } from '@/src/lib/animation/nativeDriver';
 import { AppText } from '@/src/components/ui/AppText';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 
@@ -29,7 +30,7 @@ export function SegmentedTabs<T extends string>({ value, tabs, onChange }: Props
     Animated.timing(slide, {
       toValue: index,
       duration: 180,
-      useNativeDriver: true,
+      useNativeDriver: nativeDriver,
     }).start();
   }, [index, slide]);
 

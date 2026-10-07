@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import {
     createContext,
     useContext,
+    useEffect,
     useMemo,
     type ReactNode,
 } from 'react';
@@ -44,6 +45,9 @@ function buildNavTheme(scheme: ColorSchemeName) {
 }
 
 export function AppThemeProvider({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    void useThemeStore.persist.rehydrate();
+  }, []);
   const system = useSystemColorScheme();
   const preference = useThemeStore((s) => s.preference);
   const setPreference = useThemeStore((s) => s.setPreference);

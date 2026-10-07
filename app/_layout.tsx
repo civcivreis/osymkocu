@@ -1,4 +1,5 @@
 import { Stack } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Platform, View } from 'react-native';
 
 import { MissingConfigScreen } from '@/src/features/auth/MissingConfigScreen';
@@ -33,7 +34,11 @@ function RootNavigator() {
   const onboarded = Boolean(profile?.onboarding_completed_at);
   const hasSession = Boolean(session);
   const { colors } = useAppTheme();
-  const staticWeb = isWebStaticRender();
+  const [webHydrated, setWebHydrated] = useState(false);
+  useEffect(() => {
+    setWebHydrated(true);
+  }, []);
+  const staticWeb = isWebStaticRender() || (Platform.OS === 'web' && !webHydrated);
   const ready = initialized || staticWeb;
 
   if (initialized && !configured) {

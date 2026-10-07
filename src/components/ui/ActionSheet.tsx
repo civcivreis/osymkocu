@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { nativeDriver } from '@/src/lib/animation/nativeDriver';
 import { AppText } from '@/src/components/ui/AppText';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 
@@ -67,7 +68,7 @@ export function ActionSheet({
     Animated.timing(progress, {
       toValue: visible ? 1 : 0,
       duration: visible ? 220 : 160,
-      useNativeDriver: true,
+      useNativeDriver: nativeDriver,
     }).start();
   }, [progress, visible]);
 

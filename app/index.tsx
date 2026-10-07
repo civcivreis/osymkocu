@@ -18,6 +18,10 @@ export default function RootIndex() {
   const profile = useAuthStore((s) => s.profile);
   const onboarded = Boolean(profile?.onboarding_completed_at);
 
+  if (Platform.OS === 'web' && !initialized) {
+    return <LandingScreen />;
+  }
+
   if (!initialized && !isWebStaticRender()) {
     return <StartupLoading />;
   }

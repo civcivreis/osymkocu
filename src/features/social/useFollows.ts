@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { mapSocialError } from '@/src/features/social/useSocial';
+import { retainChannel } from '@/src/lib/realtime/retainChannel';
 import { getSupabase } from '@/src/lib/supabase/client';
 import { useAuthStore } from '@/src/stores/authStore';
 
@@ -96,16 +97,12 @@ export function useProfileCard(userId: string | null) {
 
   useEffect(() => {
     if (!userId || !me) return;
-    const channel = getSupabase()
-      .channel(`follows-${userId}-${Math.random().toString(36).slice(2, 8)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_follows' }, () => {
+    return retainChannel(`follows:${userId}`, (channel) =>
+      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'user_follows' }, () => {
         void client.invalidateQueries({ queryKey: ['profile-card', userId] });
         void client.invalidateQueries({ queryKey: ['follow-list'] });
-      })
-      .subscribe();
-    return () => {
-      void getSupabase().removeChannel(channel);
-    };
+      }),
+    );
   }, [client, me, userId]);
 
   return query;

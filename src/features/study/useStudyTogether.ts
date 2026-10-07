@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
+import { retainChannel } from '@/src/lib/realtime/retainChannel';
 import { getSupabase } from '@/src/lib/supabase/client';
 import { useAuthStore } from '@/src/stores/authStore';
 
@@ -148,23 +149,6 @@ export function useNotifications() {
       return ((data ?? []) as AppNotification[]).map((row) => ({ ...row, payload: row.payload ?? {} }));
     },
   });
-
-  useEffect(() => {
-    if (!userId) return;
-    const channel = getSupabase()
-      .channel(`notifications-${userId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
-        () => {
-          void client.invalidateQueries({ queryKey: ['notifications', userId] });
-        },
-      )
-      .subscribe();
-    return () => {
-      void getSupabase().removeChannel(channel);
-    };
-  }, [client, userId]);
 
   const unread = (query.data ?? []).filter((item) => !item.read_at).length;
 
@@ -321,15 +305,11 @@ export function useExamBanner() {
   });
   useEffect(() => {
     if (!userId) return;
-    const channel = getSupabase()
-      .channel(`exam-banner-${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'study_sessions' }, () => {
+    return retainChannel(`exam-banner:${userId}`, (channel) =>
+      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'study_sessions' }, () => {
         void client.invalidateQueries({ queryKey: ['exam-banner', userId] });
-      })
-      .subscribe();
-    return () => {
-      void getSupabase().removeChannel(channel);
-    };
+      }),
+    );
   }, [client, userId]);
   return query;
 }
@@ -377,33 +357,30 @@ export function useStudyRoom(sessionId: string | null) {
 
   useEffect(() => {
     if (!sessionId) return;
-    const channel = getSupabase()
-      .channel(`study-room-${sessionId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'study_sessions', filter: `id=eq.${sessionId}` },
-        () => {
-          void client.invalidateQueries({ queryKey: ['study-room', sessionId] });
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'study_session_answers', filter: `session_id=eq.${sessionId}` },
-        () => {
-          void client.invalidateQueries({ queryKey: ['study-room', sessionId] });
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'study_session_members', filter: `session_id=eq.${sessionId}` },
-        () => {
-          void client.invalidateQueries({ queryKey: ['study-room', sessionId] });
-        },
-      )
-      .subscribe();
-    return () => {
-      void getSupabase().removeChannel(channel);
-    };
+    return retainChannel(`study-room:${sessionId}`, (channel) =>
+      channel
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'study_sessions', filter: `id=eq.${sessionId}` },
+          () => {
+            void client.invalidateQueries({ queryKey: ['study-room', sessionId] });
+          },
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'study_session_answers', filter: `session_id=eq.${sessionId}` },
+          () => {
+            void client.invalidateQueries({ queryKey: ['study-room', sessionId] });
+          },
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'study_session_members', filter: `session_id=eq.${sessionId}` },
+          () => {
+            void client.invalidateQueries({ queryKey: ['study-room', sessionId] });
+          },
+        ),
+    );
   }, [client, sessionId]);
 
   const submit = useMutation({
@@ -455,19 +432,15 @@ export function useStudyRoomMessages(sessionId: string | null) {
 
   useEffect(() => {
     if (!sessionId) return;
-    const channel = getSupabase()
-      .channel(`study-chat-${sessionId}`)
-      .on(
+    return retainChannel(`study-chat:${sessionId}`, (channel) =>
+      channel.on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'study_session_messages', filter: `session_id=eq.${sessionId}` },
         () => {
           void client.invalidateQueries({ queryKey: ['study-room-messages', sessionId] });
         },
-      )
-      .subscribe();
-    return () => {
-      void getSupabase().removeChannel(channel);
-    };
+      ),
+    );
   }, [client, sessionId]);
 
   const send = useMutation({

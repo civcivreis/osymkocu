@@ -2,12 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 
 import type { ProgressInsights, WrongInsight } from '@/src/features/progress/insights';
 import { getSupabase } from '@/src/lib/supabase/client';
+import { isMissingRpcError, isRpcMissing, markRpcMissing } from '@/src/lib/supabase/rpcStatus';
 import { todayIsoIstanbul } from '@/src/lib/time/istanbul';
 import { useAuthStore } from '@/src/stores/authStore';
-
-function rpcMissing(message: string) {
-  return /could not find|schema cache|does not exist|function/i.test(message);
-}
 
 function emptyInsights(): ProgressInsights {
   return {
@@ -34,10 +31,15 @@ export function useProgressInsights() {
   return useQuery({
     queryKey: ['progress-insights', userId, todayIsoIstanbul()],
     enabled: Boolean(userId),
+    retry: (count, error) => count < 1 && !isMissingRpcError(error as { message?: string }),
     queryFn: async () => {
+      if (isRpcMissing('get_progress_insights')) return emptyInsights();
       const { data, error } = await getSupabase().rpc('get_progress_insights');
       if (error) {
-        if (rpcMissing(error.message)) return emptyInsights();
+        if (isMissingRpcError(error)) {
+          markRpcMissing('get_progress_insights');
+          return emptyInsights();
+        }
         throw error;
       }
       const row = (data ?? {}) as Record<string, unknown>;

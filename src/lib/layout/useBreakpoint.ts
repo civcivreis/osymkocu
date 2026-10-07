@@ -1,13 +1,25 @@
 import { Platform, useWindowDimensions } from 'react-native';
 
+import { useHydrated } from '@/src/lib/layout/useHydrated';
+
 export const BREAKPOINTS = {
   tablet: 768,
   desktop: 1100,
 } as const;
 
+const WEB_SSR_WIDTH = 1280;
+
 export function useBreakpoint() {
   const dims = useWindowDimensions();
-  const width = dims.width > 0 ? dims.width : Platform.OS === 'web' ? 1280 : 0;
+  const hydrated = useHydrated();
+  const width =
+    Platform.OS === 'web' && !hydrated
+      ? WEB_SSR_WIDTH
+      : dims.width > 0
+        ? dims.width
+        : Platform.OS === 'web'
+          ? WEB_SSR_WIDTH
+          : 0;
   const height = dims.height > 0 ? dims.height : 900;
   const isWeb = Platform.OS === 'web';
   const isDesktop = isWeb && width >= BREAKPOINTS.desktop;

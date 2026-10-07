@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
+import { retainChannel } from '@/src/lib/realtime/retainChannel';
 import { getSupabase } from '@/src/lib/supabase/client';
 import { useAuthStore } from '@/src/stores/authStore';
 import { useMatchInviteStore } from '@/src/features/study/matchInviteStore';
@@ -106,29 +107,29 @@ export function useStudyPresence(subjectId: string | undefined, enabled: boolean
       }
       void pulse();
     });
-    const channel = getSupabase()
-      .channel(`match-offers-${userId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'study_match_offers', filter: `user_a=eq.${userId}` },
-        () => void refreshOffer(),
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'study_match_offers', filter: `user_b=eq.${userId}` },
-        () => void refreshOffer(),
-      )
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
-        () => void refreshOffer(),
-      )
-      .subscribe();
+    const release = retainChannel(`match-offers:${userId}`, (channel) =>
+      channel
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'study_match_offers', filter: `user_a=eq.${userId}` },
+          () => void refreshOffer(),
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'study_match_offers', filter: `user_b=eq.${userId}` },
+          () => void refreshOffer(),
+        )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+          () => void refreshOffer(),
+        ),
+    );
 
     return () => {
       clearInterval(beat);
       app.remove();
-      void getSupabase().removeChannel(channel);
+      release();
       void getSupabase().rpc('leave_presence');
     };
   }, [enabled, pulse, refreshOffer, subjectId, userId]);

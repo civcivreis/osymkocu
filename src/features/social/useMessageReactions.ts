@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 
 import { mapSocialError } from '@/src/features/social/useSocial';
+import { retainChannel } from '@/src/lib/realtime/retainChannel';
 import { getSupabase } from '@/src/lib/supabase/client';
 import { useAuthStore } from '@/src/stores/authStore';
 
@@ -68,15 +69,11 @@ export function useMessageReactions(scope: ReactionScope, messageIds: string[]) 
 
   useEffect(() => {
     if (!userId) return;
-    const channel = getSupabase()
-      .channel(`message-reactions-${scope}-${userId.slice(0, 8)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, () => {
+    return retainChannel(`message-reactions:${scope}:${userId.slice(0, 8)}`, (channel) =>
+      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, () => {
         void client.invalidateQueries({ queryKey: ['message-reactions', scope] });
-      })
-      .subscribe();
-    return () => {
-      void getSupabase().removeChannel(channel);
-    };
+      }),
+    );
   }, [client, scope, userId]);
 
   const grouped = useMemo(
