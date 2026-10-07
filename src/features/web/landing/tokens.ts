@@ -1,0 +1,16 @@
+export const landing = {
+  cream: '#F6F1E8',
+  creamDeep: '#EDE6D8',
+  paper: '#FFFBF5',
+  navy: '#152238',
+  navyMid: '#1C2E4A',
+  ink: '#142033',
+  muted: '#5C6573',
+  line: '#E6DDD0',
+  orange: '#C45C26',
+  orangeSoft: '#F4E2D6',
+  orangeGlow: 'rgba(196, 92, 38, 0.18)',
+  white: '#FFFFFF',
+  success: '#1F7A4D',
+  max: 1200,
+} as const;
