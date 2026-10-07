@@ -13,6 +13,27 @@ function DemoChip() {
   );
 }
 
+function SampleBanner() {
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        top: 22,
+        right: -34,
+        width: 140,
+        paddingVertical: 5,
+        backgroundColor: '#B42318',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transform: [{ rotate: '45deg' }],
+        zIndex: 4,
+      }}>
+      <Text style={{ color: T.white, fontSize: 11, fontWeight: '800', letterSpacing: 1.4 }}>ÖRNEK</Text>
+    </View>
+  );
+}
+
 function Panel({ children }: { children: ReactNode }) {
   return (
     <View
@@ -28,6 +49,7 @@ function Panel({ children }: { children: ReactNode }) {
         shadowOpacity: 0.08,
         shadowRadius: 16,
         shadowOffset: { width: 0, height: 8 },
+        overflow: 'hidden',
       }}>
       {children}
     </View>
@@ -47,6 +69,7 @@ export function HeroProductPreview() {
         borderColor: T.line,
         paddingHorizontal: 28,
         paddingVertical: 32,
+        overflow: 'hidden',
         alignItems: 'center',
         gap: 10,
         shadowColor: T.navy,
@@ -54,6 +77,7 @@ export function HeroProductPreview() {
         shadowRadius: 20,
         shadowOffset: { width: 0, height: 10 },
       }}>
+      <SampleBanner />
       <LetterAvatar id="landing-hero-ayse" name="Ayşe" size={88} />
       <Text style={{ color: T.ink, fontWeight: '800', fontSize: 20, marginTop: 6 }}>Ayşe#1284</Text>
       <Text style={{ color: T.success, fontWeight: '700', fontSize: 15 }}>Birini buldum 👋</Text>

@@ -16,9 +16,10 @@ export default function Root({ children }: { children: ReactNode }) {
           content="TYT, AYT ve KPSS için test, AI koç, çalışma eşleşmeleri ve sistem sınavları. Aynı hesap telefon ve web’de."
         />
         <link rel="canonical" href={APP_URL} />
-        <link rel="icon" href="/favicon.png" type="image/png" />
+        <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32" />
+        <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
         <link rel="shortcut icon" href="/favicon.ico" />
-        <link rel="apple-touch-icon" href="/favicon.png" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#C45C26" />
         <meta name="mobile-web-app-capable" content="yes" />
