@@ -1,10 +1,12 @@
 import { useCallback } from 'react';
 
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
-import { emailConfirmedUrl } from '@/src/lib/env';
+import { emailRedirectTo, isUserEmailVerified, persistPendingVerifyEmail } from '@/src/lib/auth/emailVerification';
 import { getSupabase } from '@/src/lib/supabase/client';
 import type { Profile, Subscription } from '@/src/lib/supabase/types';
 import { useAuthStore } from '@/src/stores/authStore';
+
+export const EMAIL_NOT_CONFIRMED = 'EMAIL_NOT_CONFIRMED';
 
 function mapAuthError(message: string): string {
   const lower = message.toLowerCase();
@@ -12,7 +14,7 @@ function mapAuthError(message: string): string {
   if (lower.includes('already registered') || lower.includes('already been registered')) {
     return 'Bu e-posta ile zaten bir hesap var.';
   }
-  if (lower.includes('email not confirmed')) return 'E-postanı doğruladıktan sonra giriş yap.';
+  if (lower.includes('email not confirmed')) return EMAIL_NOT_CONFIRMED;
   if (lower.includes('password')) return 'Şifre kurallarını kontrol et.';
   if (lower.includes('rate')) return 'Çok fazla deneme. Biraz sonra tekrar dene.';
   return message;
@@ -44,12 +46,38 @@ export async function sessionUserExists() {
   return true;
 }
 
+export async function resendSignupEmail(email: string) {
+  const { error } = await getSupabase().auth.resend({
+    type: 'signup',
+    email: email.trim(),
+    options: { emailRedirectTo: emailRedirectTo() },
+  });
+  if (error) {
+    const lower = error.message.toLowerCase();
+    if (lower.includes('rate') || lower.includes('seconds')) {
+      throw new Error('Çok sık denendi. Bir dakika bekleyip tekrar dene.');
+    }
+    throw new Error('Doğrulama maili gönderilemedi. Biraz sonra tekrar dene.');
+  }
+}
+
 export function useAuthActions() {
   const reset = useAuthStore((s) => s.reset);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { data, error } = await getSupabase().auth.signInWithPassword({ email, password });
-    if (error) throw new Error(mapAuthError(error.message));
+    if (error) {
+      const mapped = mapAuthError(error.message);
+      if (mapped === EMAIL_NOT_CONFIRMED) {
+        persistPendingVerifyEmail(email);
+        throw new Error(EMAIL_NOT_CONFIRMED);
+      }
+      throw new Error(mapped);
+    }
+    if (data.user && !isUserEmailVerified(data.user)) {
+      persistPendingVerifyEmail(data.user.email ?? email);
+      throw new Error(EMAIL_NOT_CONFIRMED);
+    }
     if (data.user) {
       await fetchAuthExtras(data.user.id);
       AnalyticsProvider.identify(data.user.id, { email: data.user.email });
@@ -63,16 +91,24 @@ export function useAuthActions() {
         password: input.password,
         options: {
           data: { display_name: input.displayName },
-          emailRedirectTo: emailConfirmedUrl(),
+          emailRedirectTo: emailRedirectTo(),
         },
       });
       if (error) throw new Error(mapAuthError(error.message));
+      const identities = data.user?.identities ?? [];
+      if (data.user && identities.length === 0) {
+        throw new Error(mapAuthError('already registered'));
+      }
       AnalyticsProvider.track('signup_completed');
-      if (data.session?.user) {
+      const verified = isUserEmailVerified(data.user) || isUserEmailVerified(data.session?.user);
+      if (data.session?.user && verified) {
         await fetchAuthExtras(data.session.user.id);
         AnalyticsProvider.identify(data.session.user.id, { email: data.session.user.email });
       }
-      return { needsEmailConfirmation: !data.session };
+      if (!verified) {
+        persistPendingVerifyEmail(input.email);
+      }
+      return { needsEmailConfirmation: !verified };
     },
     [],
   );

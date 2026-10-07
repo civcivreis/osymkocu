@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { View } from 'react-native';
@@ -18,7 +18,6 @@ export function RegisterScreen() {
   const { spacing, colors } = useAppTheme();
   const { signUp } = useAuthActions();
   const [formError, setFormError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
 
   const {
     control,
@@ -31,7 +30,6 @@ export function RegisterScreen() {
 
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
-    setInfo(null);
     try {
       const result = await signUp({
         email: values.email,
@@ -39,7 +37,11 @@ export function RegisterScreen() {
         displayName: values.displayName,
       });
       if (result.needsEmailConfirmation) {
-        setInfo('Mailine bir onay gitti. Linke bas, sonra giriş yap.');
+        router.replace({
+          pathname: '/verify-email',
+          params: { email: values.email.trim() },
+        });
+        return;
       }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Kayıt tamamlanamadı');
@@ -123,11 +125,6 @@ export function RegisterScreen() {
           {formError ? (
             <AppText tone="danger" variant="caption" style={{ textAlign: 'center' }}>
               {formError}
-            </AppText>
-          ) : null}
-          {info ? (
-            <AppText tone="accent" variant="caption" style={{ textAlign: 'center' }}>
-              {info}
             </AppText>
           ) : null}
           <Button label="Kayıt ol" loading={isSubmitting} onPress={onSubmit} />

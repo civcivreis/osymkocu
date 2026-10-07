@@ -9,11 +9,15 @@ type AuthState = {
   session: Session | null;
   profile: Profile | null;
   subscription: Subscription | null;
+  pendingVerifyEmail: string | null;
+  emailLinkError: boolean;
   setConfigured: (configured: boolean) => void;
   setInitialized: (initialized: boolean) => void;
   setSession: (session: Session | null) => void;
   setProfile: (profile: Profile | null) => void;
   setSubscription: (subscription: Subscription | null) => void;
+  setPendingVerifyEmail: (email: string | null) => void;
+  setEmailLinkError: (value: boolean) => void;
   plan: () => SubscriptionPlan;
   reset: () => void;
 };
@@ -24,11 +28,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   profile: null,
   subscription: null,
+  pendingVerifyEmail: null,
+  emailLinkError: false,
   setConfigured: (configured) => set({ configured }),
   setInitialized: (initialized) => set({ initialized }),
   setSession: (session) => set({ session }),
   setProfile: (profile) => set({ profile }),
   setSubscription: (subscription) => set({ subscription }),
+  setPendingVerifyEmail: (pendingVerifyEmail) => set({ pendingVerifyEmail }),
+  setEmailLinkError: (emailLinkError) => set({ emailLinkError }),
   plan: () => get().subscription?.plan ?? 'free',
   reset: () =>
     set({

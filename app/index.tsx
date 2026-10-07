@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { StartupLoading } from '@/src/features/auth/StartupLoading';
 import { LoginScreen } from '@/src/features/auth/LoginScreen';
 import { LandingScreen } from '@/src/features/web/LandingScreen';
+import { hasAuthRedirectPayload, isEmailVerified } from '@/src/lib/auth/emailVerification';
 import { isAdminHost } from '@/src/lib/hosts';
 import { useAuthStore } from '@/src/stores/authStore';
 
@@ -16,9 +17,14 @@ export default function RootIndex() {
   const initialized = useAuthStore((s) => s.initialized);
   const session = useAuthStore((s) => s.session);
   const profile = useAuthStore((s) => s.profile);
+  const emailLinkError = useAuthStore((s) => s.emailLinkError);
   const onboarded = Boolean(profile?.onboarding_completed_at);
+  const verified = isEmailVerified(session);
 
   if (Platform.OS === 'web' && !initialized) {
+    if (hasAuthRedirectPayload() || emailLinkError) {
+      return <StartupLoading />;
+    }
     return <LandingScreen />;
   }
 
@@ -26,11 +32,15 @@ export default function RootIndex() {
     return <StartupLoading />;
   }
 
-  if (session && !onboarded) {
+  if (emailLinkError || (session && !verified)) {
+    return <Redirect href={'/verify-email' as never} />;
+  }
+
+  if (session && verified && !onboarded) {
     return <Redirect href={'/(onboarding)' as never} />;
   }
 
-  if (session && onboarded) {
+  if (session && verified && onboarded) {
     return <Redirect href={'/home' as never} />;
   }
 

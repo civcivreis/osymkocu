@@ -4,11 +4,16 @@ import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, type ReactNode } from 'react';
 
-import { fetchAuthExtras, sessionUserExists } from '@/src/features/auth/useAuth';
+import { fetchAuthExtras } from '@/src/features/auth/useAuth';
 import { FeedbackHost } from '@/src/components/ui/FeedbackHost';
 import { XpFeedbackHost } from '@/src/features/progress/XpFeedbackHost';
 import { useNotificationRealtime } from '@/src/features/study/useNotificationRealtime';
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
+import {
+  consumeAuthLinkError,
+  isUserEmailVerified,
+  stripAuthHashFromUrl,
+} from '@/src/lib/auth/emailVerification';
 import { isSupabaseConfigured } from '@/src/lib/env';
 import { queryClient } from '@/src/lib/query/client';
 import { releaseUserChannels } from '@/src/lib/realtime/retainChannel';
@@ -37,6 +42,7 @@ function AuthBootstrap({ children }: { children: ReactNode }) {
     }
 
     const supabase = getSupabase();
+    consumeAuthLinkError();
     let dropping = false;
 
     const clearClientAuth = (previousId?: string) => {
@@ -72,21 +78,29 @@ function AuthBootstrap({ children }: { children: ReactNode }) {
         return;
       }
 
-      const alive = await sessionUserExists();
+      const { data: userRes, error: userError } = await supabase.auth.getUser();
       if (dropping) return;
-      if (!alive) {
+      if (userError || !userRes.user) {
+        const msg = (userError?.message ?? '').toLowerCase();
+        if (msg.includes('email not confirmed')) {
+          setSession(session);
+          return;
+        }
         await dropGhostSession(previousId ?? session.user.id);
         return;
       }
 
-      if (previousId && previousId !== session.user.id) {
+      if (previousId && previousId !== userRes.user.id) {
         releaseUserChannels(previousId);
         clearRpcMissing();
       }
-      setSession(session);
+      setSession({ ...session, user: userRes.user });
+      if (isUserEmailVerified(userRes.user)) {
+        useAuthStore.getState().setEmailLinkError(false);
+      }
       try {
-        await fetchAuthExtras(session.user.id);
-        AnalyticsProvider.identify(session.user.id, { email: session.user.email });
+        await fetchAuthExtras(userRes.user.id);
+        AnalyticsProvider.identify(userRes.user.id, { email: userRes.user.email });
       } catch (error) {
         console.warn('Profil yüklenemedi', error);
       }
@@ -96,11 +110,13 @@ function AuthBootstrap({ children }: { children: ReactNode }) {
       .getSession()
       .then(async ({ data }) => {
         await applySession(data.session);
+        stripAuthHashFromUrl();
       })
       .catch((error) => {
         console.warn('Oturum okunamadı', error);
       })
       .finally(() => {
+        stripAuthHashFromUrl();
         setInitialized(true);
         SplashScreen.hideAsync().catch(() => undefined);
       });

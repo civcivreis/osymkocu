@@ -5,6 +5,7 @@ import { Platform, View } from 'react-native';
 import { MissingConfigScreen } from '@/src/features/auth/MissingConfigScreen';
 import { StartupLoading } from '@/src/features/auth/StartupLoading';
 import { HostGate } from '@/src/features/web/HostGate';
+import { isEmailVerified } from '@/src/lib/auth/emailVerification';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 import { AppProviders } from '@/src/providers/AppProviders';
 import { useAuthStore } from '@/src/stores/authStore';
@@ -20,9 +21,9 @@ function isWebStaticRender() {
   return Platform.OS === 'web' && typeof window === 'undefined';
 }
 
-function startupGroup(session: boolean, onboarded: boolean) {
-  if (session && onboarded) return '(app)';
-  if (session) return '(onboarding)';
+function startupGroup(session: boolean, verified: boolean, onboarded: boolean) {
+  if (session && verified && onboarded) return '(app)';
+  if (session && verified) return '(onboarding)';
   return 'index';
 }
 
@@ -33,6 +34,7 @@ function RootNavigator() {
   const profile = useAuthStore((s) => s.profile);
   const onboarded = Boolean(profile?.onboarding_completed_at);
   const hasSession = Boolean(session);
+  const verified = isEmailVerified(session);
   const { colors } = useAppTheme();
   const [webHydrated, setWebHydrated] = useState(false);
   useEffect(() => {
@@ -53,18 +55,18 @@ function RootNavigator() {
         </View>
       ) : null}
       <Stack
-        initialRouteName={startupGroup(hasSession, onboarded)}
+        initialRouteName={startupGroup(hasSession, verified, onboarded)}
         screenOptions={{ headerShown: false, animation: 'fade' }}>
         <Stack.Screen name="index" />
-        <Stack.Protected guard={!hasSession}>
+        <Stack.Protected guard={!hasSession || !verified}>
           <Stack.Screen name="(auth)" />
         </Stack.Protected>
-        <Stack.Protected guard={hasSession && !onboarded}>
+        <Stack.Protected guard={hasSession && verified && !onboarded}>
           <Stack.Screen name="(onboarding)" />
         </Stack.Protected>
         {/* Always registered so /study etc. exist. Guard lives in (app)/_layout — never fall through to /gizlilik. */}
         <Stack.Screen name="(app)" />
-        <Stack.Protected guard={hasSession && onboarded}>
+        <Stack.Protected guard={hasSession && verified && onboarded}>
           <Stack.Screen name="admin" />
         </Stack.Protected>
         <Stack.Screen name="gizlilik" />

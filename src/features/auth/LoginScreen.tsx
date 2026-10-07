@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Platform, View } from 'react-native';
@@ -8,7 +8,7 @@ import { AppText } from '@/src/components/ui/AppText';
 import { Button } from '@/src/components/ui/Button';
 import { Screen } from '@/src/components/ui/Screen';
 import { TextField } from '@/src/components/ui/TextField';
-import { useAuthActions } from '@/src/features/auth/useAuth';
+import { EMAIL_NOT_CONFIRMED, useAuthActions } from '@/src/features/auth/useAuth';
 import { loginSchema, type LoginFormValues } from '@/src/features/auth/schemas';
 import { SeoHead } from '@/src/features/seo/SeoHead';
 import { APP_BLURB, APP_NAME, APP_TAGLINE } from '@/src/lib/brand';
@@ -33,6 +33,13 @@ export function LoginScreen() {
     try {
       await signIn(values.email, values.password);
     } catch (error) {
+      if (error instanceof Error && error.message === EMAIL_NOT_CONFIRMED) {
+        router.replace({
+          pathname: '/verify-email',
+          params: { email: values.email.trim() },
+        });
+        return;
+      }
       setFormError(error instanceof Error ? error.message : 'Giriş yapılamadı');
     }
   });

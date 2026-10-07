@@ -6,6 +6,7 @@ import { AppText } from '@/src/components/ui/AppText';
 import { SeoHead } from '@/src/features/seo/SeoHead';
 import { canManageExams, canManageUsers, canModerate, isStaffRole, isSuperAdmin, mapAdminError } from '@/src/features/admin/roles';
 import { useStaffContext } from '@/src/features/admin/useAdmin';
+import { isEmailVerified } from '@/src/lib/auth/emailVerification';
 import { APP_NAME } from '@/src/lib/brand';
 import { getSupabase } from '@/src/lib/supabase/client';
 import { useAuthStore } from '@/src/stores/authStore';
@@ -45,6 +46,7 @@ export function AdminShell() {
   }, [allowed, role]);
 
   if (!session) return <Redirect href="/(auth)/giris" />;
+  if (!isEmailVerified(session)) return <Redirect href={'/verify-email' as never} />;
   if (!profile || staff.isLoading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EEF1F6' }}>

@@ -2,6 +2,7 @@ import { Redirect, usePathname } from 'expo-router';
 import { type ReactNode, useEffect } from 'react';
 import { Platform } from 'react-native';
 
+import { isEmailVerified } from '@/src/lib/auth/emailVerification';
 import { adminPanelUrl, isAdminHost, isLocalWebHost, shouldBlockAdminOnAppHost } from '@/src/lib/hosts';
 import { useAuthStore } from '@/src/stores/authStore';
 
@@ -29,7 +30,14 @@ export function HostGate({ children }: { children: ReactNode }) {
     return null;
   }
 
-  if (isAdminHost() && !isLocalWebHost() && session && onboarded && !path.startsWith('/admin')) {
+  if (
+    isAdminHost() &&
+    !isLocalWebHost() &&
+    session &&
+    isEmailVerified(session) &&
+    onboarded &&
+    !path.startsWith('/admin')
+  ) {
     return <Redirect href={'/admin' as never} />;
   }
 

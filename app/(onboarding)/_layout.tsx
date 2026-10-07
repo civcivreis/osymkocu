@@ -1,6 +1,8 @@
 import { Redirect, Stack } from 'expo-router';
 import { Platform } from 'react-native';
 
+import { StartupLoading } from '@/src/features/auth/StartupLoading';
+import { isEmailVerified } from '@/src/lib/auth/emailVerification';
 import { useAuthStore } from '@/src/stores/authStore';
 
 export default function OnboardingLayout() {
@@ -8,11 +10,19 @@ export default function OnboardingLayout() {
   const session = useAuthStore((s) => s.session);
   const onboarded = Boolean(useAuthStore((s) => s.profile?.onboarding_completed_at));
 
-  if (initialized && !session) {
+  if (!initialized) {
+    return <StartupLoading />;
+  }
+
+  if (!session) {
     return <Redirect href={(Platform.OS === 'web' ? '/' : '/giris') as never} />;
   }
 
-  if (initialized && session && onboarded) {
+  if (!isEmailVerified(session)) {
+    return <Redirect href={'/verify-email' as never} />;
+  }
+
+  if (onboarded) {
     return <Redirect href={'/home' as never} />;
   }
 
