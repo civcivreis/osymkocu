@@ -31,8 +31,17 @@ export async function fetchAuthExtras(userId: string) {
 
   useAuthStore.getState().setProfile((profile as Profile | null) ?? null);
   useAuthStore.getState().setSubscription((subscription as Subscription | null) ?? null);
-  void supabase.rpc('touch_last_active');
-  void supabase.rpc('sync_my_exam_reminders');
+  if (profile) {
+    void supabase.rpc('touch_last_active');
+    void supabase.rpc('sync_my_exam_reminders');
+  }
+}
+
+/** Local JWT can survive after auth.users was deleted. Confirm the user still exists. */
+export async function sessionUserExists() {
+  const { data, error } = await getSupabase().auth.getUser();
+  if (error || !data.user) return false;
+  return true;
 }
 
 export function useAuthActions() {

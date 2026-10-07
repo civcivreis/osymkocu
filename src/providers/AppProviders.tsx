@@ -4,7 +4,7 @@ import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, type ReactNode } from 'react';
 
-import { fetchAuthExtras } from '@/src/features/auth/useAuth';
+import { fetchAuthExtras, sessionUserExists } from '@/src/features/auth/useAuth';
 import { FeedbackHost } from '@/src/components/ui/FeedbackHost';
 import { XpFeedbackHost } from '@/src/features/progress/XpFeedbackHost';
 import { useNotificationRealtime } from '@/src/features/study/useNotificationRealtime';
@@ -38,25 +38,39 @@ function AuthBootstrap({ children }: { children: ReactNode }) {
 
     const supabase = getSupabase();
 
+    const dropLocalSession = async (previousId?: string) => {
+      if (previousId) releaseUserChannels(previousId);
+      clearRpcMissing();
+      queryClient.clear();
+      AnalyticsProvider.reset();
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+      reset();
+      setSession(null);
+    };
+
     const applySession = async (session: Session | null) => {
       const previousId = useAuthStore.getState().session?.user.id;
-      setSession(session);
-      if (session?.user) {
-        if (previousId && previousId !== session.user.id) {
-          releaseUserChannels(previousId);
-          clearRpcMissing();
-        }
-        try {
-          await fetchAuthExtras(session.user.id);
-          AnalyticsProvider.identify(session.user.id, { email: session.user.email });
-        } catch (error) {
-          console.warn('Profil yüklenemedi', error);
-        }
-      } else {
-        if (previousId) releaseUserChannels(previousId);
+      if (!session?.user) {
+        await dropLocalSession(previousId);
+        return;
+      }
+
+      const alive = await sessionUserExists();
+      if (!alive) {
+        await dropLocalSession(previousId ?? session.user.id);
+        return;
+      }
+
+      if (previousId && previousId !== session.user.id) {
+        releaseUserChannels(previousId);
         clearRpcMissing();
-        reset();
-        setSession(null);
+      }
+      setSession(session);
+      try {
+        await fetchAuthExtras(session.user.id);
+        AnalyticsProvider.identify(session.user.id, { email: session.user.email });
+      } catch (error) {
+        console.warn('Profil yüklenemedi', error);
       }
     };
 
