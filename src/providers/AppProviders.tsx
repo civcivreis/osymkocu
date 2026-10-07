@@ -37,27 +37,45 @@ function AuthBootstrap({ children }: { children: ReactNode }) {
     }
 
     const supabase = getSupabase();
+    let dropping = false;
 
-    const dropLocalSession = async (previousId?: string) => {
+    const clearClientAuth = (previousId?: string) => {
       if (previousId) releaseUserChannels(previousId);
       clearRpcMissing();
       queryClient.clear();
       AnalyticsProvider.reset();
-      await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
       reset();
       setSession(null);
     };
 
+    const dropGhostSession = async (previousId?: string) => {
+      if (dropping) return;
+      dropping = true;
+      try {
+        clearClientAuth(previousId);
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+      } finally {
+        dropping = false;
+      }
+    };
+
     const applySession = async (session: Session | null) => {
+      if (dropping) return;
       const previousId = useAuthStore.getState().session?.user.id;
+
       if (!session?.user) {
-        await dropLocalSession(previousId);
+        if (previousId) clearClientAuth(previousId);
+        else {
+          reset();
+          setSession(null);
+        }
         return;
       }
 
       const alive = await sessionUserExists();
+      if (dropping) return;
       if (!alive) {
-        await dropLocalSession(previousId ?? session.user.id);
+        await dropGhostSession(previousId ?? session.user.id);
         return;
       }
 
@@ -87,7 +105,9 @@ function AuthBootstrap({ children }: { children: ReactNode }) {
         SplashScreen.hideAsync().catch(() => undefined);
       });
 
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'INITIAL_SESSION') return;
+      if (dropping) return;
       void applySession(session);
     });
 
