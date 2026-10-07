@@ -1,0 +1,44 @@
+Konu: Koçum — e-postanı onayla
+
+Supabase Dashboard → Authentication → Email Templates → Confirm signup
+içine yapıştır. Site URL ve Redirect URLs:
+https://qvmhtzpaoxdychyjhqyj.supabase.co/functions/v1/email-confirmed
+
+---
+
+<!DOCTYPE html>
+<html lang="tr">
+  <body style="margin:0;padding:0;background:#F4F1EA;font-family:Segoe UI,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#F4F1EA;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="480" cellspacing="0" cellpadding="0" style="max-width:480px;background:#1B2B44;border-radius:22px;overflow:hidden;">
+            <tr>
+              <td style="padding:36px 28px 12px;text-align:center;color:#F4F1EA;font-size:13px;letter-spacing:0.12em;font-weight:600;">
+                KOÇUM
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 8px;text-align:center;color:#F4F1EA;font-size:28px;font-weight:700;">
+                Koçun hazır.
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 36px 28px;text-align:center;color:#E8E3D8;font-size:16px;line-height:1.5;">
+                Onayla, sonra giriş yap.
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:0 28px 36px;">
+                <a href="{{ .ConfirmationURL }}"
+                   style="display:inline-block;background:#C45C26;color:#FFFFFF;text-decoration:none;font-weight:600;font-size:16px;padding:14px 28px;border-radius:999px;">
+                  E-postamı onayla
+                </a>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

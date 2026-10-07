@@ -1,0 +1,16 @@
+project_id = "qvmhtzpaoxdychyjhqyj"
+
+[functions.ai]
+verify_jwt = false
+
+[functions.delete-account]
+verify_jwt = true
+
+[functions.email-confirmed]
+verify_jwt = false
+
+[functions.media-upload]
+verify_jwt = false
+
+[functions.media-url]
+verify_jwt = false

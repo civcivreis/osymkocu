@@ -1,0 +1,25 @@
+{
+  "name": "ÖSYM Koçu",
+  "short_name": "ÖSYM Koçu",
+  "description": "TYT, AYT ve KPSS çalışma platformu",
+  "lang": "tr",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F1EA",
+  "theme_color": "#C45C26",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

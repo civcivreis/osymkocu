@@ -1,0 +1,45 @@
+import { Stack } from 'expo-router';
+import { Platform, View } from 'react-native';
+
+import { CoachHost } from '@/src/features/teacher/CoachHost';
+import { MatchInviteHost } from '@/src/features/study/MatchInviteHost';
+import { PairChatHost } from '@/src/features/study/PairChatHost';
+import { SeoHead } from '@/src/features/seo/SeoHead';
+import { WebAppShell } from '@/src/features/web/WebAppShell';
+
+export default function AppGroupLayout() {
+  const stack = (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="teacher" />
+      <Stack.Screen name="practice" />
+      <Stack.Screen name="notebook" />
+      <Stack.Screen name="lesson" />
+      <Stack.Screen name="chat" />
+      <Stack.Screen name="group-chat" />
+      <Stack.Screen name="user" />
+      <Stack.Screen name="follows" />
+      <Stack.Screen name="edit-profile" />
+      <Stack.Screen name="privacy" />
+      <Stack.Screen name="settings" />
+      <Stack.Screen name="notifications" />
+      <Stack.Screen name="study-room" />
+      <Stack.Screen name="system-exams" />
+      <Stack.Screen name="sistem-sinavlari" />
+      <Stack.Screen name="test-merkezi" />
+      <Stack.Screen name="system-exam" />
+      <Stack.Screen name="system-exam-result" />
+    </Stack>
+  );
+
+  return (
+    <View style={{ flex: 1 }}>
+      <SeoHead title="ÖSYM Koçu" path="/app" index={false} />
+      {Platform.OS === 'web' ? <WebAppShell>{stack}</WebAppShell> : stack}
+      <CoachHost />
+      <PairChatHost />
+      <MatchInviteHost />
+    </View>
+  );
+}
+

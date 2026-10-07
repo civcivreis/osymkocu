@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "ÖSYM Koçu",
+    "slug": "kocum",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "kocum",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "ÖSYM Koçu, soruyu taraman için kameraya erişir.",
+        "NSPhotoLibraryUsageDescription": "ÖSYM Koçu, seçtiğin fotoğrafı göndermek için sistem fotoğraf seçicisini kullanır."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0E1520",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true,
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png",
+      "name": "ÖSYM Koçu",
+      "shortName": "ÖSYM Koçu",
+      "lang": "tr",
+      "themeColor": "#C45C26",
+      "backgroundColor": "#F4F1EA",
+      "display": "standalone",
+      "startUrl": "/",
+      "orientation": "portrait",
+      "description": "TYT, AYT ve KPSS çalışma platformu"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ÖSYM Koçu, seçtiğin soru veya profil fotoğrafını göndermen için sistem fotoğraf seçicisini kullanır.",
+          "cameraPermission": "ÖSYM Koçu, soruyu taraman için kameraya erişir.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0E1520"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
