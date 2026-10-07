@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Animated, Platform, ScrollView, View } from 'react-native';
+import { Animated, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText } from '@/src/components/ui/AppText';
@@ -75,29 +75,30 @@ export function OnboardingShell({
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top', 'bottom']}>
-      <View
-        style={{
-          flex: 1,
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          flexGrow: 0,
           width: '100%',
           maxWidth: 960,
           alignSelf: 'center',
           paddingHorizontal: pad,
-          paddingTop: compact ? 8 : 20,
-          paddingBottom: compact ? 12 : 20,
+          paddingTop: compact ? 8 : 28,
+          paddingBottom: compact ? 16 : 32,
         }}>
         <View
           style={{
-            flex: 1,
             backgroundColor: colors.surface,
             borderRadius: radius[20],
             borderWidth: 1,
             borderColor: colors.border,
             paddingHorizontal: compact ? 16 : 28,
             paddingTop: compact ? 18 : 24,
-            paddingBottom: compact ? 16 : 20,
+            paddingBottom: compact ? 16 : 24,
             ...shadows.md,
           }}>
-          <View style={{ gap: 10, marginBottom: 16 }}>
+          <View style={{ gap: 10, marginBottom: compact ? 16 : 20 }}>
             <AppText variant="caption" tone="muted">
               Adım {step + 1} / {total}
             </AppText>
@@ -122,11 +123,8 @@ export function OnboardingShell({
             </View>
           </View>
 
-          <Animated.View style={{ flex: 1, opacity, transform: [{ translateX: slide }] }}>
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ gap: 16, paddingBottom: 12, flexGrow: 1 }}>
+          <Animated.View style={{ opacity, transform: [{ translateX: slide }] }}>
+            <View style={{ gap: 16 }}>
               <View style={{ gap: 6, maxWidth: 560 }}>
                 <AppText variant="title">{title}</AppText>
                 {subtitle ? (
@@ -136,10 +134,10 @@ export function OnboardingShell({
                 ) : null}
               </View>
               {children}
-            </ScrollView>
+            </View>
           </Animated.View>
 
-          <View style={{ gap: 10, paddingTop: 12 }}>
+          <View style={{ gap: 10, paddingTop: compact ? 20 : 56 }}>
             {error ? (
               <AppText tone="danger" variant="caption" style={{ maxWidth: 520 }}>
                 {error}
@@ -163,8 +161,7 @@ export function OnboardingShell({
             </View>
           </View>
         </View>
-        {Platform.OS === 'web' ? <View style={{ height: 8 }} /> : null}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }

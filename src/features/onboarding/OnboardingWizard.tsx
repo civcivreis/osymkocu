@@ -226,19 +226,45 @@ function stepCopy(step: number, kind?: ExamKind, examName?: string, tight?: bool
 
 function WelcomeStep() {
   const { colors, radius } = useAppTheme();
+  const pills = [
+    { icon: 'calendar-outline' as const, label: 'Kişisel plan' },
+    { icon: 'flag-outline' as const, label: 'Günlük hedef' },
+    { icon: 'trending-up-outline' as const, label: 'İlerleme takibi' },
+  ];
   return (
-    <View
-      style={{
-        backgroundColor: colors.navy,
-        borderRadius: radius[16],
-        padding: 22,
-        gap: 8,
-        maxWidth: 520,
-      }}>
-      <AppText style={{ color: '#F4F1EA' }}>TYT, AYT veya KPSS. Aynı hesap telefonda ve web’de.</AppText>
-      <AppText variant="caption" style={{ color: '#D7E3F0' }}>
-        Sonraki adımlarda sınav, yıl, süre ve hedefi seçeceksin.
-      </AppText>
+    <View style={{ gap: 14, maxWidth: 560 }}>
+      <View
+        style={{
+          backgroundColor: colors.navy,
+          borderRadius: radius[16],
+          padding: 22,
+          gap: 8,
+        }}>
+        <AppText style={{ color: '#F4F1EA' }}>TYT, AYT veya KPSS. Aynı hesap telefonda ve web’de.</AppText>
+        <AppText variant="caption" style={{ color: '#D7E3F0' }}>
+          Sonraki adımlarda sınav, yıl, süre ve hedefi seçeceksin.
+        </AppText>
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        {pills.map((pill) => (
+          <View
+            key={pill.label}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              paddingVertical: 8,
+              paddingHorizontal: 12,
+              borderRadius: radius.pill,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.surfaceMuted,
+            }}>
+            <Ionicons name={pill.icon} size={14} color={colors.accent} />
+            <AppText variant="caption">{pill.label}</AppText>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -263,9 +289,9 @@ function ExamStep({
     <View style={{ gap: 12 }}>
       {loading ? <AppText tone="muted">Sınavlar yükleniyor…</AppText> : null}
       {error ? <AppText tone="danger">{error}</AppText> : null}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' }}>
         {exams.map((exam) => (
-          <View key={exam.id} style={{ width: cardWidth }}>
+          <View key={exam.id} style={{ width: cardWidth, alignSelf: 'stretch' }}>
             <OnboardingSelectionCard
               title={exam.name}
               subtitle={examSubtitle(exam.kind)}
@@ -300,9 +326,9 @@ function DateStep({
   return (
     <View style={{ gap: 12 }}>
       {loading ? <AppText tone="muted">Oturumlar yükleniyor…</AppText> : null}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' }}>
         {sessions.map((session) => (
-          <View key={session.id} style={{ width: cardWidth }}>
+          <View key={session.id} style={{ width: cardWidth, alignSelf: 'stretch' }}>
             <OnboardingSelectionCard
               title={String(session.session_year)}
               subtitle={
@@ -328,14 +354,15 @@ function MinutesStep({ value, onChange }: { value: number; onChange: (value: num
   const cols = width >= 1100 ? 5 : width >= 768 ? 3 : 2;
   const cardWidth = onboardingCardWidth(width, cols, 12, width < 768);
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' }}>
       {options.map((option) => (
-        <View key={option} style={{ width: cardWidth }}>
+        <View key={option} style={{ width: cardWidth, alignSelf: 'stretch' }}>
           <OnboardingSelectionCard
             title={`${option} dk`}
             subtitle={minutesHint(option)}
             icon="time-outline"
-            minHeight={96}
+            layout="stack"
+            minHeight={118}
             selected={value === option}
             onPress={() => onChange(option)}
           />
@@ -366,9 +393,9 @@ function GoalStep({
 
   return (
     <View style={{ gap: 14 }}>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' }}>
         {options.map((option) => (
-          <View key={option} style={{ width: cardWidth }}>
+          <View key={option} style={{ width: cardWidth, alignSelf: 'stretch' }}>
             <OnboardingSelectionCard
               title={formatGoal(option)}
               subtitle={goalHint(option)}
@@ -434,9 +461,9 @@ function SubjectsStep({
     <View style={{ gap: 20 }}>
       <View style={{ gap: 10 }}>
         <AppText variant="label">Zayıf olduğum dersler</AppText>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'stretch' }}>
           {subjects.map((subject) => (
-            <View key={`w-${subject.id}`} style={{ width: cardWidth }}>
+            <View key={`w-${subject.id}`} style={{ width: cardWidth, alignSelf: 'stretch' }}>
               <OnboardingSelectionCard
                 title={subject.name}
                 accent="weak"
@@ -450,9 +477,9 @@ function SubjectsStep({
       </View>
       <View style={{ gap: 10 }}>
         <AppText variant="label">Güçlü olduğum dersler</AppText>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'stretch' }}>
           {subjects.map((subject) => (
-            <View key={`s-${subject.id}`} style={{ width: cardWidth }}>
+            <View key={`s-${subject.id}`} style={{ width: cardWidth, alignSelf: 'stretch' }}>
               <OnboardingSelectionCard
                 title={subject.name}
                 accent="strong"
@@ -536,10 +563,11 @@ function examIcon(kind: ExamKind): ComponentProps<typeof Ionicons>['name'] {
 }
 
 function minutesHint(minutes: number): string | undefined {
-  if (minutes === 90) return 'Dengeli tempo';
-  if (minutes === 180) return 'Yoğun çalışma';
   if (minutes === 45) return 'Kısa oturum';
+  if (minutes === 60) return 'Rahat tempo';
+  if (minutes === 90) return 'Dengeli tempo';
   if (minutes === 120) return 'Uzun oturum';
+  if (minutes === 180) return 'Yoğun çalışma';
   return undefined;
 }
 
