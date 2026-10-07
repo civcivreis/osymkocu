@@ -7,29 +7,29 @@ import { useAuthStore } from '@/src/stores/authStore';
 
 export function HostGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const initialized = useAuthStore((s) => s.initialized);
   const session = useAuthStore((s) => s.session);
   const profile = useAuthStore((s) => s.profile);
   const onboarded = Boolean(profile?.onboarding_completed_at);
+  const path = pathname || '/';
 
   useEffect(() => {
+    if (!initialized) return;
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-    if (shouldBlockAdminOnAppHost() && pathname.startsWith('/admin')) {
-      window.location.href = adminPanelUrl(pathname + window.location.search);
+    if (shouldBlockAdminOnAppHost() && path.startsWith('/admin')) {
+      window.location.href = adminPanelUrl(path + window.location.search);
     }
-  }, [pathname]);
+  }, [initialized, path]);
 
-  if (Platform.OS === 'web' && shouldBlockAdminOnAppHost() && pathname.startsWith('/admin')) {
+  if (Platform.OS !== 'web' || !initialized) {
+    return <>{children}</>;
+  }
+
+  if (shouldBlockAdminOnAppHost() && path.startsWith('/admin')) {
     return null;
   }
 
-  if (
-    Platform.OS === 'web' &&
-    isAdminHost() &&
-    !isLocalWebHost() &&
-    session &&
-    onboarded &&
-    !pathname.startsWith('/admin')
-  ) {
+  if (isAdminHost() && !isLocalWebHost() && session && onboarded && !path.startsWith('/admin')) {
     return <Redirect href={'/admin' as never} />;
   }
 

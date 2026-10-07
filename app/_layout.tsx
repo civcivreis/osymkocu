@@ -9,16 +9,33 @@ import { useAuthStore } from '@/src/stores/authStore';
 
 export { ErrorBoundary } from 'expo-router';
 
+/** Fallback must be (auth), never a public legal page. */
+export const unstable_settings = {
+  anchor: '(auth)',
+  initialRouteName: '(auth)',
+};
+
+function startupGroup(session: boolean, onboarded: boolean) {
+  if (session && onboarded) return '(app)';
+  if (session) return '(onboarding)';
+  return '(auth)';
+}
+
+function StartupLoading() {
+  const { colors } = useAppTheme();
+  return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+}
+
 function RootNavigator() {
   const configured = useAuthStore((s) => s.configured);
   const initialized = useAuthStore((s) => s.initialized);
   const session = useAuthStore((s) => s.session);
   const profile = useAuthStore((s) => s.profile);
   const onboarded = Boolean(profile?.onboarding_completed_at);
-  const { colors } = useAppTheme();
+  const hasSession = Boolean(session);
 
   if (!initialized) {
-    return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+    return <StartupLoading />;
   }
 
   if (!configured) {
@@ -26,20 +43,22 @@ function RootNavigator() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
-      <Stack.Screen name="gizlilik" />
-      <Stack.Screen name="kullanim-kosullari" />
-      <Stack.Screen name="iletisim" />
-      <Stack.Protected guard={!!session && onboarded}>
+    <Stack
+      initialRouteName={startupGroup(hasSession, onboarded)}
+      screenOptions={{ headerShown: false, animation: 'fade' }}>
+      <Stack.Protected guard={!hasSession}>
+        <Stack.Screen name="(auth)" />
+      </Stack.Protected>
+      <Stack.Protected guard={hasSession && !onboarded}>
+        <Stack.Screen name="(onboarding)" />
+      </Stack.Protected>
+      <Stack.Protected guard={hasSession && onboarded}>
         <Stack.Screen name="(app)" />
         <Stack.Screen name="admin" />
       </Stack.Protected>
-      <Stack.Protected guard={!!session && !onboarded}>
-        <Stack.Screen name="(onboarding)" />
-      </Stack.Protected>
-      <Stack.Protected guard={!session}>
-        <Stack.Screen name="(auth)" />
-      </Stack.Protected>
+      <Stack.Screen name="gizlilik" />
+      <Stack.Screen name="kullanim-kosullari" />
+      <Stack.Screen name="iletisim" />
     </Stack>
   );
 }
