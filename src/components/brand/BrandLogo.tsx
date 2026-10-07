@@ -5,14 +5,14 @@ import { APP_NAME } from '@/src/lib/brand';
 const MARK = require('@/assets/brand/brand-mark.png');
 const LOGO = require('@/assets/brand/brand-logo.png');
 
-/** Native pixel size of brand-logo.png */
-const LOGO_ASPECT = 2172 / 724;
+/** Cropped brand-logo.png (2138 × 518). */
+const LOGO_ASPECT = 2138 / 518;
 
 type Props = {
   variant?: 'full' | 'mark';
   /** Square edge for `mark`. */
   size?: number;
-  /** Horizontal width for `full`. Defaults: 168 desktop / 132 mobile. */
+  /** Horizontal width for `full`. Defaults: 232 desktop / 188 mobile. */
   width?: number;
   style?: StyleProp<ImageStyle>;
 };
@@ -32,7 +32,7 @@ export function BrandLogo({ variant = 'full', size, width, style }: Props) {
     );
   }
 
-  const logoWidth = width ?? (viewport >= 768 ? 168 : 132);
+  const logoWidth = width ?? (viewport >= 768 ? 232 : 188);
   const logoHeight = Math.round(logoWidth / LOGO_ASPECT);
 
   return (

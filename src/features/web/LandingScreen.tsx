@@ -357,7 +357,7 @@ export function LandingScreen() {
 
         <View style={{ backgroundColor: T.cream, paddingBottom: 32, paddingTop: 8 }}>
           <LandingContainer width={width}>
-            <BrandLogo variant="full" width={tablet ? 160 : 132} />
+            <BrandLogo variant="full" width={tablet ? 220 : 188} />
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 12 }}>
               <Link href="/gizlilik" style={{ color: T.muted, fontWeight: '600' }}>
                 Gizlilik

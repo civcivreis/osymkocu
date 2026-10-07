@@ -124,7 +124,7 @@ export function VerifyEmailScreen() {
       <SeoHead title={`E-postanı doğrula | ${APP_NAME}`} path="/verify-email" index={false} />
       <View style={{ gap: spacing.xl, width: '100%', maxWidth: 440, alignSelf: 'center' }}>
         <View style={{ alignItems: 'center', gap: spacing.md }}>
-          <BrandLogo variant="full" width={180} />
+          <BrandLogo variant="full" width={220} />
           <AppText variant="display" style={{ textAlign: 'center' }}>
             {expired ? 'Bağlantı geçersiz' : 'E-postanı doğrula'}
           </AppText>

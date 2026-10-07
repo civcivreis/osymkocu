@@ -128,7 +128,7 @@ export function WebAppShell({ children }: { children: ReactNode }) {
             paddingBottom: 16,
           }}>
           <Pressable onPress={() => go('Ana Sayfa', '/home', pathname)} style={{ paddingHorizontal: compactSidebar ? 4 : 8, paddingBottom: 20 }}>
-            <BrandLogo variant={compactSidebar ? 'mark' : 'full'} size={36} width={168} />
+            <BrandLogo variant={compactSidebar ? 'mark' : 'full'} size={36} width={200} />
           </Pressable>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 2 }} showsVerticalScrollIndicator={false}>
             {main.map((item) => navItem(item))}
