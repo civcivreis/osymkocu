@@ -17,11 +17,21 @@ type Size = 'sm' | 'md' | 'lg';
 type Props = PressableProps & {
   label: string;
   loading?: boolean;
+  loadingLabel?: string;
   variant?: Variant;
   size?: Size;
 };
 
-export function Button({ label, loading, variant = 'primary', size = 'md', disabled, onPress, ...rest }: Props) {
+export function Button({
+  label,
+  loading,
+  loadingLabel,
+  variant = 'primary',
+  size = 'md',
+  disabled,
+  onPress,
+  ...rest
+}: Props) {
   const { colors, radius } = useAppTheme();
 
   const background = {
@@ -58,7 +68,14 @@ export function Button({ label, loading, variant = 'primary', size = 'md', disab
       {...rest}>
       <View style={styles.row}>
         {loading ? (
-          <ActivityIndicator color={variant === 'secondary' || variant === 'ghost' ? colors.text : colors.accentText} />
+          <>
+            <ActivityIndicator color={variant === 'secondary' || variant === 'ghost' ? colors.text : colors.accentText} />
+            {loadingLabel ? (
+              <AppText variant={size === 'sm' ? 'label' : 'subtitle'} tone={textTone}>
+                {loadingLabel}
+              </AppText>
+            ) : null}
+          </>
         ) : (
           <AppText variant={size === 'sm' ? 'label' : 'subtitle'} tone={textTone}>
             {label}

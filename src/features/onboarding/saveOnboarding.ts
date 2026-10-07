@@ -1,7 +1,5 @@
-import { fetchAuthExtras } from '@/src/features/auth/useAuth';
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
 import { getSupabase } from '@/src/lib/supabase/client';
-import { useAuthStore } from '@/src/stores/authStore';
 
 import type { OnboardingValues } from './schema';
 
@@ -22,23 +20,32 @@ export async function saveOnboarding(values: OnboardingValues) {
   });
 
   if (error) {
+    if (__DEV__) console.warn('[onboarding]', error.message, error.code);
     throw new Error(mapOnboardingError(error.message));
   }
 
-  const userId = useAuthStore.getState().session?.user.id;
-  if (userId) {
-    await fetchAuthExtras(userId);
-  }
   AnalyticsProvider.track('onboarding_completed', { examId: values.examId });
   AnalyticsProvider.track('exam_selected', { examId: values.examId });
 }
 
 function mapOnboardingError(message: string): string {
+  const lower = message.toLowerCase();
   if (message.includes('INVALID_EXAM_DATE')) return 'Sınav tarihi bugünden önce olamaz.';
   if (message.includes('INVALID_MINUTES')) return 'Günlük süre 20-360 dakika arasında olmalı.';
   if (message.includes('EXAM_NOT_FOUND')) return 'Sınav bulunamadı. SQL seed çalışmış mı kontrol et.';
-  if (message.toLowerCase().includes('could not find the function')) {
-    return 'save_onboarding güncel değil. 0005_social.sql içeriğini SQL Editor’da çalıştır.';
+  if (message.includes('UNAUTHORIZED') || message.includes('PROFILE_MISSING')) {
+    return 'Oturum doğrulanamadı. Tekrar giriş yapıp dene.';
   }
-  return message;
+  if (lower.includes('could not find the function')) {
+    return 'Program kaydı şu an kullanılamıyor. Lütfen tekrar dene.';
+  }
+  if (
+    lower.includes('foreign key') ||
+    lower.includes('violates') ||
+    lower.includes('user_exam_settings') ||
+    message.includes('23503')
+  ) {
+    return 'Program oluşturulurken bir sorun oluştu. Lütfen tekrar dene.';
+  }
+  return 'Program oluşturulurken bir sorun oluştu. Lütfen tekrar dene.';
 }
