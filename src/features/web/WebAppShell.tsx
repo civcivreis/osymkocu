@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/src/components/ui/AppText';
 import { AppTopBar } from '@/src/components/ui/AppTopBar';
 import { useAuthActions } from '@/src/features/auth/useAuth';
-import { BrandLogo } from '@/src/features/web/landing/BrandLogo';
+import { BrandLogo } from '@/src/components/brand/BrandLogo';
 import { APP_NAV, isAppNavActive, MOBILE_TAB_HREFS } from '@/src/features/web/appNav';
 import { inboxUnreadTotal, useInbox } from '@/src/features/social/useInbox';
 import { useNotifications } from '@/src/features/study/useStudyTogether';
@@ -128,7 +128,7 @@ export function WebAppShell({ children }: { children: ReactNode }) {
             paddingBottom: 16,
           }}>
           <Pressable onPress={() => go('Ana Sayfa', '/home', pathname)} style={{ paddingHorizontal: compactSidebar ? 4 : 8, paddingBottom: 20 }}>
-            <BrandLogo variant={compactSidebar ? 'mark' : 'full'} size={compactSidebar ? 32 : 28} />
+            <BrandLogo variant={compactSidebar ? 'mark' : 'full'} size={36} width={168} />
           </Pressable>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 2 }} showsVerticalScrollIndicator={false}>
             {main.map((item) => navItem(item))}

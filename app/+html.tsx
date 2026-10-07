@@ -17,9 +17,11 @@ export default function Root({ children }: { children: ReactNode }) {
         />
         <link rel="canonical" href={APP_URL} />
         <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32" />
+        <link rel="icon" href="/favicon-48.png" type="image/png" sizes="48x48" />
         <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
+        <link rel="icon" href="/icon-512.png" type="image/png" sizes="512x512" />
         <link rel="shortcut icon" href="/favicon.ico" />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#C45C26" />
         <meta name="mobile-web-app-capable" content="yes" />
@@ -30,6 +32,7 @@ export default function Root({ children }: { children: ReactNode }) {
         <meta property="og:url" content={APP_URL} />
         <meta property="og:type" content="website" />
         <meta property="og:locale" content="tr_TR" />
+        <meta property="og:image" content={`${APP_URL}/icon-512.png`} />
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: responsiveBackground }} />
       </head>

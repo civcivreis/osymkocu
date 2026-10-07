@@ -32,6 +32,9 @@ export function SeoHead({
       <meta property="og:type" content="website" />
       <meta property="og:site_name" content={APP_NAME} />
       <meta property="og:locale" content="tr_TR" />
+      <meta property="og:image" content={`${APP_URL}/icon-512.png`} />
+      <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32" />
+      <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
     </Head>
   );
 }

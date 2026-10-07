@@ -7,7 +7,7 @@ import { Button } from '@/src/components/ui/Button';
 import { Screen } from '@/src/components/ui/Screen';
 import { resendSignupEmail, useAuthActions } from '@/src/features/auth/useAuth';
 import { SeoHead } from '@/src/features/seo/SeoHead';
-import { BrandLogo } from '@/src/features/web/landing/BrandLogo';
+import { BrandLogo } from '@/src/components/brand/BrandLogo';
 import {
   clearPendingVerifyEmail,
   isEmailVerified,
@@ -124,7 +124,7 @@ export function VerifyEmailScreen() {
       <SeoHead title={`E-postanı doğrula | ${APP_NAME}`} path="/verify-email" index={false} />
       <View style={{ gap: spacing.xl, width: '100%', maxWidth: 440, alignSelf: 'center' }}>
         <View style={{ alignItems: 'center', gap: spacing.md }}>
-          <BrandLogo size={40} />
+          <BrandLogo variant="full" width={180} />
           <AppText variant="display" style={{ textAlign: 'center' }}>
             {expired ? 'Bağlantı geçersiz' : 'E-postanı doğrula'}
           </AppText>

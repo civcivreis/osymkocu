@@ -27,7 +27,7 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/icon.png",
+      "favicon": "./assets/brand/brand-mark.png",
       "name": "ÖSYM Koçu",
       "shortName": "ÖSYM Koçu",
       "lang": "tr",

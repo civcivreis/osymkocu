@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useHydrated } from '@/src/lib/layout/useHydrated';
 
 import { SeoHead } from '@/src/features/seo/SeoHead';
-import { BrandLogo } from '@/src/features/web/landing/BrandLogo';
+import { BrandLogo } from '@/src/components/brand/BrandLogo';
 import { LandingContainer } from '@/src/features/web/landing/LandingContainer';
 import {
   CoachPreview,
@@ -179,8 +179,10 @@ export function LandingScreen() {
       <SeoHead path="/" description={SEO_DESCRIPTION} />
       <View style={{ backgroundColor: T.cream, borderBottomWidth: 1, borderBottomColor: T.line }}>
         <LandingContainer width={width}>
-          <View style={{ minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-            <BrandLogo />
+          <View style={{ minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <View style={{ flexShrink: 0, justifyContent: 'center' }}>
+              <BrandLogo variant="full" />
+            </View>
             {tablet ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, flexShrink: 1 }}>
                 {navLinks}
@@ -355,7 +357,7 @@ export function LandingScreen() {
 
         <View style={{ backgroundColor: T.cream, paddingBottom: 32, paddingTop: 8 }}>
           <LandingContainer width={width}>
-            <BrandLogo />
+            <BrandLogo variant="full" width={tablet ? 160 : 132} />
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 12 }}>
               <Link href="/gizlilik" style={{ color: T.muted, fontWeight: '600' }}>
                 Gizlilik
