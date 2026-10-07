@@ -57,8 +57,9 @@ function RootNavigator() {
         <Stack.Protected guard={hasSession && !onboarded}>
           <Stack.Screen name="(onboarding)" />
         </Stack.Protected>
+        {/* Always registered so /study etc. exist. Guard lives in (app)/_layout — never fall through to /gizlilik. */}
+        <Stack.Screen name="(app)" />
         <Stack.Protected guard={hasSession && onboarded}>
-          <Stack.Screen name="(app)" />
           <Stack.Screen name="admin" />
         </Stack.Protected>
         <Stack.Screen name="gizlilik" />

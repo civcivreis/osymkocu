@@ -1,12 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  Keyboard,
-  Platform,
-  Pressable,
-  useWindowDimensions,
-  View,
+    Animated,
+    Keyboard,
+    Platform,
+    Pressable,
+    useWindowDimensions,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -66,7 +66,7 @@ export function CoachOverlay({ bottomOffset }: { bottomOffset: number }) {
   const gutter = COACH_PANEL_GUTTER;
   const available = width - gutter * 2;
   const wide = available > COACH_PANEL_MAX_WIDTH;
-  const panelWidth = isDesktop ? Math.min(420, Math.round(width * 0.36)) : Math.min(available, COACH_PANEL_MAX_WIDTH);
+  const panelWidth = isDesktop ? 400 : Math.min(available, COACH_PANEL_MAX_WIDTH);
   const dockedLeft = isDesktop ? false : !wide || side === 'left';
 
   return (
@@ -146,7 +146,7 @@ export function CoachOverlay({ bottomOffset }: { bottomOffset: number }) {
             backgroundColor: colors.surface,
           }}>
           <AppText variant="subtitle" style={{ flex: 1, marginLeft: 8 }}>
-            Koç ✦
+            AI Koç
           </AppText>
           <Pressable
             onPress={() => setOpen(false)}

@@ -5,10 +5,10 @@ import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 type Variant = 'display' | 'title' | 'subtitle' | 'body' | 'caption' | 'label';
 
 const styles: Record<Variant, TextStyle> = {
-  display: { fontSize: 28, fontWeight: '700', letterSpacing: -0.6 },
-  title: { fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
-  subtitle: { fontSize: 17, fontWeight: '600' },
-  body: { fontSize: 16, fontWeight: '400', lineHeight: 24 },
+  display: { fontSize: 30, fontWeight: '800', letterSpacing: -0.6 },
+  title: { fontSize: 20, fontWeight: '700', letterSpacing: -0.3 },
+  subtitle: { fontSize: 16, fontWeight: '700' },
+  body: { fontSize: 15, fontWeight: '400', lineHeight: 22 },
   caption: { fontSize: 13, fontWeight: '400', lineHeight: 18 },
   label: { fontSize: 13, fontWeight: '600', letterSpacing: 0.2 },
 };

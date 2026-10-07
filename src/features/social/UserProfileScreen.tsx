@@ -1,35 +1,36 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
 
 import { ActionSheet } from '@/src/components/ui/ActionSheet';
 import { AppText } from '@/src/components/ui/AppText';
 import { Card } from '@/src/components/ui/Card';
+import { PageHeader } from '@/src/components/ui/PageHeader';
 import { ProgressBar } from '@/src/components/ui/ProgressBar';
 import { Screen } from '@/src/components/ui/Screen';
+import { toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
+import { formatXp, getLevelProgress } from '@/src/features/progress/xp';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
 import { EditPostSheet, ReportSheet, StudyInviteSheet } from '@/src/features/social/ReportSheet';
 import { postedAt, taggedName } from '@/src/features/social/identity';
 import {
-  followLabel,
-  formatStudyDuration,
-  useFollowUser,
-  useProfileCard,
-  useUnfollowUser,
-  type ProfileCard,
+    followLabel,
+    formatStudyDuration,
+    useFollowUser,
+    useProfileCard,
+    useUnfollowUser,
+    type ProfileCard,
 } from '@/src/features/social/useFollows';
 import { useBlockUser, useDeleteOwnPost, useReportUser, useUpdateOwnPost } from '@/src/features/social/useSocial';
 import { useStudySubjects, useSubjectTopics } from '@/src/features/study/usePractice';
-import { formatXp, getLevelProgress } from '@/src/features/progress/xp';
-import { useSystemExamProfileStats } from '@/src/features/system-exams/useSystemExams';
 import { useRequestStudy } from '@/src/features/study/useStudyTogether';
-import { getSupabase } from '@/src/lib/supabase/client';
+import { useSystemExamProfileStats } from '@/src/features/system-exams/useSystemExams';
 import { isBlockedRoomMessage } from '@/src/lib/moderation/profanity';
+import { getSupabase } from '@/src/lib/supabase/client';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 import { useAuthStore } from '@/src/stores/authStore';
-import { toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
 
 function focusLine(card: ProfileCard) {
   const exam = card.exam_name ?? (card.exam_year ? `${card.exam_year}` : null);
@@ -150,6 +151,7 @@ export function UserProfileScreen({
 
   const inner = (
     <View style={{ gap: spacing.md, paddingBottom: embedded ? 8 : 20 }}>
+      <PageHeader title="Profil" />
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {embedded ? null : (
           <Pressable onPress={() => router.back()} hitSlop={12}>
@@ -159,7 +161,16 @@ export function UserProfileScreen({
         <AppText variant="subtitle" style={{ flex: 1, textAlign: embedded ? 'left' : 'center' }}>
           Profil
         </AppText>
-        {mine ? <View style={{ width: 26 }} /> : (
+        {mine ? (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable onPress={() => router.push('/edit-profile')} hitSlop={8}>
+              <AppText variant="label" tone="accent">Düzenle</AppText>
+            </Pressable>
+            <Pressable onPress={() => router.push('/settings')} hitSlop={8}>
+              <AppText variant="label" tone="muted">Ayarlar</AppText>
+            </Pressable>
+          </View>
+        ) : (
           <Pressable onPress={onMenu} hitSlop={10}>
             <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
           </Pressable>

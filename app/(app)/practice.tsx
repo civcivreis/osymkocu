@@ -9,10 +9,10 @@ import { Card } from '@/src/components/ui/Card';
 import { RemoteImage } from '@/src/components/ui/RemoteImage';
 import { Screen } from '@/src/components/ui/Screen';
 import { ChatImageViewer } from '@/src/features/social/ChatImage';
+import { usePairChatStore } from '@/src/features/study/pairChatStore';
 import { QuestionPalette } from '@/src/features/study/QuestionPalette';
 import { sortedChoices, useCompletePracticeSet, usePracticeQuestions, useSubmitAttempt } from '@/src/features/study/usePractice';
 import { useStudyPresence } from '@/src/features/study/useStudyPresence';
-import { usePairChatStore } from '@/src/features/study/pairChatStore';
 import { useCoachStore } from '@/src/features/teacher/coachStore';
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
 import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
@@ -293,10 +293,10 @@ export default function PracticeScreen() {
             <View style={{ width: 160, minHeight: 0 }}>
               <ScrollView style={{ flex: 1 }}>{palette}</ScrollView>
             </View>
-            <ScrollView style={{ flex: 1, minWidth: 0 }} contentContainerStyle={{ gap: 12, paddingBottom: 32 }}>
+            <ScrollView style={{ flex: 1, minWidth: 0 }} contentContainerStyle={{ gap: 12, paddingBottom: 32, maxWidth: 720, width: '100%', alignSelf: 'center' }}>
               {questionBody}
             </ScrollView>
-            <View style={{ width: 220 }}>{sideInfo}</View>
+            <View style={{ width: 240 }}>{sideInfo}</View>
           </View>
         ) : question ? (
           <>

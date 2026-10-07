@@ -1,25 +1,27 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { useState, type ComponentProps } from 'react';
+import { Pressable, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
 import { Button } from '@/src/components/ui/Button';
 import { Card } from '@/src/components/ui/Card';
+import { EmptyState } from '@/src/components/ui/EmptyState';
+import { PageHeader } from '@/src/components/ui/PageHeader';
+import { toastError } from '@/src/components/ui/feedbackStore';
 import { Screen } from '@/src/components/ui/Screen';
 import { SegmentedTabs } from '@/src/components/ui/SegmentedTabs';
 import { taggedName } from '@/src/features/social/identity';
+import { usePairChatStore } from '@/src/features/study/pairChatStore';
 import { StudyMatchSheet } from '@/src/features/study/StudyMatchSheet';
 import { respondMatchOffer } from '@/src/features/study/useStudyPresence';
-import { usePairChatStore } from '@/src/features/study/pairChatStore';
 import {
-  type AppNotification,
-  useNotifications,
-  useRespondStudy,
+    type AppNotification,
+    useNotifications,
+    useRespondStudy,
 } from '@/src/features/study/useStudyTogether';
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
-import { toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
 
 function isMatchKind(kind: AppNotification['kind']) {
   return kind === 'study_match_found' || kind === 'study_offer';
@@ -34,6 +36,15 @@ function isExpiredMatch(item: AppNotification) {
   if (!expires) return false;
   const at = Date.parse(expires);
   return Number.isFinite(at) && at <= Date.now();
+}
+
+function iconFor(kind: AppNotification['kind']): ComponentProps<typeof Ionicons>['name'] {
+  if (kind === 'follow' || kind === 'new_follower') return 'person-add-outline';
+  if (kind === 'message') return 'chatbubble-outline';
+  if (kind === 'post_like' || kind === 'post_comment') return 'heart-outline';
+  if (kind.includes('exam')) return 'school-outline';
+  if (kind.includes('match') || kind.includes('study')) return 'people-outline';
+  return 'notifications-outline';
 }
 
 function titleFor(item: AppNotification) {
@@ -117,12 +128,7 @@ export function NotificationsScreen() {
   return (
     <Screen scroll>
       <View style={{ gap: spacing.lg }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Pressable onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="chevron-back" size={26} color={colors.text} />
-          </Pressable>
-          <AppText variant="subtitle">Bildirimler</AppText>
-        </View>
+        <PageHeader title="Bildirimler" />
         <SegmentedTabs
           value={tab}
           onChange={setTab}
@@ -142,7 +148,7 @@ export function NotificationsScreen() {
             (isMatchKind(item.kind) && item.payload.offer_id && !matchExpired) ||
             (isManualStudyKind(item.kind) && invite);
           return (
-            <Card key={item.id}>
+            <Card key={item.id} style={!item.read_at ? { backgroundColor: colors.accentMuted } : undefined}>
               <View style={{ gap: spacing.sm }}>
                 <Pressable
                   onPress={() => {
@@ -156,7 +162,10 @@ export function NotificationsScreen() {
                       return;
                     }
                     openNotification(item);
-                  }}>
+                  }}
+                  style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+                  <Ionicons name={iconFor(item.kind)} size={20} color={colors.accent} />
+                  <View style={{ flex: 1, gap: 4 }}>
                   <AppText>{titleFor(item)}</AppText>
                   {matchExpired ? (
                     <AppText variant="caption" tone="muted">
@@ -168,6 +177,7 @@ export function NotificationsScreen() {
                       Yeni
                     </AppText>
                   )}
+                  </View>
                 </Pressable>
                 {item.kind === 'race_invite' && invite ? (
                   <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -208,7 +218,10 @@ export function NotificationsScreen() {
         })}
 
         {!notifications.isLoading && rows.length === 0 ? (
-          <AppText tone="muted">{tab === 'unread' ? 'Okunmamış bildirim yok.' : 'Bildirim yok.'}</AppText>
+          <EmptyState
+            icon="notifications-outline"
+            title={tab === 'unread' ? 'Okunmamış bildirim yok.' : 'Bildirim yok.'}
+          />
         ) : null}
       </View>
       {sheet && (isMatchKind(sheet.kind) || isManualStudyKind(sheet.kind)) ? (

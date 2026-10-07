@@ -15,7 +15,7 @@ import { TEACHER_WELCOME } from '@/src/features/teacher/welcome';
 import { getSupabase } from '@/src/lib/supabase/client';
 import { useAuthStore } from '@/src/stores/authStore';
 
-const TAB_PATHS = new Set(['/', '/study', '/social', '/messages', '/profile']);
+const TAB_PATHS = new Set(['/home', '/study', '/social', '/messages', '/profile']);
 
 export function CoachHost() {
   const insets = useSafeAreaInsets();

@@ -6,6 +6,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { AppText } from '@/src/components/ui/AppText';
 import { Button } from '@/src/components/ui/Button';
 import { Card } from '@/src/components/ui/Card';
+import { EmptyState } from '@/src/components/ui/EmptyState';
 import { Screen } from '@/src/components/ui/Screen';
 import { SegmentedTabs } from '@/src/components/ui/SegmentedTabs';
 import { TextField } from '@/src/components/ui/TextField';
@@ -102,9 +103,13 @@ export function SocialScreen() {
           <ScrollView style={{ flex: 1, minWidth: 0 }} contentContainerStyle={{ gap: 12, paddingBottom: 32, maxWidth: 680, width: '100%', alignSelf: 'center' }}>
             <StoriesRail />
             <StatusComposer />
-            {(posts.data ?? []).map((post) => (
-              <FeedPostCard key={post.id} post={post} me={me} />
-            ))}
+            {(posts.data ?? []).length === 0 ? (
+              <EmptyState icon="chatbubble-ellipses-outline" title="Henüz paylaşım yok." body="İlk durumu sen yaz." />
+            ) : (
+              (posts.data ?? []).map((post) => (
+                <FeedPostCard key={post.id} post={post} me={me} />
+              ))
+            )}
           </ScrollView>
           {isDesktop ? (
             <ScrollView style={{ width: 280 }} contentContainerStyle={{ gap: 12, paddingBottom: 24 }}>

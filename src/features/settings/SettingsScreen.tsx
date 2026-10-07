@@ -6,16 +6,18 @@ import { Platform, Pressable, Switch, TextInput, View } from 'react-native';
 import { AppText } from '@/src/components/ui/AppText';
 import { Button } from '@/src/components/ui/Button';
 import { Card } from '@/src/components/ui/Card';
+import { PageHeader } from '@/src/components/ui/PageHeader';
+import { askConfirm, toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
 import { Screen } from '@/src/components/ui/Screen';
 import { useAuthActions } from '@/src/features/auth/useAuth';
 import { useSetExamReminders } from '@/src/features/system-exams/useSystemExams';
 import { useCoachStore } from '@/src/features/teacher/coachStore';
 import { getSupabase } from '@/src/lib/supabase/client';
-import { disableWebPush, enableWebPush, isWebPushSupported } from '@/src/lib/webPush';
-import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
-import { useAuthStore } from '@/src/stores/authStore';
 import type { Profile, ThemePreference } from '@/src/lib/supabase/types';
-import { askConfirm, toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
+import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
+import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
+import { disableWebPush, enableWebPush, isWebPushSupported } from '@/src/lib/webPush';
+import { useAuthStore } from '@/src/stores/authStore';
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: 'system', label: 'Sistem' },
@@ -69,8 +71,19 @@ function Row({
   );
 }
 
+const SETTING_NAVS = [
+  { id: 'account', label: 'Hesap' },
+  { id: 'appearance', label: 'Görünüm' },
+  { id: 'notifications', label: 'Bildirimler' },
+  { id: 'matching', label: 'Çalışma Eşleşmesi' },
+  { id: 'exam', label: 'Sınav Tercihleri' },
+  { id: 'privacy', label: 'Gizlilik ve Güvenlik' },
+] as const;
+
 export function SettingsScreen() {
   const { colors, spacing, radius, preference, setPreference } = useAppTheme();
+  const { isDesktop } = useBreakpoint();
+  const [nav, setNav] = useState<(typeof SETTING_NAVS)[number]['id']>('account');
   const { signOut, deleteAccount } = useAuthActions();
   const profile = useAuthStore((s) => s.profile);
   const session = useAuthStore((s) => s.session);
@@ -139,13 +152,39 @@ export function SettingsScreen() {
   return (
     <Screen scroll>
       <View style={{ gap: spacing.md, paddingBottom: 24 }}>
+        <PageHeader title="Ayarlar" />
+        {isDesktop ? null : (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Pressable onPress={() => router.back()} hitSlop={12}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </Pressable>
           <AppText variant="subtitle">Ayarlar</AppText>
         </View>
+        )}
 
+        <View style={{ flexDirection: isDesktop ? 'row' : 'column', gap: 24, alignItems: 'flex-start' }}>
+        {isDesktop ? (
+          <View style={{ width: 220, gap: 4 }}>
+            {SETTING_NAVS.map((item) => (
+              <Pressable
+                key={item.id}
+                onPress={() => setNav(item.id)}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  borderRadius: radius.md,
+                  backgroundColor: nav === item.id ? colors.accentMuted : 'transparent',
+                }}>
+                <AppText tone={nav === item.id ? 'accent' : 'muted'} style={{ fontWeight: '600' }}>
+                  {item.label}
+                </AppText>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+        <View style={{ flex: 1, gap: spacing.md, width: '100%' }}>
+
+        {!isDesktop || nav === 'account' ? (
         <Section title="HESAP">
           <Card style={{ padding: 0, overflow: 'hidden' }}>
             <Row label="E-posta" value={email} />
@@ -195,8 +234,10 @@ export function SettingsScreen() {
             <Row label="Gizlilik" onPress={() => router.push('/privacy')} />
           </Card>
         </Section>
+        ) : null}
 
-        <Section title="UYGULAMA">
+        {!isDesktop || nav === 'appearance' ? (
+        <Section title="GÖRÜNÜM">
           <Card>
             <AppText variant="subtitle">Tema</AppText>
             <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: 10 }}>
@@ -223,6 +264,11 @@ export function SettingsScreen() {
               })}
             </View>
           </Card>
+        </Section>
+        ) : null}
+
+        {!isDesktop || nav === 'notifications' ? (
+        <Section title="BİLDİRİMLER">
           <Card>
             <Row label="Bildirimler" onPress={() => router.push('/notifications')} />
           </Card>
@@ -286,6 +332,11 @@ export function SettingsScreen() {
               </View>
             </Card>
           ) : null}
+        </Section>
+        ) : null}
+
+        {!isDesktop || nav === 'matching' ? (
+        <Section title="ÇALIŞMA EŞLEŞMESİ">
           <Card>
             <View style={{ gap: spacing.md }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
@@ -361,8 +412,11 @@ export function SettingsScreen() {
             </View>
           </Card>
         </Section>
+        ) : null}
 
-        <Section title="SINAV">
+        {!isDesktop || nav === 'exam' ? (
+        <>
+        <Section title="SINAV TERCİHLERİ">
           <Card style={{ padding: 0, overflow: 'hidden' }}>
             <Row
               label="Sınav türü"
@@ -385,8 +439,11 @@ export function SettingsScreen() {
             </AppText>
           </Card>
         </Section>
+        </>
+        ) : null}
 
-        <Section title="HESAP İŞLEMLERİ">
+        {!isDesktop || nav === 'privacy' ? (
+        <Section title="GİZLİLİK VE GÜVENLİK">
           <Button label="Çıkış yap" variant="danger" loading={busy} onPress={() => void onSignOut()} />
           <Button
             label="Hesabı sil"
@@ -405,6 +462,9 @@ export function SettingsScreen() {
             }
           />
         </Section>
+        ) : null}
+        </View>
+        </View>
       </View>
     </Screen>
   );

@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
+import { PageHeader } from '@/src/components/ui/PageHeader';
 import { ProgressBar } from '@/src/components/ui/ProgressBar';
 import { Screen } from '@/src/components/ui/Screen';
 import { SegmentedTabs } from '@/src/components/ui/SegmentedTabs';
@@ -93,14 +94,12 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
   }, [query, subjects]);
 
   return (
-    <Screen scroll safeEdges={['top']}>
+    <Screen scroll>
       <View style={{ gap: 16, paddingBottom: 88 }}>
-        <View style={{ gap: 4 }}>
-          <AppText variant="title">Dersler</AppText>
-          <AppText variant="caption" tone="muted">
-            {tab === 'lesson' ? 'Konuyu dinle, kaldığın yerden devam et.' : 'Hızlı, konu veya karışık test çöz.'}
-          </AppText>
-        </View>
+        <PageHeader
+          title="Dersler"
+          subtitle={tab === 'lesson' ? 'Konuyu dinle, kaldığın yerden devam et.' : 'Hızlı, konu veya karışık test çöz.'}
+        />
 
         <SegmentedTabs
           value={tab}
@@ -205,119 +204,41 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
             ) : filtered.length === 0 ? (
               <AppText tone="muted">Eşleşen ders veya konu yok.</AppText>
             ) : isDesktop || isTablet ? (
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 16 }}>
-                <View style={{ width: isDesktop ? 260 : 220, gap: 8 }}>
-                  <AppText variant="caption" tone="muted">
-                    {examName ? `${examName}` : 'Sınav'}
-                  </AppText>
+              <View style={{ gap: 16 }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16 }}>
                   {filtered.map((subject) => (
-                    <Pressable
-                      key={subject.id}
-                      onPress={() => setSelectedId(subject.id)}
-                      style={{
-                        padding: 12,
-                        borderRadius: 16,
-                        backgroundColor: selected?.id === subject.id ? colors.accentMuted : colors.surface,
-                        gap: 4,
-                      }}>
-                      <AppText variant="subtitle" numberOfLines={1}>
-                        {subject.name}
-                      </AppText>
-                      <AppText variant="caption" tone="muted">
-                        %{Math.round(subject.completion * 100)} • {subject.topicCount} konu
-                      </AppText>
-                      <ProgressBar value={subject.completion} height={3} />
-                    </Pressable>
+                    <View key={subject.id} style={{ width: isDesktop ? '31.5%' : '47%', minWidth: 220, flexGrow: 1, maxWidth: isDesktop ? '33%' : '48%' }}>
+                      <SubjectCard
+                        name={subject.name}
+                        slug={subject.slug}
+                        topicCount={subject.topicCount}
+                        completion={subject.completion}
+                        onPress={() => setSelectedId(subject.id)}
+                      />
+                    </View>
                   ))}
                 </View>
-                <View style={{ flex: 1.2, gap: 10, minWidth: 0 }}>
-                  {selected ? (
-                    <>
-                      <AppText variant="title">{selected.name}</AppText>
-                      <AppText variant="caption" tone="muted">
-                        {selected.completedTopics}/{selected.topicCount} konu tamamlandı
-                      </AppText>
-                      <ProgressBar value={selected.completion} height={4} />
-                      {(selected.topics ?? []).map((topic) => (
-                        <Pressable
-                          key={topic.id}
-                          onPress={() => openLesson(selected.id, selected.name, topic.id)}
-                          style={{
-                            padding: 12,
-                            borderRadius: 14,
-                            backgroundColor: colors.surface,
-                            borderWidth: 1,
-                            borderColor: colors.border,
-                          }}>
-                          <AppText>{topic.name}</AppText>
-                        </Pressable>
-                      ))}
-                      {selected.questionCount > 0 ? (
-                        <Pressable
-                          onPress={() =>
-                            router.push({ pathname: '/practice', params: { subjectId: selected.id } })
-                          }
-                          style={{
-                            minHeight: 44,
-                            borderRadius: 14,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            backgroundColor: colors.accent,
-                          }}>
-                          <AppText variant="label" tone="inverse">
-                            Test başlat
-                          </AppText>
-                        </Pressable>
-                      ) : null}
-                    </>
-                  ) : (
-                    <AppText tone="muted">Soldan ders seç.</AppText>
-                  )}
-                </View>
-                {isDesktop ? (
-                  <View style={{ width: 280, gap: 12 }}>
-                    {insightsQuery.data?.weekly ? (
-                      <View style={{ backgroundColor: colors.surface, borderRadius: 20, padding: 14, gap: 6 }}>
-                        <AppText variant="label" tone="accent">
-                          Haftalık ilerleme
-                        </AppText>
-                        <AppText>
-                          {insightsQuery.data.weekly.questions} soru · {insightsQuery.data.weekly.activeDays} gün
-                        </AppText>
-                        {insightsQuery.data.weekly.accuracy != null ? (
-                          <AppText variant="caption" tone="muted">
-                            Başarı %{insightsQuery.data.weekly.accuracy}
-                          </AppText>
-                        ) : null}
-                      </View>
-                    ) : null}
-                    <PriorityTopics items={priorities} />
-                    {topics.length > 0 ? (
-                      <View style={{ backgroundColor: colors.surface, borderRadius: 20, padding: 14, gap: 12 }}>
-                        <AppText variant="label" tone="accent">
-                          Zayıf konular
-                        </AppText>
-                        {topics.slice(0, 5).map((row) => (
-                          <TopicAccuracyRow key={`${row.subjectId}-${row.topicId}`} row={row} />
-                        ))}
-                      </View>
-                    ) : null}
-                    {last ? (
-                      <View style={{ backgroundColor: colors.surface, borderRadius: 20, padding: 14, gap: 6 }}>
-                        <AppText variant="label" tone="accent">
-                          Son çalışma
-                        </AppText>
-                        <AppText>
-                          {last.subjectName}
-                          {last.topicName ? ` → ${last.topicName}` : ''}
-                        </AppText>
-                      </View>
-                    ) : null}
-                    <Pressable onPress={() => useCoachStore.getState().setOpen(true)}>
-                      <AppText variant="label" tone="accent">
-                        Koça sor →
-                      </AppText>
-                    </Pressable>
+                {selected ? (
+                  <View style={{ gap: 10 }}>
+                    <AppText variant="title">{selected.name}</AppText>
+                    <AppText variant="caption" tone="muted">
+                      {selected.completedTopics}/{selected.topicCount} konu tamamlandı
+                    </AppText>
+                    <ProgressBar value={selected.completion} height={4} />
+                    {(selected.topics ?? []).map((topic) => (
+                      <Pressable
+                        key={topic.id}
+                        onPress={() => openLesson(selected.id, selected.name, topic.id)}
+                        style={{
+                          padding: 12,
+                          borderRadius: 14,
+                          backgroundColor: colors.surface,
+                          borderWidth: 1,
+                          borderColor: colors.border,
+                        }}>
+                        <AppText>{topic.name}</AppText>
+                      </Pressable>
+                    ))}
                   </View>
                 ) : null}
               </View>
@@ -330,14 +251,15 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
                   rowGap: 16,
                 }}>
                 {filtered.map((subject) => (
-                  <SubjectCard
-                    key={subject.id}
-                    name={subject.name}
-                    slug={subject.slug}
-                    topicCount={subject.topicCount}
-                    completion={subject.completion}
-                    onPress={() => openLesson(subject.id, subject.name)}
-                  />
+                  <View key={subject.id} style={{ width: '48%' }}>
+                    <SubjectCard
+                      name={subject.name}
+                      slug={subject.slug}
+                      topicCount={subject.topicCount}
+                      completion={subject.completion}
+                      onPress={() => openLesson(subject.id, subject.name)}
+                    />
+                  </View>
                 ))}
               </View>
             )}
@@ -374,44 +296,56 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
               )}
             </View>
 
-            <View style={{ gap: 8 }}>
-              <TestEntry
-                icon="calendar-outline"
-                title="Sistem Sınavları"
-                hint="Merkezi TYT, AYT ve KPSS denemeleri"
-                onPress={() => router.push('/system-exams')}
-              />
-              <TestEntry
-                icon="flash-outline"
-                title="Hızlı Test"
-                hint="10 soruluk hızlı çalışma"
-                onPress={() => {
-                  if (practiceSubject) {
-                    router.push({ pathname: '/practice', params: { subjectId: practiceSubject.id } });
-                    return;
-                  }
-                  router.push('/study');
-                }}
-              />
-              <TestEntry
-                icon="list-outline"
-                title="Konu Testi"
-                hint="Ders ve konu seç"
-                onPress={() => {
-                  if (last) {
-                    openLesson(last.subjectId, last.subjectName, last.topicId);
-                    return;
-                  }
-                  const first = subjects[0];
-                  if (first) openLesson(first.id, first.name);
-                }}
-              />
-              <TestEntry
-                icon="shuffle-outline"
-                title="Karma Test"
-                hint="Farklı derslerden karışık test"
-                onPress={() => router.push({ pathname: '/practice', params: { mode: 'mixed' } })}
-              />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+              {[
+                {
+                  icon: 'flash-outline' as const,
+                  title: 'Hızlı Test',
+                  hint: '10 soruluk hızlı çalışma',
+                  onPress: () => {
+                    if (practiceSubject) {
+                      router.push({ pathname: '/practice', params: { subjectId: practiceSubject.id } });
+                      return;
+                    }
+                    router.push('/study');
+                  },
+                },
+                {
+                  icon: 'list-outline' as const,
+                  title: 'Konu Testi',
+                  hint: 'Ders ve konu seç',
+                  onPress: () => {
+                    if (last) {
+                      openLesson(last.subjectId, last.subjectName, last.topicId);
+                      return;
+                    }
+                    const first = subjects[0];
+                    if (first) openLesson(first.id, first.name);
+                  },
+                },
+                {
+                  icon: 'shuffle-outline' as const,
+                  title: 'Karma Test',
+                  hint: 'Farklı derslerden karışık test',
+                  onPress: () => router.push({ pathname: '/practice', params: { mode: 'mixed' } }),
+                },
+                {
+                  icon: 'school-outline' as const,
+                  title: 'Sistem Sınavı',
+                  hint: 'Merkezi TYT, AYT ve KPSS denemeleri',
+                  onPress: () => router.push('/system-exams'),
+                },
+                {
+                  icon: 'close-circle-outline' as const,
+                  title: 'Yanlışlar',
+                  hint: wrongCount > 0 ? `${wrongCount} açık yanlış` : 'Tekrar defteri',
+                  onPress: () => router.push('/notebook'),
+                },
+              ].map((item) => (
+                <View key={item.title} style={{ width: isDesktop ? '31.5%' : isTablet ? '47%' : '100%', flexGrow: 1, minWidth: isDesktop ? 220 : undefined }}>
+                  <TestEntry icon={item.icon} title={item.title} hint={item.hint} onPress={item.onPress} />
+                </View>
+              ))}
             </View>
 
             {wrongCount > 0 ? (
@@ -636,7 +570,7 @@ function SubjectCard({
     <Pressable
       onPress={onPress}
       style={{
-        width: '48%',
+        width: '100%',
         borderRadius: 22,
         padding: 12,
         gap: 8,

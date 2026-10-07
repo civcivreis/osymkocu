@@ -1,30 +1,34 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
+import { EmptyState } from '@/src/components/ui/EmptyState';
+import { PageHeader } from '@/src/components/ui/PageHeader';
+import { toastError } from '@/src/components/ui/feedbackStore';
 import { Screen } from '@/src/components/ui/Screen';
 import { SegmentedTabs } from '@/src/components/ui/SegmentedTabs';
 import {
-  countdownLabel,
-  examTypeLabel,
-  formatIstanbulDateTime,
-  type SystemExamListItem,
+    countdownLabel,
+    examTypeLabel,
+    formatIstanbulDateTime,
+    type SystemExamListItem,
 } from '@/src/features/system-exams/examTime';
 import {
-  mapExamError,
-  useStartSystemExam,
-  useSystemExams,
-  useToggleExamSignup,
+    mapExamError,
+    useStartSystemExam,
+    useSystemExams,
+    useToggleExamSignup,
 } from '@/src/features/system-exams/useSystemExams';
+import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
-import { toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
 
 type Tab = 'upcoming' | 'live' | 'past';
 
 export function SystemExamsScreen() {
   const { colors } = useAppTheme();
+  const { isDesktop } = useBreakpoint();
   const [tab, setTab] = useState<Tab>('upcoming');
   const list = useSystemExams(tab);
   const signup = useToggleExamSignup();
@@ -33,12 +37,15 @@ export function SystemExamsScreen() {
   return (
     <Screen scroll>
       <View style={{ gap: 14, paddingBottom: 28 }}>
+        <PageHeader title="Sistem Sınavları" />
+        {isDesktop ? null : (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Pressable onPress={() => router.back()} hitSlop={12}>
             <Ionicons name="chevron-back" size={26} color={colors.text} />
           </Pressable>
           <AppText variant="subtitle">Sistem Sınavları</AppText>
         </View>
+        )}
         <SegmentedTabs
           value={tab}
           onChange={setTab}
@@ -50,11 +57,12 @@ export function SystemExamsScreen() {
         />
         {list.isLoading ? <AppText tone="muted">Yükleniyor…</AppText> : null}
         {list.isError ? <AppText tone="danger">Sınav listesi alınamadı. 0031 SQL’ini çalıştır.</AppText> : null}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16 }}>
         {(list.data ?? [])
           .filter((exam) => (tab === 'past' ? Boolean(exam.attempt_id) : true))
           .map((exam) => (
+          <View key={exam.id} style={{ width: isDesktop ? '31.5%' : '100%', flexGrow: 1, minWidth: isDesktop ? 260 : undefined }}>
           <ExamCard
-            key={exam.id}
             exam={exam}
             onRemind={() =>
               void signup.mutateAsync(exam.id).catch((error: unknown) =>
@@ -77,12 +85,15 @@ export function SystemExamsScreen() {
               }
             }}
           />
+          </View>
         ))}
+        </View>
         {!list.isLoading &&
         (tab === 'past' ? (list.data ?? []).filter((exam) => exam.attempt_id) : list.data ?? []).length === 0 ? (
-          <AppText tone="muted">
-            {tab === 'upcoming' ? 'Yaklaşan sistem sınavı yok.' : tab === 'live' ? 'Şu an açık sınav yok.' : 'Katıldığın geçmiş sınav yok.'}
-          </AppText>
+          <EmptyState
+            icon="school-outline"
+            title={tab === 'upcoming' ? 'Yaklaşan sistem sınavı yok.' : tab === 'live' ? 'Şu an açık sınav yok.' : 'Katıldığın geçmiş sınav yok.'}
+          />
         ) : null}
       </View>
     </Screen>

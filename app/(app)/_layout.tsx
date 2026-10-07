@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Redirect, Stack } from 'expo-router';
 import { Platform, View } from 'react-native';
 
 import { CoachHost } from '@/src/features/teacher/CoachHost';
@@ -6,8 +6,22 @@ import { MatchInviteHost } from '@/src/features/study/MatchInviteHost';
 import { PairChatHost } from '@/src/features/study/PairChatHost';
 import { SeoHead } from '@/src/features/seo/SeoHead';
 import { WebAppShell } from '@/src/features/web/WebAppShell';
+import { useAuthStore } from '@/src/stores/authStore';
 
 export default function AppGroupLayout() {
+  const initialized = useAuthStore((s) => s.initialized);
+  const session = useAuthStore((s) => s.session);
+  const profile = useAuthStore((s) => s.profile);
+  const onboarded = Boolean(profile?.onboarding_completed_at);
+
+  if (initialized && !session) {
+    return <Redirect href={'/giris' as never} />;
+  }
+
+  if (initialized && session && !onboarded) {
+    return <Redirect href={'/(onboarding)' as never} />;
+  }
+
   const stack = (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
@@ -34,7 +48,7 @@ export default function AppGroupLayout() {
 
   return (
     <View style={{ flex: 1 }}>
-      <SeoHead title="ÖSYM Koçu" path="/app" index={false} />
+      <SeoHead title="ÖSYM Koçu" path="/home" index={false} />
       {Platform.OS === 'web' ? <WebAppShell>{stack}</WebAppShell> : stack}
       <CoachHost />
       <PairChatHost />
@@ -42,4 +56,3 @@ export default function AppGroupLayout() {
     </View>
   );
 }
-

@@ -2,6 +2,7 @@ import { View, Text } from 'react-native';
 
 import { landing as T } from '@/src/features/web/landing/tokens';
 import { APP_NAME } from '@/src/lib/brand';
+import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 
 /** Original mark: open page + check. Not the official ÖSYM emblem. */
 export function BrandLogo({
@@ -11,6 +12,8 @@ export function BrandLogo({
   variant?: 'full' | 'mark';
   size?: number;
 }) {
+  const theme = useAppTheme();
+  const navy = theme.colors.navy;
   const r = Math.round(size * 0.28);
   const mark = (
     <View
@@ -64,7 +67,7 @@ export function BrandLogo({
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
       {mark}
-      <Text style={{ color: T.navy, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 }}>{APP_NAME}</Text>
+      <Text style={{ color: navy, fontSize: 16, fontWeight: '800', letterSpacing: -0.3 }}>{APP_NAME}</Text>
     </View>
   );
 }

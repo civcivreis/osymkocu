@@ -224,7 +224,7 @@ export function LandingScreen() {
                   <Cta label="Ücretsiz Başla" onPress={() => router.push('/kayit')} />
                   <Cta label="Giriş Yap" variant="ghost" onPress={() => router.push('/giris')} />
                 </View>
-                <Text style={{ color: T.muted, fontSize: 13, marginTop: 4 }}>Web ve mobilde aynı hesap. İlerlemen her yerde seninle.</Text>
+                <Text style={{ color: T.muted, fontSize: 13, marginTop: 4 }}>Web ve mobilde aynı hesap.</Text>
               </View>
               <View style={{ flex: 1, width: '100%' }}>
                 <HeroProductPreview />

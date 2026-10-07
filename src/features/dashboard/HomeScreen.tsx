@@ -1,37 +1,41 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Alert, Animated, Pressable, View } from 'react-native';
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { Animated, Pressable, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
+import { Button } from '@/src/components/ui/Button';
+import { Card } from '@/src/components/ui/Card';
+import { EmptyState } from '@/src/components/ui/EmptyState';
+import { PageHeader } from '@/src/components/ui/PageHeader';
 import { ProgressBar } from '@/src/components/ui/ProgressBar';
 import { Screen } from '@/src/components/ui/Screen';
+import { toastError } from '@/src/components/ui/feedbackStore';
 import { coachCopy } from '@/src/features/dashboard/coach';
 import {
-  planProgress,
-  taskSolvedCount,
-  useExamName,
-  useStreak,
-  useTodayAttempts,
-  useTodayPlan,
-  useWeeklyStats,
+    planProgress,
+    taskSolvedCount,
+    useExamName,
+    useStreak,
+    useTodayAttempts,
+    useTodayPlan,
+    useWeeklyStats,
 } from '@/src/features/dashboard/useDashboard';
 import { PriorityTopics } from '@/src/features/progress/PriorityTopics';
-import { useProgressInsights } from '@/src/features/progress/useProgressInsights';
-import { UpcomingExamCard } from '@/src/features/system-exams/UpcomingExamCard';
-import { useUpcomingSystemExam } from '@/src/features/system-exams/useSystemExams';
 import { WeeklyActivityCard } from '@/src/features/progress/WeeklyActivityCard';
-import { getLevelFromXp } from '@/src/features/progress/xp';
+import { useProgressInsights } from '@/src/features/progress/useProgressInsights';
+import { formatXp, getLevelProgress } from '@/src/features/progress/xp';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
 import { postedAt, taggedName } from '@/src/features/social/identity';
-import { useSocialPreview, useOpenRooms } from '@/src/features/social/useSocial';
+import { useOpenRooms, useSocialPreview } from '@/src/features/social/useSocial';
 import { useJoinExamLobby, useNotifications } from '@/src/features/study/useStudyTogether';
-import type { StudyTask } from '@/src/lib/supabase/types';
-import { greetingForHour } from '@/src/lib/time/greeting';
+import { UpcomingExamCard } from '@/src/features/system-exams/UpcomingExamCard';
+import { useUpcomingSystemExam } from '@/src/features/system-exams/useSystemExams';
 import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
+import type { StudyTask } from '@/src/lib/supabase/types';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
+import { greetingForHour } from '@/src/lib/time/greeting';
 import { useAuthStore } from '@/src/stores/authStore';
-import { toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
 
 function openTask(task: StudyTask) {
   if (task.subject_id) {
@@ -52,10 +56,11 @@ function focusTitle(title: string) {
 }
 
 export function HomeScreen() {
-  const { colors } = useAppTheme();
+  const { colors, radius, shadows } = useAppTheme();
   const { isDesktop } = useBreakpoint();
   const profile = useAuthStore((s) => s.profile);
   const session = useAuthStore((s) => s.session);
+  const xpProgress = getLevelProgress(profile?.current_xp ?? 0);
   const name = profile?.display_name || session?.user.user_metadata?.display_name || 'öğrenci';
   const hour = new Date().getHours();
   const planQuery = useTodayPlan();
@@ -108,51 +113,45 @@ export function HomeScreen() {
   const target = coach.task?.question_count ?? 0;
 
   const header = (
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <View style={{ flex: 1, gap: 2 }}>
-            <AppText variant="title">{greetingForHour(hour, String(name))}</AppText>
-            {examLine ? (
-              <AppText variant="caption" tone="muted">
-                {examLine}
+    <PageHeader
+      title={greetingForHour(hour, String(name))}
+      subtitle={examLine || undefined}
+      right={
+        <Pressable
+          onPress={() => router.push('/notifications')}
+          accessibilityLabel="Bildirimler"
+          style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="notifications-outline" size={24} color={colors.text} />
+          {notifications.unread > 0 ? (
+            <View
+              style={{
+                position: 'absolute',
+                right: 6,
+                top: 6,
+                minWidth: 16,
+                height: 16,
+                borderRadius: 8,
+                backgroundColor: colors.accent,
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingHorizontal: 4,
+              }}>
+              <AppText variant="caption" tone="inverse" style={{ fontSize: 10 }}>
+                {notifications.unread > 9 ? '9+' : notifications.unread}
               </AppText>
-            ) : null}
-          </View>
-          {isDesktop ? null : (
-          <Pressable
-            onPress={() => router.push('/notifications')}
-            accessibilityLabel="Bildirimler"
-            style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="notifications-outline" size={24} color={colors.text} />
-            {notifications.unread > 0 ? (
-              <View
-                style={{
-                  position: 'absolute',
-                  right: 6,
-                  top: 6,
-                  minWidth: 16,
-                  height: 16,
-                  borderRadius: 8,
-                  backgroundColor: colors.accent,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  paddingHorizontal: 4,
-                }}>
-                <AppText variant="caption" tone="inverse" style={{ fontSize: 10 }}>
-                  {notifications.unread > 9 ? '9+' : notifications.unread}
-                </AppText>
-              </View>
-            ) : null}
-          </Pressable>
-          )}
-        </View>
+            </View>
+          ) : null}
+        </Pressable>
+      }
+    />
   );
 
   const stats = (
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Stat label={streak > 0 ? `🔥 ${streak} gün` : '🔥 —'} hint="seri" />
-          <Stat label={`Lv.${getLevelFromXp(profile?.current_xp ?? 0)}`} hint="seviye" />
-          <Stat label={`%${goalPct}`} hint="hedef" />
-        </View>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+      <StatPill icon="flame" label={streak > 0 ? `${streak} gün seri` : 'Seri yok'} />
+      <StatPill icon="flash" label={`Lv.${xpProgress.level} • ${formatXp(xpProgress.xpInLevel)} XP`} />
+      <StatPill icon="radio-button-on" label={`%${goalPct} günlük hedef`} />
+    </View>
   );
 
   const weeklyCard = (
@@ -169,79 +168,51 @@ export function HomeScreen() {
   const examCard = upcomingExam.data ? <UpcomingExamCard exam={upcomingExam.data} /> : null;
 
   const focusCard = (
-        <View
-          style={{
-            backgroundColor: colors.accentMuted,
-            borderRadius: 22,
-            paddingVertical: 14,
-            paddingHorizontal: 16,
-            gap: 8,
-            shadowColor: '#C45C26',
-            shadowOpacity: 0.1,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 2,
-          }}>
-          <AppText variant="label" tone="accent">
-            ✦ Bugünkü odak
-          </AppText>
-          {coach.task ? (
+    <View
+      style={{
+        backgroundColor: colors.accentMuted,
+        borderRadius: radius.xl,
+        padding: 18,
+        gap: 10,
+        borderWidth: 1,
+        borderColor: colors.accent,
+        ...shadows.md,
+      }}>
+      <AppText variant="label" tone="accent">
+        Bugünkü Odak
+      </AppText>
+      {coach.task ? (
+        <>
+          <AppText variant="title">{focus?.subject}</AppText>
+          {focus?.topic ? (
+            <AppText variant="caption" tone="muted">
+              {focus.topic}
+            </AppText>
+          ) : null}
+          {target > 0 ? (
             <>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-                <AppText variant="subtitle" style={{ flex: 1 }} numberOfLines={2}>
-                  {focus?.subject}
-                  {focus?.topic ? ` • ${focus.topic}` : ''}
-                </AppText>
-                {target > 0 ? (
-                  <AppText variant="caption" tone="muted">
-                    {Math.min(solved, target)}/{target}
-                  </AppText>
-                ) : null}
-              </View>
-              {target > 0 ? (
-                <ProgressBar value={Math.min(1, solved / target)} height={4} />
-              ) : (
-                <AppText variant="caption" tone="muted">
-                  {coach.body}
-                </AppText>
-              )}
-              <Pressable
-                onPress={() => openTask(coach.task!)}
-                style={({ pressed }) => ({
-                  minHeight: 44,
-                  borderRadius: 14,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: colors.accent,
-                  opacity: pressed ? 0.9 : 1,
-                })}>
-                <AppText variant="label" tone="inverse">
-                  Devam et →
-                </AppText>
-              </Pressable>
+              <AppText variant="caption" tone="muted">
+                {Math.min(solved, target)}/{target}
+              </AppText>
+              <ProgressBar value={Math.min(1, solved / target)} height={6} />
             </>
           ) : (
-            <>
-              <AppText variant="subtitle">{coach.headline}</AppText>
-              <AppText variant="caption" tone="muted">
-                {coach.body}
-              </AppText>
-              <Pressable
-                onPress={() => router.push('/study')}
-                style={{
-                  minHeight: 44,
-                  borderRadius: 14,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: colors.accent,
-                }}>
-                <AppText variant="label" tone="inverse">
-                  Derse geç →
-                </AppText>
-              </Pressable>
-            </>
+            <AppText variant="caption" tone="muted">
+              {coach.body}
+            </AppText>
           )}
-        </View>
+          <Button label="Devam et" onPress={() => openTask(coach.task!)} />
+        </>
+      ) : (
+        <>
+          <AppText variant="subtitle">{coach.headline}</AppText>
+          <AppText variant="caption" tone="muted">
+            {coach.body}
+          </AppText>
+          <Button label="Derse geç" onPress={() => router.push('/study')} />
+        </>
+      )}
+    </View>
   );
 
   const liveCard = (
@@ -252,37 +223,12 @@ export function HomeScreen() {
           {roomsQuery.isError ? (
             <AppText tone="danger">Odalar alınamadı.</AppText>
           ) : liveRooms.length === 0 ? (
-            <View style={{ alignItems: 'center', gap: 10, paddingVertical: 6 }}>
-              <View
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  backgroundColor: colors.accentMuted,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                <Ionicons name="people-outline" size={20} color={colors.accent} />
-              </View>
-              <AppText variant="caption" tone="muted" style={{ textAlign: 'center' }}>
-                Şu anda açık oda yok.{'\n'}İlk çalışma odasını sen aç.
-              </AppText>
-              <Pressable
-                onPress={() => router.push('/social')}
-                style={({ pressed }) => ({
-                  minHeight: 40,
-                  paddingHorizontal: 18,
-                  borderRadius: 14,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: colors.accent,
-                  opacity: pressed ? 0.9 : 1,
-                })}>
-                <AppText variant="label" tone="inverse">
-                  Oda aç
-                </AppText>
-              </Pressable>
-            </View>
+            <EmptyState
+              icon="people-outline"
+              title="Şu anda açık oda yok."
+              actionLabel="Oda aç"
+              onAction={() => router.push('/social')}
+            />
           ) : (
             <View style={{ gap: 10 }}>
               {liveRooms.map((room) => (
@@ -324,22 +270,7 @@ export function HomeScreen() {
   );
 
   const tasksCard = (
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderRadius: 22,
-            paddingVertical: 14,
-            paddingHorizontal: 14,
-            gap: 4,
-            shadowColor: '#142033',
-            shadowOpacity: 0.05,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 1,
-          }}>
-          <AppText variant="label" tone="accent">
-            BUGÜNKÜ GÖREVLER
-          </AppText>
+        <Card header="Görevler">
           {planQuery.isLoading ? (
             <AppText tone="muted">Plan yükleniyor…</AppText>
           ) : planQuery.isError ? (
@@ -356,17 +287,15 @@ export function HomeScreen() {
               ) : null}
             </>
           ) : (
-            <AppText tone="muted">Bugün için görev yok.</AppText>
+            <EmptyState icon="checkbox-outline" title="Bugün için görev yok." />
           )}
-        </View>
+        </Card>
   );
 
   const socialCard = (
         <Section title="Topluluktan" action="Tümü" onAction={() => router.push('/social')} kicker>
           {posts.length === 0 ? (
-            <AppText variant="caption" tone="muted">
-              Henüz durum yok.
-            </AppText>
+            <EmptyState icon="chatbubble-ellipses-outline" title="Henüz durum yok." actionLabel="Sosyale git" onAction={() => router.push('/social')} />
           ) : (
             <View style={{ gap: 8 }}>
               {posts.map((post, index) => (
@@ -419,13 +348,13 @@ export function HomeScreen() {
   );
 
   return (
-    <Screen scroll safeEdges={['top']}>
-      <View style={{ gap: 16, paddingTop: 2, paddingBottom: 32, maxWidth: isDesktop ? 1120 : undefined, width: '100%', alignSelf: 'center' }}>
+    <Screen scroll>
+      <View style={{ gap: 16 }}>
         {header}
         {stats}
         {isDesktop ? (
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 16 }}>
-            <View style={{ flex: 1.15, gap: 16, minWidth: 0 }}>{weeklyCard}{focusCard}{tasksCard}</View>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 24 }}>
+            <View style={{ flex: 2, gap: 16, minWidth: 0 }}>{weeklyCard}{focusCard}{tasksCard}</View>
             <View style={{ flex: 1, gap: 16, minWidth: 0 }}>
               {examCard}
               {liveCard}
@@ -553,15 +482,23 @@ function Section({
   );
 }
 
-function Stat({ label, hint }: { label: string; hint: string }) {
+function StatPill({ icon, label }: { icon: ComponentProps<typeof Ionicons>['name']; label: string }) {
+  const { colors, radius } = useAppTheme();
   return (
-    <View style={{ flex: 1, alignItems: 'center', gap: 1 }}>
-      <AppText variant="label" numberOfLines={1} style={{ fontSize: 14 }}>
-        {label}
-      </AppText>
-      <AppText variant="caption" tone="muted" style={{ fontSize: 11, lineHeight: 14 }}>
-        {hint}
-      </AppText>
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: radius.pill,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+      }}>
+      <Ionicons name={icon} size={16} color={colors.accent} />
+      <AppText variant="label">{label}</AppText>
     </View>
   );
 }

@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { type ReactNode } from 'react';
 import { Text, View } from 'react-native';
 
+import { LetterAvatar } from '@/src/features/social/LetterAvatar';
 import { landing as T } from '@/src/features/web/landing/tokens';
 
 function DemoChip() {
@@ -38,40 +39,53 @@ export function HeroProductPreview() {
     <View
       style={{
         width: '100%',
+        maxWidth: 400,
+        alignSelf: 'center',
         backgroundColor: T.paper,
-        borderRadius: 22,
+        borderRadius: 24,
         borderWidth: 1,
         borderColor: T.line,
-        overflow: 'hidden',
+        paddingHorizontal: 28,
+        paddingVertical: 32,
+        alignItems: 'center',
+        gap: 10,
         shadowColor: T.navy,
         shadowOpacity: 0.1,
         shadowRadius: 20,
         shadowOffset: { width: 0, height: 10 },
       }}>
-      <View style={{ backgroundColor: T.navy, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: T.orange }} />
-        <Text style={{ color: T.white, fontWeight: '700', fontSize: 13 }}>ÖSYM Koçu</Text>
-      </View>
-      <View style={{ padding: 14, gap: 10 }}>
-        <DemoChip />
-        <Text style={{ color: T.ink, fontSize: 16, fontWeight: '800' }}>Bugünkü plan</Text>
-        <Text style={{ color: T.body, fontSize: 13 }}>Tarih · İslamiyet Öncesi Türk Tarihi</Text>
-        <View style={{ height: 8, backgroundColor: T.creamDeep, borderRadius: 99, overflow: 'hidden' }}>
-          <View style={{ width: '62%', height: '100%', backgroundColor: T.orange, borderRadius: 99 }} />
+      <LetterAvatar id="landing-hero-ayse" name="Ayşe" size={88} />
+      <Text style={{ color: T.ink, fontWeight: '800', fontSize: 20, marginTop: 6 }}>Ayşe#1284</Text>
+      <Text style={{ color: T.success, fontWeight: '700', fontSize: 15 }}>Birini buldum 👋</Text>
+      <Text style={{ color: T.body, fontSize: 15, lineHeight: 22, textAlign: 'center' }}>
+        Ayşe de şu anda seninle aynı konuyu çalışıyor.
+      </Text>
+      <Text style={{ color: T.ink, fontWeight: '800', fontSize: 16, marginTop: 8 }}>Tarih</Text>
+      <Text style={{ color: T.body, fontSize: 14, textAlign: 'center' }}>İslamiyet Öncesi Türk Tarihi</Text>
+      <View style={{ flexDirection: 'row', gap: 8, width: '100%', marginTop: 10 }}>
+        <View
+          style={{
+            flex: 1,
+            minHeight: 46,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: T.line,
+            backgroundColor: T.cream,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+          <Text style={{ color: T.ink, fontWeight: '600' }}>Şimdi değil</Text>
         </View>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <View style={{ flex: 1, backgroundColor: T.cream, borderRadius: 12, padding: 10 }}>
-            <Text style={{ color: T.muted, fontSize: 11, fontWeight: '700' }}>EŞLEŞME</Text>
-            <Text style={{ color: T.ink, fontWeight: '700', marginTop: 4 }}>Aynı konu</Text>
-          </View>
-          <View style={{ flex: 1, backgroundColor: T.cream, borderRadius: 12, padding: 10 }}>
-            <Text style={{ color: T.muted, fontSize: 11, fontWeight: '700' }}>SINAV</Text>
-            <Text style={{ color: T.ink, fontWeight: '700', marginTop: 4 }}>21:00</Text>
-          </View>
-        </View>
-        <View style={{ backgroundColor: T.cream, borderRadius: 12, padding: 10, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-          <Ionicons name="sparkles" size={14} color={T.orange} />
-          <Text style={{ color: T.body, fontSize: 12, flex: 1 }}>Koç: tabanlar eşitse üsler toplanır.</Text>
+        <View
+          style={{
+            flex: 1,
+            minHeight: 46,
+            borderRadius: 12,
+            backgroundColor: T.orange,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+          <Text style={{ color: T.white, fontWeight: '700' }}>Birlikte çalış</Text>
         </View>
       </View>
     </View>

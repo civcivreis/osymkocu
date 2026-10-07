@@ -1,94 +1,114 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
-import { type ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/src/components/ui/AppText';
+import { AppTopBar } from '@/src/components/ui/AppTopBar';
 import { useAuthActions } from '@/src/features/auth/useAuth';
-import { useInbox, inboxUnreadTotal } from '@/src/features/social/useInbox';
+import { BrandLogo } from '@/src/features/web/landing/BrandLogo';
+import { APP_NAV, isAppNavActive, MOBILE_TAB_HREFS } from '@/src/features/web/appNav';
+import { inboxUnreadTotal, useInbox } from '@/src/features/social/useInbox';
 import { useNotifications } from '@/src/features/study/useStudyTogether';
-import { APP_NAME, APP_TAGLINE } from '@/src/lib/brand';
 import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
-import { useAuthStore } from '@/src/stores/authStore';
 
-const MAIN_LINKS = [
-  { href: '/', label: 'Ana Sayfa', icon: 'home-outline' as const, iconOn: 'home' as const },
-  { href: '/study', label: 'Dersler', icon: 'book-outline' as const, iconOn: 'book' as const },
-  { href: '/test-merkezi', label: 'Test Merkezi', icon: 'grid-outline' as const, iconOn: 'grid' as const },
-  { href: '/sistem-sinavlari', label: 'Sistem Sınavları', icon: 'school-outline' as const, iconOn: 'school' as const },
-  { href: '/social', label: 'Sosyal', icon: 'people-outline' as const, iconOn: 'people' as const },
-  { href: '/messages', label: 'Mesajlar', icon: 'chatbubbles-outline' as const, iconOn: 'chatbubbles' as const },
-  { href: '/notifications', label: 'Bildirimler', icon: 'notifications-outline' as const, iconOn: 'notifications' as const },
-  { href: '/profile', label: 'Profil', icon: 'person-outline' as const, iconOn: 'person' as const },
-];
-
-const BOTTOM_MOBILE = MAIN_LINKS.filter((item) =>
-  ['/', '/study', '/social', '/messages', '/profile'].includes(item.href),
-);
-
-function isActive(pathname: string, href: string) {
-  if (href === '/') return pathname === '/' || pathname === '/index';
-  if (href === '/sistem-sinavlari') {
-    return pathname === '/sistem-sinavlari' || pathname.startsWith('/system-exam');
+function go(label: string, href: string, pathname: string) {
+  if (__DEV__) {
+    console.log('[nav]', { label, target: href, pathname });
+    console.log('[nav-click]', label, href);
   }
-  if (href === '/test-merkezi') {
-    return pathname === '/test-merkezi' || pathname === '/practice' || pathname === '/notebook';
-  }
-  if (href === '/study') {
-    return pathname === '/study' || pathname === '/lesson';
-  }
-  return pathname === href || pathname.startsWith(`${href}/`);
+  router.navigate(href as never);
 }
 
 export function WebAppShell({ children }: { children: ReactNode }) {
-  const { colors } = useAppTheme();
-  const { showSidebar, showBottomNav, isDesktop } = useBreakpoint();
+  const { colors, spacing, radius } = useAppTheme();
+  const { showSidebar, compactSidebar, showBottomNav } = useBreakpoint();
+  const insets = useSafeAreaInsets();
   const pathname = usePathname();
-  const profile = useAuthStore((s) => s.profile);
   const { signOut } = useAuthActions();
   const notifications = useNotifications();
   const inbox = useInbox();
   const unreadInbox = inboxUnreadTotal(inbox.data);
-  const name = profile?.display_name ?? 'Öğrenci';
+  const main = APP_NAV.filter((item) => item.section === 'main');
+  const account = APP_NAV.filter((item) => item.section === 'account');
+  const mobile = APP_NAV.filter((item) => MOBILE_TAB_HREFS.includes(item.href));
 
-  const navItem = (item: (typeof MAIN_LINKS)[number], compact?: boolean) => {
-    const active = isActive(pathname, item.href);
-    const badge =
-      item.href === '/notifications' && notifications.unread > 0
-        ? notifications.unread
-        : item.href === '/messages' && unreadInbox > 0
-          ? unreadInbox
-          : 0;
+  useEffect(() => {
+    if (__DEV__) console.log('[route-after-click]', pathname);
+  }, [pathname]);
+
+  const badgeFor = (href: string) => {
+    if (href === '/notifications' && notifications.unread > 0) return notifications.unread;
+    if (href === '/messages' && unreadInbox > 0) return unreadInbox;
+    return 0;
+  };
+
+  const navItem = (item: (typeof APP_NAV)[number], compact?: boolean) => {
+    const active = isAppNavActive(pathname, item.href);
+    const badge = badgeFor(item.href);
     return (
       <Pressable
-        key={item.href + item.label}
-        onPress={() => router.push(item.href as never)}
+        key={item.href}
+        onPress={() => go(item.label, item.href, pathname)}
+        accessibilityRole="button"
+        accessibilityLabel={item.label}
         style={{
           flexDirection: compact ? 'column' : 'row',
           alignItems: 'center',
           gap: compact ? 2 : 10,
           paddingVertical: compact ? 6 : 10,
           paddingHorizontal: compact ? 4 : 12,
-          borderRadius: 12,
+          borderRadius: radius.md,
           backgroundColor: active && !compact ? colors.accentMuted : 'transparent',
         }}>
-        <Ionicons
-          name={active ? item.iconOn : item.icon}
-          size={compact ? 22 : 20}
-          color={active ? colors.accent : colors.textMuted}
-        />
-        <AppText
-          variant="caption"
-          tone={active ? 'accent' : 'muted'}
-          numberOfLines={1}
-          style={{ fontWeight: active ? '700' : '500' }}>
-          {compact && item.label === 'Sistem Sınavları' ? 'Sınav' : item.label}
-        </AppText>
-        {!compact && badge > 0 ? (
-          <AppText variant="caption" tone="accent">
-            {badge > 9 ? '9+' : badge}
+        <View>
+          <Ionicons name={active ? item.iconOn : item.icon} size={compact ? 22 : 20} color={active ? colors.accent : colors.textMuted} />
+          {compact && badge > 0 ? (
+            <View
+              style={{
+                position: 'absolute',
+                right: -6,
+                top: -4,
+                minWidth: 14,
+                height: 14,
+                borderRadius: 7,
+                backgroundColor: colors.accent,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+              <AppText variant="caption" tone="inverse" style={{ fontSize: 9 }}>
+                {badge > 9 ? '9+' : badge}
+              </AppText>
+            </View>
+          ) : null}
+        </View>
+        {compactSidebar && !compact ? null : (
+          <AppText
+            variant="caption"
+            tone={active ? 'accent' : 'muted'}
+            numberOfLines={1}
+            style={{ fontWeight: active ? '700' : '600', fontSize: compact ? 11 : 13 }}>
+            {compact ? (item.short ?? item.label) : item.label}
           </AppText>
+        )}
+        {!compact && !compactSidebar && badge > 0 ? (
+          <View
+            style={{
+              marginLeft: 'auto',
+              minWidth: 20,
+              height: 20,
+              borderRadius: 10,
+              backgroundColor: colors.accent,
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingHorizontal: 6,
+            }}>
+            <AppText variant="caption" tone="inverse" style={{ fontSize: 11, fontWeight: '700' }}>
+              {badge > 9 ? '9+' : badge}
+            </AppText>
+          </View>
         ) : null}
       </Pressable>
     );
@@ -99,61 +119,44 @@ export function WebAppShell({ children }: { children: ReactNode }) {
       {showSidebar ? (
         <View
           style={{
-            width: isDesktop ? 240 : 200,
+            width: compactSidebar ? 76 : 252,
             borderRightWidth: 1,
             borderRightColor: colors.border,
             backgroundColor: colors.surface,
             paddingTop: 20,
-            paddingHorizontal: 12,
+            paddingHorizontal: compactSidebar ? 8 : 12,
             paddingBottom: 16,
-            justifyContent: 'space-between',
           }}>
-          <View style={{ gap: 4 }}>
-            <View style={{ paddingHorizontal: 12, paddingBottom: 16, gap: 2 }}>
-              <AppText variant="subtitle">{APP_NAME}</AppText>
-              <AppText variant="caption" tone="muted">
-                {APP_TAGLINE}
+          <Pressable onPress={() => go('Ana Sayfa', '/home', pathname)} style={{ paddingHorizontal: compactSidebar ? 4 : 8, paddingBottom: 20 }}>
+            <BrandLogo variant={compactSidebar ? 'mark' : 'full'} size={compactSidebar ? 32 : 28} />
+          </Pressable>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 2 }} showsVerticalScrollIndicator={false}>
+            {main.map((item) => navItem(item))}
+            <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 10, marginHorizontal: 8 }} />
+            {account.map((item) => navItem(item))}
+          </ScrollView>
+          <Pressable
+            onPress={() => void signOut()}
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: compactSidebar ? 4 : 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              borderRadius: radius.md,
+            }}>
+            <Ionicons name="log-out-outline" size={20} color={colors.textMuted} />
+            {compactSidebar ? null : (
+              <AppText tone="muted" variant="caption" style={{ fontWeight: '600' }}>
+                Çıkış
               </AppText>
-            </View>
-            <ScrollView style={{ maxHeight: 520 }}>{MAIN_LINKS.map((item) => navItem(item))}</ScrollView>
-          </View>
-          <View style={{ gap: 4, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 }}>
-            <Pressable
-              onPress={() => router.push('/settings')}
-              style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
-              <AppText>Ayarlar</AppText>
-            </Pressable>
-            <Pressable onPress={() => void signOut()} style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
-              <AppText tone="muted">Çıkış</AppText>
-            </Pressable>
-          </View>
+            )}
+          </Pressable>
         </View>
       ) : null}
 
-      <View style={{ flex: 1 }}>
-        {isDesktop ? (
-          <View
-            style={{
-              minHeight: 56,
-              paddingHorizontal: 24,
-              borderBottomWidth: 1,
-              borderBottomColor: colors.border,
-              backgroundColor: colors.surface,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}>
-            <AppText variant="subtitle">Hoş geldin, {name}</AppText>
-            <Pressable onPress={() => router.push('/notifications')} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Ionicons name="notifications-outline" size={22} color={colors.text} />
-              {notifications.unread > 0 ? (
-                <AppText variant="caption" tone="accent">
-                  {notifications.unread > 9 ? '9+' : notifications.unread}
-                </AppText>
-              ) : null}
-            </Pressable>
-          </View>
-        ) : null}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <AppTopBar />
         <View style={{ flex: 1 }}>{children}</View>
         {showBottomNav ? (
           <View
@@ -162,10 +165,11 @@ export function WebAppShell({ children }: { children: ReactNode }) {
               borderTopWidth: 1,
               borderTopColor: colors.border,
               backgroundColor: colors.tabBar,
-              paddingVertical: 6,
-              paddingHorizontal: 4,
+              paddingTop: 6,
+              paddingBottom: Math.max(insets.bottom, 8),
+              paddingHorizontal: spacing[8],
             }}>
-            {BOTTOM_MOBILE.map((item) => (
+            {mobile.map((item) => (
               <View key={item.href} style={{ flex: 1 }}>
                 {navItem(item, true)}
               </View>

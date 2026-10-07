@@ -3,7 +3,6 @@ import { Platform } from 'react-native';
 
 import { StartupLoading } from '@/src/features/auth/StartupLoading';
 import { LoginScreen } from '@/src/features/auth/LoginScreen';
-import { HomeScreen } from '@/src/features/dashboard/HomeScreen';
 import { LandingScreen } from '@/src/features/web/LandingScreen';
 import { isAdminHost } from '@/src/lib/hosts';
 import { useAuthStore } from '@/src/stores/authStore';
@@ -12,7 +11,7 @@ function isWebStaticRender() {
   return Platform.OS === 'web' && typeof window === 'undefined';
 }
 
-/** Explicit "/" route for static export and native launch. */
+/** Public "/" only. Authenticated home is /home inside (app) — never collide with this route. */
 export default function RootIndex() {
   const initialized = useAuthStore((s) => s.initialized);
   const session = useAuthStore((s) => s.session);
@@ -28,7 +27,7 @@ export default function RootIndex() {
   }
 
   if (session && onboarded) {
-    return <HomeScreen />;
+    return <Redirect href={'/home' as never} />;
   }
 
   if (Platform.OS === 'web' && isAdminHost()) {

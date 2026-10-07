@@ -1,17 +1,17 @@
-import { ThemeProvider as NavThemeProvider, DarkTheme, DefaultTheme } from 'expo-router';
+import { DarkTheme, DefaultTheme, ThemeProvider as NavThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
-  createContext,
-  useContext,
-  useMemo,
-  type ReactNode,
+    createContext,
+    useContext,
+    useMemo,
+    type ReactNode,
 } from 'react';
 import { useColorScheme as useSystemColorScheme } from 'react-native';
 
 import { useThemeStore, type ThemePreference } from '@/src/stores/themeStore';
 
 import { colors, type ColorSchemeName, type ThemeColors } from './colors';
-import { radius, spacing } from './spacing';
+import { radius, shadows, spacing } from './spacing';
 
 type ThemeContextValue = {
   scheme: ColorSchemeName;
@@ -19,6 +19,7 @@ type ThemeContextValue = {
   colors: ThemeColors;
   spacing: typeof spacing;
   radius: typeof radius;
+  shadows: typeof shadows;
   setPreference: (preference: ThemePreference) => void;
 };
 
@@ -57,6 +58,7 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
       colors: colors[scheme],
       spacing,
       radius,
+      shadows,
       setPreference,
     }),
     [scheme, preference, setPreference],
