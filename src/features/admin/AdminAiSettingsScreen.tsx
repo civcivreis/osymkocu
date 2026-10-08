@@ -47,6 +47,7 @@ const TASK_LABELS: Record<string, string> = {
   canonical_topic_matching: 'Kanonik Konu Eşleme',
   lesson_generation: 'Ders Üretimi',
   memory_pedagogy_generation: 'Hafıza Pedagojisi',
+  exam_technique_validation: 'Sınav Tekniği Doğrulama',
   lesson_quality_validation: 'Ders Kalite Kontrolü',
   question_generation: 'Soru Üretimi',
   question_validation: 'Soru Kontrolü',

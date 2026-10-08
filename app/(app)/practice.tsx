@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
@@ -12,7 +12,7 @@ import { ChatImageViewer } from '@/src/features/social/ChatImage';
 import { usePairChatStore } from '@/src/features/study/pairChatStore';
 import { QuestionPalette } from '@/src/features/study/QuestionPalette';
 import { useCompleteLessonFinal } from '@/src/features/memory-lessons/useMemoryLessonPlayer';
-import { sortedChoices, useCompletePracticeSet, useCurriculumPracticeQuestions, usePracticeQuestions, useSubmitAttempt } from '@/src/features/study/usePractice';
+import { sortedChoices, useAttemptDiagnosis, useCompletePracticeSet, useCurriculumPracticeQuestions, usePracticeQuestions, useSubmitAttempt } from '@/src/features/study/usePractice';
 import { useStudyPresence } from '@/src/features/study/useStudyPresence';
 import { useCoachStore } from '@/src/features/teacher/coachStore';
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
@@ -53,6 +53,7 @@ export default function PracticeScreen() {
   const completeSet = useCompletePracticeSet();
   const completeFinal = useCompleteLessonFinal();
   const questions = questionsQuery.data ?? [];
+  const questionIds = useMemo(() => questions.map((item) => item.id), [questions]);
   const [index, setIndex] = useState(0);
   useStudyPresence(
     params.subjectId,
@@ -68,6 +69,7 @@ export default function PracticeScreen() {
   const [anchorStats, setAnchorStats] = useState<Record<string, { visual_anchor: string; correct: number; attempted: number }>>({});
   const [startedAt, setStartedAt] = useState(Date.now());
   const [finished, setFinished] = useState(false);
+  const diagnosis = useAttemptDiagnosis(questionIds, finished && questions.length > 0);
   const [marked, setMarked] = useState<Record<string, boolean>>({});
   const [answered, setAnswered] = useState<Record<string, boolean>>({});
   const [elapsed, setElapsed] = useState(0);
@@ -363,6 +365,26 @@ export default function PracticeScreen() {
               <AppText>
                 {correctCount} / {questions.length} doğru
               </AppText>
+              {diagnosis.data?.has_tags && (diagnosis.data.lines ?? []).length ? (
+                <View style={{ gap: 4 }}>
+                  <AppText variant="label">TEKNİK TANI</AppText>
+                  {(diagnosis.data.lines ?? []).map((line) => (
+                    <AppText key={line} variant="caption">
+                      {line}
+                    </AppText>
+                  ))}
+                </View>
+              ) : finished && questions.length ? (
+                <AppText variant="caption" tone="muted">
+                  Bu sette teknik etiket yok; tanı uydurulmadı.
+                </AppText>
+              ) : null}
+              {diagnosis.data?.speed ? (
+                <AppText variant="caption" tone="muted">
+                  Bu set ortalama {Math.round(diagnosis.data.speed.set_avg_ms / 1000)} sn · senin medyan{' '}
+                  {Math.round(diagnosis.data.speed.personal_median_ms / 1000)} sn. Evrensel hedef yok.
+                </AppText>
+              ) : null}
               {params.lessonId || params.setType === 'lesson_final' ? (
                 <>
                   {Object.values(objectiveStats).filter((row) => row.correct === row.attempted && row.attempted > 0).length ? (

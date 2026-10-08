@@ -1,4 +1,4 @@
-export const QUESTION_GEN_PROMPT = "question-bank-v1";
+export const QUESTION_GEN_PROMPT = "question-bank-technique-v1";
 
 export const STRATEGIES = [
   "direct_recall",
@@ -8,6 +8,10 @@ export const STRATEGIES = [
   "application",
   "cause_effect",
   "interpretation",
+  "pattern_recognition",
+  "first_move",
+  "elimination",
+  "exam_style",
 ] as const;
 
 export const QUESTION_BANK_SCHEMA = {
@@ -32,6 +36,9 @@ export const QUESTION_BANK_SCHEMA = {
             "strategy",
             "learning_objective",
             "requires_image",
+            "trap_type",
+            "recommended_strategy",
+            "technique_role",
           ],
           properties: {
             stem: { type: "string" },
@@ -53,6 +60,9 @@ export const QUESTION_BANK_SCHEMA = {
             strategy: { type: "string", enum: [...STRATEGIES] },
             learning_objective: { type: "string" },
             requires_image: { type: "boolean" },
+            trap_type: { type: "string" },
+            recommended_strategy: { type: "string" },
+            technique_role: { type: "string", enum: [...STRATEGIES] },
           },
         },
       },
@@ -69,6 +79,9 @@ export type GeneratedQuestion = {
   strategy: string;
   learning_objective: string;
   requires_image: boolean;
+  trap_type?: string;
+  recommended_strategy?: string;
+  technique_role?: string;
 };
 
 export function validateGenerated(q: GeneratedQuestion) {

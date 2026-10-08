@@ -36,7 +36,10 @@ export type FactoryExamCoverage = {
   curriculum_version_id?: string | null;
   curriculum_status?: string | null;
   curriculum_name?: string | null;
+  subjects?: number;
   topics: number;
+  segments?: number;
+  mapped_topics?: number;
   lessons_ready: number;
   questions_ready: number;
   failed: number;

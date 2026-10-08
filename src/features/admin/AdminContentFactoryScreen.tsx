@@ -46,7 +46,7 @@ function StageLine({ job }: { job: FactoryJob }) {
   const mark = (done: boolean, current: boolean) => (done ? '✓' : current ? '⚙' : '○');
   return (
     <AppText variant="caption">
-      {mark(job.stage_text_done, job.status === 'generating_text')} Metin ·{' '}
+      {mark(job.stage_text_done, job.status === 'generating_text')} Kalıp+teknik ·{' '}
       {mark(job.stage_pedagogy_done, job.status === 'validating_pedagogy')} Pedagoji ·{' '}
       {mark(job.stage_questions_done, job.status === 'generating_questions')} Sorular ·{' '}
       {mark(job.stage_media_done, job.status === 'generating_media')} Medya{media ? ` ${media}` : ''}
@@ -87,9 +87,11 @@ export function AdminContentFactoryScreen() {
     name: row.name,
     sort_order: row.sort_order,
     is_enabled: true,
-    curriculum_name: null as string | null,
-    curriculum_status: null as string | null,
-    topics: 0,
+          curriculum_name: null as string | null,
+          curriculum_status: null as string | null,
+          subjects: 0,
+          segments: 0,
+          topics: 0,
     lessons_ready: 0,
     questions_ready: 0,
     failed: 0,
@@ -158,7 +160,9 @@ export function AdminContentFactoryScreen() {
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' }}>
         <View style={{ gap: 4 }}>
           <AppText variant="title">ÖSYM Koçu İçerik Motoru</AppText>
-          <AppText tone="muted">Tek tıkla tüm sınavların eksik aşamalarını üretir. Yayın otomatik değil.</AppText>
+          <AppText tone="muted">
+            Kilit master müfredattan üretir; sınav konularını web’den icat etmez. Yayın otomatik değil.
+          </AppText>
         </View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           <Pressable onPress={() => startMotor(false)} style={adminBtn}>
@@ -186,12 +190,12 @@ export function AdminContentFactoryScreen() {
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
         {[
-          ['Curriculum Topics', stats.data?.total_topics ?? 0],
-          ['Lessons Ready', stats.data?.ready ?? 0],
-          ['Media Ready', stats.data?.ready ?? 0],
-          ['Questions Ready', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.questions_ready ?? 0), 0)],
-          ['Pending Review', stats.data?.pending_validation ?? 0],
-          ['Failed', stats.data?.failed ?? 0],
+          ['Dersler', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.subjects ?? 0), 0)],
+          ['Master konular', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.topics ?? 0), 0)],
+          ['Segmentler', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.segments ?? 0), 0)],
+          ['Hafıza dersleri', stats.data?.ready ?? 0],
+          ['Sorular', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.questions_ready ?? 0), 0)],
+          ['Kontrol', stats.data?.pending_validation ?? 0],
         ].map(([label, value]) => (
           <View key={String(label)} style={[adminCard, { minWidth: compact ? '46%' : 140, flexGrow: 1 }]}>
             <AppText variant="caption" tone="muted">
@@ -216,9 +220,8 @@ export function AdminContentFactoryScreen() {
               </Pressable>
             </View>
             <AppText variant="caption" tone="muted">
-              Müfredat: {row.curriculum_name ?? (row.topics ? 'Hazır' : 'oluşturulacak/senkronize edilecek')} · Konular:{' '}
-              {row.topics ?? 0} · Dersler: {row.lessons_ready ?? 0}/{row.topics ?? 0} · Soru:{' '}
-              {row.questions_ready ?? 0} · Kontrol: {row.pending_review ?? 0} · Hata: {row.failed ?? 0}
+              {row.subjects ?? 0} ders · {row.topics ?? 0} master konu · {row.segments ?? 0} segment · {row.lessons_ready ?? 0}{' '}
+              hafıza dersi · {row.questions_ready ?? 0} soru
             </AppText>
           </View>
         ))}

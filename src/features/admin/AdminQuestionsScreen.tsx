@@ -305,6 +305,7 @@ export function AdminQuestionsScreen() {
         <View key={row.id} style={adminCard}>
           <AppText variant="caption" tone="muted">
             {row.set_type} · {row.difficulty} · {row.question_strategy} · {row.question_status} · {row.source_type}
+            {row.trap_type ? ` · tuzak:${row.trap_type}` : ''}
           </AppText>
           <AppText>{row.stem}</AppText>
           {row.image_url ? <RemoteImage uri={row.image_url} style={{ width: 220, height: 140, borderRadius: 12 }} resizeMode="contain" /> : null}

@@ -18,6 +18,10 @@ export const QUESTION_STRATEGIES = [
   'contrast_recall',
   'sequence_recall',
   'application',
+  'pattern_recognition',
+  'first_move',
+  'elimination',
+  'exam_style',
 ] as const;
 
 export type MemoryTechnique = (typeof MEMORY_TECHNIQUES)[number];
@@ -50,6 +54,10 @@ const STRATEGY_LABELS: Record<string, string> = {
   contrast_recall: 'Karşılaştırma',
   sequence_recall: 'Sıra',
   application: 'Uygulama',
+  pattern_recognition: 'Kalıp tanıma',
+  first_move: 'İlk hamle',
+  elimination: 'Eleme',
+  exam_style: 'Sınav tipi',
 };
 
 export function techniqueLabel(value: string | null | undefined) {

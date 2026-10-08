@@ -45,6 +45,16 @@ export async function listUnitCatalog(subjectId: string): Promise<UnitCatalog[]>
   return asList<UnitCatalog>(data);
 }
 
+export async function listCanonicalTopicSegments(canonicalTopicId: string) {
+  const { data, error } = await getSupabase()
+    .from('canonical_topic_segments')
+    .select('id, title, segment_order')
+    .eq('canonical_topic_id', canonicalTopicId)
+    .order('segment_order', { ascending: true });
+  if (error) throw error;
+  return asList<{ id: string; title: string; segment_order: number }>(data);
+}
+
 export async function listTopicCatalog(unitId: string): Promise<TopicCatalog[]> {
   const { data, error } = await getSupabase()
     .from('topic_catalog')

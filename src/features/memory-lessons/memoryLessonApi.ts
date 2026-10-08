@@ -143,6 +143,9 @@ export async function saveMemoryLessonReview(input: {
       core_facts: input.lesson.core_facts ?? [],
       memory_journey_title: input.lesson.memory_journey_title ?? null,
       memory_journey_summary: input.lesson.memory_journey_summary ?? null,
+      minimum_theory: input.lesson.minimum_theory ?? null,
+      fast_rule: input.lesson.fast_rule ?? null,
+      exam_technique: input.lesson.exam_technique ?? {},
     })
     .eq('id', input.lesson.id);
   if (lessonError) throw lessonError;

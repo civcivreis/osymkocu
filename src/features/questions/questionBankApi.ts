@@ -48,6 +48,10 @@ export async function listTopicQuestions(canonicalTopicId: string, status?: stri
     image_url: string | null;
     set_type: string | null;
     is_published: boolean;
+    trap_type?: string | null;
+    recommended_strategy?: string | null;
+    technique_role?: string | null;
+    question_pattern_id?: string | null;
   }>;
 }
 

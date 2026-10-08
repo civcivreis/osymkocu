@@ -14,7 +14,10 @@ async function chatQuestions(user: string, count: number, metaOut: { model: stri
   const messages = [
     {
       role: "system" as const,
-      content: `ÖSYM soru yazarısın. Yalnızca verilen ders içeriği ve kazanımları test et. Müfredat dışı bilgi yok. ${count} soru üret. Zorluk muhakeme ve çeldirici kalitesinden gelsin, önemsiz ayrıntı olmasın. Birden fazla strateji kullan. Tanım sorusu yığını üretme.`,
+      content: `ÖSYM soru yazarısın. Yalnızca verilen ders içeriği ve kazanımları test et. Müfredat dışı bilgi yok. ${count} soru üret.
+Çeldirici: kısmi doğru, ters neden-sonuç, komşu kavram, hesap hatası, aşırı genelleme. Tek savunulabilir doğru.
+Strateji karışımı: hatırlama, kalıp tanıma, teknik uygulama, sınav tipi. Tanım yığını yok.
+trap_type, recommended_strategy, technique_role doldur (öğrenci bunları görmez).`,
     },
     { role: "user" as const, content: user },
   ];
@@ -272,6 +275,9 @@ async function insertBatch(
       strategy: raw.strategy,
       learning_objective: String(raw.learning_objective ?? ""),
       requires_image: Boolean(raw.requires_image),
+      trap_type: String(raw.trap_type ?? "").trim(),
+      recommended_strategy: String(raw.recommended_strategy ?? "").trim(),
+      technique_role: String(raw.technique_role ?? raw.strategy ?? "").trim(),
     };
     const check = validateGenerated(q);
     const objectiveId = matchObjective(q.learning_objective, ctx.objectives);
@@ -311,6 +317,9 @@ async function insertBatch(
         generated_at: new Date().toISOString(),
         prompt_version: QUESTION_GEN_PROMPT,
         generation_metadata: ctx.generationMetadata ?? {},
+        trap_type: q.trap_type || null,
+        recommended_strategy: q.recommended_strategy || null,
+        technique_role: q.technique_role || q.strategy || null,
       })
       .select("id")
       .single();

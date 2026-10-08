@@ -146,8 +146,8 @@ async function advanceJob(admin: ReturnType<typeof serviceClient>, job: FactoryJ
           lesson_generation_hash: hash ?? job.generation_hash ?? null,
         }).eq("id", lessonId).neq("status", "published");
       }
-      await saveJob(admin, job, { stage_text_done: true, status: "validating_pedagogy", factory_stage: "pedagogy_ready" });
-      await appendEvent(admin, job, "TEXT_OK", "Metin üretildi.");
+      await saveJob(admin, job, { stage_text_done: true, status: "validating_pedagogy", factory_stage: "exam_technique_ready" });
+      await appendEvent(admin, job, "TEXT_OK", "Metin + soru kalıbı + sınav tekniği üretildi.");
       return "generating_text";
     }
     if (!job.stage_text_done) await saveJob(admin, job, { stage_text_done: true });
@@ -157,7 +157,7 @@ async function advanceJob(admin: ReturnType<typeof serviceClient>, job: FactoryJ
       await admin.rpc("refresh_memory_lesson_pedagogy", { p_id: lessonId });
       const scored = await loadLesson(admin, lessonId);
       if (!pedagogyOk(scored) && job.job_type !== "pedagogy_refresh") {
-        await failJob(admin, job, "PEDAGOGY_INCOMPLETE", "Hafıza pedagojisi eksik.");
+        await failJob(admin, job, "PEDAGOGY_INCOMPLETE", "Sınav tekniği veya pedagoji eksik (min 80, akademik geçiş zorunlu).");
         return "failed";
       }
       await saveJob(admin, job, { stage_pedagogy_done: pedagogyOk(scored), status: "generating_questions" });

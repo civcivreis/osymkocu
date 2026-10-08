@@ -54,7 +54,14 @@ export function MemoryLessonPlayerScreen() {
     const key = all.filter((row) => row.visual_anchor || row.memory_target);
     return (key.length ? key : all).slice(0, 4);
   }, [pack.data?.scenes, reviewMode]);
-  const checks = checkpointQuestions(pack.data?.questions ?? []).slice(0, reviewMode ? 3 : 8);
+  const checks = useMemo(() => {
+    const all = checkpointQuestions(pack.data?.questions ?? []);
+    if (!reviewMode) return all.slice(0, 8);
+    const tech = all.filter((row) =>
+      ['first_move', 'pattern_recognition', 'elimination'].includes(String(row.question_strategy ?? '')),
+    );
+    return (tech.length ? tech : all).slice(0, 3);
+  }, [pack.data?.questions, reviewMode]);
   const urls = media.data ?? {};
   const narrationUrl = lesson?.narration_key ? urls[lesson.narration_key] : undefined;
   const progress = pack.data?.progress;
@@ -115,6 +122,9 @@ export function MemoryLessonPlayerScreen() {
       examCatalogId={examCatalogId}
       canonicalTopicId={lesson.canonical_topic_id ?? undefined}
       next={nextLesson.data}
+      fastRule={lesson.fast_rule ?? null}
+      examTechnique={lesson.exam_technique ?? null}
+      memoryHooks={Array.isArray(lesson.memory_hooks) ? lesson.memory_hooks.map(String) : []}
     />
   );
 
@@ -186,6 +196,9 @@ function PlayerBody(props: {
   examCatalogId?: string;
   canonicalTopicId?: string;
   next?: { lesson_id: string; lesson_title: string } | null;
+  fastRule?: string | null;
+  examTechnique?: Record<string, unknown> | null;
+  memoryHooks?: string[];
 }) {
   const { colors, radius } = useAppTheme();
   if (!props.narrationUrl) {
@@ -227,6 +240,9 @@ function AudioSession({
   canonicalTopicId,
   next,
   lessonTitle,
+  fastRule,
+  examTechnique,
+  memoryHooks,
 }: {
   url: string;
   urls: Record<string, string>;
@@ -247,6 +263,9 @@ function AudioSession({
   canonicalTopicId?: string;
   next?: { lesson_id: string; lesson_title: string } | null;
   lessonTitle: string;
+  fastRule?: string | null;
+  examTechnique?: Record<string, unknown> | null;
+  memoryHooks?: string[];
 }) {
   const { colors, radius } = useAppTheme();
   const player = useAudioPlayer(url);
@@ -293,7 +312,6 @@ function AudioSession({
       (row) =>
         !answered.has(row.question.id) &&
         !activeCheckpoint &&
-        !reviewMode &&
         !resumePrompt &&
         prevMs.current < row.triggerMs &&
         positionMs >= row.triggerMs,
@@ -345,6 +363,11 @@ function AudioSession({
       <View style={{ gap: 14, backgroundColor: colors.surface, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: 18 }}>
         <AppText variant="title">Dersi tamamladın 🎯</AppText>
         <AppText>{lessonTitle}</AppText>
+        {fastRule ? (
+          <AppText>
+            5 sn kural: {fastRule}
+          </AppText>
+        ) : null}
         <AppText>
           Süre {formatMs(durationMs)} · Checkpoint {checkpointCorrect} / {checkpointTotal} doğru
         </AppText>
@@ -419,6 +442,18 @@ function AudioSession({
               <AppText>Baştan</AppText>
             </Pressable>
           </View>
+        </View>
+      ) : null}
+      {reviewMode ? (
+        <View style={{ gap: 6, padding: 14, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+          <AppText variant="label">2 Dakikalık Tekrar</AppText>
+          <AppText variant="caption" tone="muted">
+            Soru tipi: {String(examTechnique?.recognition_trigger ?? '—')}
+          </AppText>
+          <AppText>İlk hamle: {String(examTechnique?.first_move ?? '—')}</AppText>
+          <AppText>Hızlı kural: {fastRule || String(examTechnique?.fast_strategy ?? '—')}</AppText>
+          <AppText variant="caption">Tuzak: {String(examTechnique?.common_traps ?? '—')}</AppText>
+          {memoryHooks?.[0] ? <AppText variant="caption">Kanca: {memoryHooks[0]}</AppText> : null}
         </View>
       ) : null}
       <View style={{ position: 'relative' }}>

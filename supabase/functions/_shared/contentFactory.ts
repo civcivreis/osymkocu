@@ -95,6 +95,8 @@ type LessonRow = {
   narration: string | null;
   generation_status: string | null;
   pedagogy_score: number | null;
+  academic_pass?: boolean | null;
+  fast_rule?: string | null;
   media_generation_status: string | null;
   narration_key: string | null;
   canonical_topic_id: string | null;
@@ -104,7 +106,7 @@ type LessonRow = {
 export async function loadLesson(admin: SupabaseClient, id: string | null) {
   if (!id) return null;
   const { data } = await admin.from("memory_lessons").select(
-    "id, status, narration, generation_status, pedagogy_score, media_generation_status, narration_key, canonical_topic_id, lesson_generation_hash",
+    "id, status, narration, generation_status, pedagogy_score, academic_pass, fast_rule, media_generation_status, narration_key, canonical_topic_id, lesson_generation_hash",
   ).eq("id", id).maybeSingle();
   return (data as LessonRow | null) ?? null;
 }
@@ -140,7 +142,10 @@ export function hasText(lesson: LessonRow | null) {
 }
 
 export function pedagogyOk(lesson: LessonRow | null) {
-  return typeof lesson?.pedagogy_score === "number" && lesson.pedagogy_score >= 75;
+  if (typeof lesson?.pedagogy_score !== "number" || lesson.pedagogy_score < 80) return false;
+  if (lesson.academic_pass === false) return false;
+  if (lesson.fast_rule !== undefined && !String(lesson.fast_rule ?? "").trim()) return false;
+  return true;
 }
 
 export { ACTIVE };

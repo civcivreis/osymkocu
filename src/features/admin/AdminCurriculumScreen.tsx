@@ -21,7 +21,7 @@ import {
   useUnitCatalog,
 } from '@/src/features/curriculum/useCurriculum';
 import { useFactoryExamCoverage } from '@/src/features/content-factory/useContentFactory';
-import { curriculumDiff, formatCurriculumProposalLine, formatCurriculumSyncToast } from '@/src/features/curriculum/curriculumApi';
+import { curriculumDiff, formatCurriculumProposalLine, formatCurriculumSyncToast, listCanonicalTopicSegments } from '@/src/features/curriculum/curriculumApi';
 
 const field = {
   minHeight: 44,
@@ -132,6 +132,7 @@ export function AdminCurriculumScreen() {
   const [proposal, setProposal] = useState<DecompositionProposal | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [topicMeta, setTopicMeta] = useState<CanonicalTopicMeta[]>([]);
+  const [segmentMap, setSegmentMap] = useState<Record<string, { id: string; title: string }[]>>({});
   const active = useActiveCurriculumVersion(examId);
 
   const selectedExam = useMemo(() => (exams.data ?? []).find((row) => row.id === examId) ?? null, [examId, exams.data]);
@@ -148,6 +149,21 @@ export function AdminCurriculumScreen() {
     }
     void listCanonicalTopicMeta(selectedUnit.canonical_unit_id).then(setTopicMeta).catch(() => setTopicMeta([]));
   }, [selectedUnit?.canonical_unit_id, proposal]);
+
+  useEffect(() => {
+    const ids = [...new Set((topics.data ?? []).map((row) => row.canonical_topic_id).filter(Boolean))] as string[];
+    if (!ids.length) {
+      setSegmentMap({});
+      return;
+    }
+    void Promise.all(ids.map(async (id) => [id, await listCanonicalTopicSegments(id)] as const))
+      .then((pairs) => {
+        const next: Record<string, { id: string; title: string }[]> = {};
+        for (const [id, segs] of pairs) next[id] = segs;
+        setSegmentMap(next);
+      })
+      .catch(() => setSegmentMap({}));
+  }, [topics.data]);
 
   const metaFor = (canonicalId?: string | null) => topicMeta.find((row) => row.id === canonicalId) ?? null;
 
@@ -166,7 +182,8 @@ export function AdminCurriculumScreen() {
     <View style={{ gap: 16 }}>
       <AppText variant="title">Güncel Müfredatlar</AppText>
       <AppText tone="muted">
-        Öğrenci yıl seçmez. Motor kaynakları senkronize eder; JSON içe aktarma yalnızca yedek yoldur.
+        Kilit master müfredat beş sınav için yüklüdür. Senkronizasyon resmi sapmaları işaretler; web’den müfredat icat
+        etmez. JSON içe aktarma yalnızca Gelişmiş / yedek yoldur.
       </AppText>
 
       <View style={{ backgroundColor: '#FFFcf7', borderRadius: 16, padding: 16, gap: 10 }}>
@@ -179,6 +196,8 @@ export function AdminCurriculumScreen() {
           curriculum_name: null,
           curriculum_status: null,
           topics: 0,
+          subjects: 0,
+          segments: 0,
           lessons_ready: 0,
           questions_ready: 0,
           failed: 0,
@@ -187,7 +206,8 @@ export function AdminCurriculumScreen() {
           <View key={row.id} style={{ gap: 6, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EDE6D8' }}>
             <AppText variant="subtitle">{row.name}</AppText>
             <AppText variant="caption" tone="muted">
-              {row.curriculum_name ?? 'Müfredat yok'} · {row.curriculum_status ?? '—'} · {row.topics} konu · {row.lessons_ready} ders
+              {row.subjects ?? 0} ders · {row.topics} master konu · {row.segments ?? 0} segment · {row.lessons_ready} hafıza
+              dersi
             </AppText>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               <Pressable
@@ -243,7 +263,10 @@ export function AdminCurriculumScreen() {
       </View>
 
       <View style={{ backgroundColor: '#FFFcf7', borderRadius: 16, padding: 16, gap: 10 }}>
-        <AppText variant="subtitle">Gelişmiş: JSON içe aktar</AppText>
+        <AppText variant="subtitle">Gelişmiş / Manuel: JSON içe aktar</AppText>
+        <AppText variant="caption" tone="muted">
+          Beş sınav için gerekli değil. Yalnızca ek taksonomi veya yedek içe aktarma.
+        </AppText>
         <TextInput
           value={bulk}
           onChangeText={setBulk}
@@ -348,7 +371,10 @@ export function AdminCurriculumScreen() {
 
       {selectedSubject ? (
         <View style={{ backgroundColor: '#FFFcf7', borderRadius: 16, padding: 16, gap: 10 }}>
-          <AppText variant="subtitle">Ünite · {selectedSubject.name}</AppText>
+          <AppText variant="subtitle">Konu grubu · {selectedSubject.name}</AppText>
+          <AppText variant="caption" tone="muted">
+            Master konular Ana Müfredat altında. Segmentler konu seçilince görünür.
+          </AppText>
           {(units.data ?? []).map((row) => (
             <View key={row.id} style={{ gap: 8 }}>
               <Row
@@ -417,6 +443,11 @@ export function AdminCurriculumScreen() {
                 onToggle={() => void mutations.setActive.mutateAsync({ table: 'topic_catalog', id: row.id, isActive: !row.is_active }).catch(fail)}
                 onSaveName={(name) => void mutations.rename.mutateAsync({ table: 'topic_catalog', id: row.id, name }).catch(fail)}
               />
+              {(segmentMap[row.canonical_topic_id ?? ''] ?? []).slice(0, 12).map((seg) => (
+                <AppText key={seg.id} variant="caption" tone="muted">
+                  └ {seg.title}
+                </AppText>
+              ))}
               {row.canonical_topic_id ? (
                 <Pressable
                   disabled={analyzing}

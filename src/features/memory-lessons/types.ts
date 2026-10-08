@@ -55,6 +55,11 @@ export type MemoryLesson = {
   memory_journey_title?: string | null;
   memory_journey_summary?: string | null;
   pedagogy_issues?: unknown;
+  minimum_theory?: string | null;
+  fast_rule?: string | null;
+  exam_technique?: Record<string, unknown> | null;
+  technique_score?: number | null;
+  academic_pass?: boolean | null;
 };
 
 export type MemoryLessonMediaMode = 'missing' | 'all' | 'narration' | 'scene';
@@ -92,6 +97,8 @@ export type MemoryLessonQuestion = {
   related_scene_id: string | null;
   question_set_id?: string | null;
   question_strategy?: string | null;
+  technique_role?: string | null;
+  trap_type?: string | null;
   created_at: string;
 };
 

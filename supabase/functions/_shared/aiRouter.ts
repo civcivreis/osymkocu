@@ -8,6 +8,7 @@ export type AiTaskType =
   | "canonical_topic_matching"
   | "lesson_generation"
   | "memory_pedagogy_generation"
+  | "exam_technique_validation"
   | "lesson_quality_validation"
   | "question_generation"
   | "question_validation"

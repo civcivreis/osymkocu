@@ -55,11 +55,12 @@ const ghost = {
   backgroundColor: '#fff',
 };
 
-type Tab = 'genel' | 'anlatim' | 'tasarim' | 'sahneler' | 'sorular' | 'medya' | 'onizleme';
+type Tab = 'genel' | 'anlatim' | 'teknik' | 'tasarim' | 'sahneler' | 'sorular' | 'medya' | 'onizleme';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'genel', label: 'Genel' },
   { key: 'anlatim', label: 'Anlatım' },
+  { key: 'teknik', label: 'Sınav Tekniği' },
   { key: 'tasarim', label: 'Hafıza Tasarımı' },
   { key: 'sahneler', label: 'Sahneler' },
   { key: 'sorular', label: 'Sorular' },
@@ -77,7 +78,7 @@ function productionSteps(lesson: {
   status: string;
 }) {
   const content = lesson.generation_status === 'succeeded' || Boolean(lesson.narration);
-  const memory = typeof lesson.pedagogy_score === 'number' && lesson.pedagogy_score >= 75;
+  const memory = typeof lesson.pedagogy_score === 'number' && lesson.pedagogy_score >= 80;
   const media = lesson.media_generation_status === 'ready';
   const review = lesson.status === 'pending_validation' || lesson.status === 'approved' || lesson.status === 'published';
   const published = lesson.status === 'published';
@@ -92,7 +93,7 @@ function productionSteps(lesson: {
     {
       id: 'hafiza',
       label: 'Hafıza Tasarımı',
-      hint: memory ? 'Hafıza tasarımı hazır' : content ? 'Hafıza tasarımı eksik' : 'İçerik sonrası',
+          hint: memory ? 'Teknik + hafıza hazır' : content ? 'Sınav tekniği eksik' : 'İçerik sonrası',
       state: memory ? 'done' : content ? 'current' : 'todo',
     },
     {
@@ -179,6 +180,15 @@ export function AdminMemoryLessonReviewScreen() {
   const [journeyTitle, setJourneyTitle] = useState('');
   const [journeySummary, setJourneySummary] = useState('');
   const [coreFacts, setCoreFacts] = useState<CoreFact[]>([]);
+  const [minimumTheory, setMinimumTheory] = useState('');
+  const [fastRule, setFastRule] = useState('');
+  const [recognition, setRecognition] = useState('');
+  const [firstMove, setFirstMove] = useState('');
+  const [fastStrategy, setFastStrategy] = useState('');
+  const [traps, setTraps] = useState('');
+  const [elim, setElim] = useState('');
+  const [whenNot, setWhenNot] = useState('');
+  const [stemSignals, setStemSignals] = useState('');
   const [scenes, setScenes] = useState<MemoryLessonScene[]>([]);
   const [questions, setQuestions] = useState<MemoryLessonQuestion[]>([]);
 
@@ -199,6 +209,16 @@ export function AdminMemoryLessonReviewScreen() {
     setJourneyTitle(lesson.memory_journey_title ?? '');
     setJourneySummary(lesson.memory_journey_summary ?? '');
     setCoreFacts(asCoreFacts(lesson.core_facts));
+    setMinimumTheory(lesson.minimum_theory ?? '');
+    setFastRule(lesson.fast_rule ?? '');
+    const tech = lesson.exam_technique && typeof lesson.exam_technique === 'object' ? lesson.exam_technique : {};
+    setRecognition(String(tech.recognition_trigger ?? ''));
+    setFirstMove(String(tech.first_move ?? ''));
+    setFastStrategy(String(tech.fast_strategy ?? ''));
+    setTraps(String(tech.common_traps ?? ''));
+    setElim(String(tech.elimination_rules ?? ''));
+    setWhenNot(String(tech.when_not_to_use ?? ''));
+    setStemSignals(Array.isArray(tech.stem_signals) ? tech.stem_signals.map(String).join('\n') : String(tech.stem_signals ?? ''));
   }, [lesson]);
 
   useEffect(() => {
@@ -235,6 +255,22 @@ export function AdminMemoryLessonReviewScreen() {
           core_facts: coreFacts,
           memory_journey_title: journeyTitle || null,
           memory_journey_summary: journeySummary || null,
+          minimum_theory: minimumTheory || null,
+          fast_rule: fastRule || null,
+          exam_technique: {
+            know: minimumTheory,
+            recognize: recognition,
+            solve: fastStrategy,
+            recognition_trigger: recognition,
+            first_move: firstMove,
+            fast_strategy: fastStrategy,
+            common_traps: traps,
+            elimination_rules: elim,
+            when_not_to_use: whenNot,
+            stem_signals: fromLines(stemSignals),
+            heuristic_kind: 'strong_clue',
+            aaa_bu_suydu: Boolean(recognition && firstMove && fastRule),
+          },
         },
         scenes,
         questions,
@@ -370,6 +406,8 @@ export function AdminMemoryLessonReviewScreen() {
           <TextInput value={summary} onChangeText={setSummary} placeholder="Özet" multiline style={[field, { minHeight: 90 }]} />
           <AppText variant="caption" tone="muted">
             Pedagoji puanı: {typeof lesson.pedagogy_score === 'number' ? `${lesson.pedagogy_score}/100` : 'henüz yok'}
+            {typeof lesson.technique_score === 'number' ? ` · teknik ${lesson.technique_score}` : ''}
+            {lesson.academic_pass === false ? ' · akademik geçmedi' : ''}
             {lesson.pedagogy_version ? ` · ${lesson.pedagogy_version}` : ''}
           </AppText>
         </View>
@@ -379,6 +417,21 @@ export function AdminMemoryLessonReviewScreen() {
         <View style={{ gap: 10 }}>
           <TextInput value={objectives} onChangeText={setObjectives} placeholder="Kazanımlar (her satır bir madde)" multiline style={[field, { minHeight: 120 }]} />
           <TextInput value={narration} onChangeText={setNarration} placeholder="Anlatım" multiline style={[field, { minHeight: 240 }]} />
+        </View>
+      ) : null}
+
+      {tab === 'teknik' ? (
+        <View style={{ gap: 10 }}>
+          <AppText variant="subtitle">Sınav Tekniği</AppText>
+          <TextInput value={recognition} onChangeText={setRecognition} placeholder="Soru kalıbı / tanıma tetikleyicisi" multiline style={[field, { minHeight: 72 }]} />
+          <TextInput value={firstMove} onChangeText={setFirstMove} placeholder="İlk hamle" multiline style={[field, { minHeight: 72 }]} />
+          <TextInput value={fastStrategy} onChangeText={setFastStrategy} placeholder="Hızlı güvenilir yol" multiline style={[field, { minHeight: 90 }]} />
+          <TextInput value={traps} onChangeText={setTraps} placeholder="Tipik tuzak" multiline style={[field, { minHeight: 72 }]} />
+          <TextInput value={whenNot} onChangeText={setWhenNot} placeholder="Ne zaman kullanılmaz" multiline style={[field, { minHeight: 72 }]} />
+          <TextInput value={elim} onChangeText={setElim} placeholder="Eleme kuralı" multiline style={[field, { minHeight: 72 }]} />
+          <TextInput value={fastRule} onChangeText={setFastRule} placeholder="5 saniyelik kural (en fazla 3 satır)" multiline style={[field, { minHeight: 72 }]} />
+          <TextInput value={minimumTheory} onChangeText={setMinimumTheory} placeholder="Asgari teori (KNOW)" multiline style={[field, { minHeight: 90 }]} />
+          <TextInput value={stemSignals} onChangeText={setStemSignals} placeholder="Soru kökü sinyalleri (her satır)" multiline style={[field, { minHeight: 72 }]} />
         </View>
       ) : null}
 

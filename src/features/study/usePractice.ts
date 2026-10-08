@@ -244,6 +244,22 @@ export function useCompleteLessonTopic() {
   });
 }
 
+export function useAttemptDiagnosis(questionIds: string[], enabled: boolean) {
+  return useQuery({
+    queryKey: ['attempt-diagnosis', questionIds],
+    enabled: enabled && questionIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await getSupabase().rpc('diagnose_tagged_attempts', { p_question_ids: questionIds });
+      if (error) throw error;
+      return data as {
+        lines?: string[];
+        has_tags?: boolean;
+        speed?: { set_avg_ms: number; personal_median_ms: number; note: string } | null;
+      };
+    },
+  });
+}
+
 export function useCompletePracticeSet() {
   const userId = useAuthStore((s) => s.session?.user.id);
 

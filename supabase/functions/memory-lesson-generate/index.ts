@@ -38,6 +38,20 @@ type CoreFact = {
   visual_anchor: string;
   recall_prompt: string;
 };
+type ExamTechnique = {
+  know: string;
+  recognize: string;
+  solve: string;
+  recognition_trigger: string;
+  first_move: string;
+  fast_strategy: string;
+  common_traps: string;
+  elimination_rules: string;
+  when_not_to_use: string;
+  stem_signals: string[];
+  heuristic_kind: string;
+  aaa_bu_suydu: boolean;
+};
 type Package = {
   title: string;
   summary: string;
@@ -52,6 +66,9 @@ type Package = {
   scenes: GenScene[];
   checkpoint_questions: GenQuestion[];
   final_questions: GenQuestion[];
+  minimum_theory: string;
+  fast_rule: string;
+  exam_technique: ExamTechnique;
 };
 
 function asStringArray(value: unknown) {
@@ -88,8 +105,16 @@ function parsePackage(raw: string): Package {
   if (!Array.isArray(parsed.memory_techniques) || parsed.memory_techniques.length < 1) {
     throw new Error("INVALID_PACKAGE");
   }
+  if (!parsed.exam_technique?.recognition_trigger || !parsed.fast_rule?.trim() || !parsed.minimum_theory?.trim()) {
+    throw new Error("INVALID_PACKAGE");
+  }
+  if (parsed.exam_technique.aaa_bu_suydu !== true) throw new Error("INVALID_PACKAGE");
   const strategies = new Set(parsed.final_questions.map((item) => asStrategy(item.question_strategy)));
   if (strategies.size < 3) throw new Error("INVALID_PACKAGE");
+  const techMoves = parsed.checkpoint_questions.filter((item) =>
+    ["first_move", "pattern_recognition", "elimination"].includes(asStrategy(item.question_strategy))
+  );
+  if (techMoves.length < 1) throw new Error("INVALID_PACKAGE");
   return parsed;
 }
 
@@ -99,6 +124,7 @@ async function generatePackage(ctx: {
   unit: string;
   topic: string;
   title: string;
+  patterns?: string;
 }, lessonId: string) {
   const messages = buildMemoryLessonMessages(ctx);
   const generated = await generateStructured("lesson_generation", messages, MEMORY_LESSON_JSON_SCHEMA, {
@@ -113,21 +139,36 @@ async function generatePackage(ctx: {
     throw new Error("INVALID_PACKAGE");
   }
   try {
-    await generateStructured("memory_pedagogy_generation", [
-      { role: "system", content: "Hafıza pedagojisini kontrol et. JSON: {ok:boolean,issues:string[]}" },
-      { role: "user", content: JSON.stringify({ technique: pkg.primary_memory_technique, facts: pkg.core_facts?.length, scenes: pkg.scenes?.length }) },
+    await generateStructured("exam_technique_validation", [
+      {
+        role: "system",
+        content:
+          "Sınav tekniğini doğrula. JSON: {ok,reliable,faster,has_limits,false_absolute,maps_to_exam,recognizable,saves_work,memorable_cue,issues:string[]}. Sezgiyi kural diye satan paketi reddet.",
+      },
+      { role: "user", content: JSON.stringify(pkg.exam_technique) },
     ], {
-      name: "pedagogy_check",
+      name: "technique_check",
       strict: true,
       schema: {
         type: "object",
         additionalProperties: false,
-        required: ["ok", "issues"],
-        properties: { ok: { type: "boolean" }, issues: { type: "array", items: { type: "string" } } },
+        required: ["ok", "reliable", "faster", "has_limits", "false_absolute", "maps_to_exam", "recognizable", "saves_work", "memorable_cue", "issues"],
+        properties: {
+          ok: { type: "boolean" },
+          reliable: { type: "boolean" },
+          faster: { type: "boolean" },
+          has_limits: { type: "boolean" },
+          false_absolute: { type: "boolean" },
+          maps_to_exam: { type: "boolean" },
+          recognizable: { type: "boolean" },
+          saves_work: { type: "boolean" },
+          memorable_cue: { type: "boolean" },
+          issues: { type: "array", items: { type: "string" } },
+        },
       },
     }, { promptVersion: MEMORY_PEDAGOGY_VERSION, lessonId, cache: true });
   } catch (error) {
-    console.error("pedagogy check skipped", error instanceof Error ? error.message : error);
+    console.error("technique check skipped", error instanceof Error ? error.message : error);
   }
   try {
     const quality = await generateStructured("lesson_quality_validation", [
@@ -218,12 +259,23 @@ Deno.serve(async (req) => {
       await admin.from("topic_catalog").update({ content_status: "generating" }).eq("id", lesson.topic_id);
     }
 
+    let patternText = "";
+    if (lesson.canonical_topic_id) {
+      const { data: patterns } = await admin
+        .from("exam_question_patterns")
+        .select("name, recognition_trigger, fast_strategy, common_traps, elimination_rules, when_not_to_use, example_signals")
+        .eq("canonical_topic_id", lesson.canonical_topic_id)
+        .order("priority", { ascending: true });
+      if (patterns?.length) patternText = JSON.stringify(patterns);
+    }
+
     const { pkg, meta } = await generatePackage({
       exam: examName,
       subject: subjectName,
       unit: unitName,
       topic: topicName,
       title: String(lesson.title ?? topicName),
+      patterns: patternText,
     }, lessonId);
 
     await admin.from("memory_lesson_review_anchors").delete().eq("lesson_id", lessonId);
@@ -272,6 +324,7 @@ Deno.serve(async (req) => {
         question_strategy: asStrategy(item.question_strategy),
         difficulty: "medium",
         canonical_topic_id: lesson.canonical_topic_id ?? null,
+        technique_role: asStrategy(item.question_strategy),
       })),
       ...pkg.final_questions.map((item, index) => ({
         lesson_id: lessonId,
@@ -284,6 +337,7 @@ Deno.serve(async (req) => {
         question_strategy: asStrategy(item.question_strategy),
         difficulty: finalDifficulty(index),
         canonical_topic_id: lesson.canonical_topic_id ?? null,
+        technique_role: asStrategy(item.question_strategy),
       })),
     ].filter((row) => {
       const optionValues = Object.values(row.options as Record<string, string>).map((value) => String(value).trim().toLowerCase()).sort().join("|");
@@ -314,6 +368,9 @@ Deno.serve(async (req) => {
         memory_journey_title: String(pkg.memory_journey_title ?? "").slice(0, 120),
         memory_journey_summary: String(pkg.memory_journey_summary ?? "").slice(0, 2000),
         pedagogy_version: MEMORY_PEDAGOGY_VERSION,
+        minimum_theory: String(pkg.minimum_theory ?? "").slice(0, 4000),
+        fast_rule: String(pkg.fast_rule ?? "").slice(0, 600),
+        exam_technique: pkg.exam_technique ?? {},
         duration_sec: Math.round(cursor / 1000),
         status: "pending_validation",
         generation_status: "succeeded",
