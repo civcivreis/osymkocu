@@ -7,8 +7,12 @@ import {
   addBreakdownSuggestion,
   approveSuggestion,
   cancelFactoryJob,
+  getFactoryExamCoverage,
   getFactorySettings,
   getFactoryStats,
+  previewMotorAll,
+  setFactoryExamEnabled,
+  startContentMotor,
   listBreakdownSessions,
   listBreakdownSuggestions,
   listCanonicalTopics,
@@ -55,6 +59,16 @@ export function useFactoryStats() {
   });
 }
 
+export function useFactoryExamCoverage() {
+  const role = useAuthStore((s) => s.profile?.app_role);
+  return useQuery({
+    queryKey: ['factory-coverage'],
+    enabled: canManageExams(role),
+    refetchInterval: 8000,
+    queryFn: wrap(getFactoryExamCoverage),
+  });
+}
+
 export function useFactoryJobs() {
   const role = useAuthStore((s) => s.profile?.app_role);
   return useQuery({
@@ -90,8 +104,18 @@ export function useFactoryMutations() {
     await client.invalidateQueries({ queryKey: ['factory-stats'] });
     await client.invalidateQueries({ queryKey: ['factory-jobs'] });
     await client.invalidateQueries({ queryKey: ['breakdown-sessions'] });
+    await client.invalidateQueries({ queryKey: ['factory-coverage'] });
   };
   return {
+    setExamEnabled: useMutation({
+      mutationFn: ({ examId, enabled }: { examId: string; enabled: boolean }) => setFactoryExamEnabled(examId, enabled),
+      onSuccess: invalidate,
+    }),
+    previewMotor: useMutation({ mutationFn: previewMotorAll }),
+    startMotor: useMutation({
+      mutationFn: startContentMotor,
+      onSuccess: invalidate,
+    }),
     setProduction: useMutation({
       mutationFn: (input: { enabled: boolean; maxConcurrency?: number }) =>
         setFactoryProduction(input.enabled, input.maxConcurrency),

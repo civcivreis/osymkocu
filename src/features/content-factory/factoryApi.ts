@@ -3,9 +3,11 @@ import { getSupabase } from '@/src/lib/supabase/client';
 import type {
   BreakdownSession,
   BreakdownSuggestion,
+  FactoryExamCoverage,
   FactoryJob,
   FactorySettings,
   FactoryStats,
+  MotorPreview,
   QueueEstimate,
 } from './types';
 
@@ -116,6 +118,33 @@ export async function retryFailedJobs(versionId?: string | null) {
   });
   if (error) throw error;
   return data as { retried: number };
+}
+
+export async function getFactoryExamCoverage(): Promise<FactoryExamCoverage[]> {
+  const { data, error } = await getSupabase().rpc('admin_factory_exam_coverage');
+  if (error) throw error;
+  return Array.isArray(data) ? (data as FactoryExamCoverage[]) : [];
+}
+
+export async function setFactoryExamEnabled(examId: string, enabled: boolean) {
+  const { data, error } = await getSupabase().rpc('admin_set_factory_exam_enabled', {
+    p_exam_id: examId,
+    p_enabled: enabled,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function previewMotorAll(): Promise<MotorPreview> {
+  const { data, error } = await getSupabase().rpc('admin_factory_preview_all');
+  if (error) throw error;
+  return data as MotorPreview;
+}
+
+export async function startContentMotor(confirm: boolean): Promise<MotorPreview> {
+  const { data, error } = await getSupabase().rpc('admin_factory_start_motor', { p_confirm: confirm });
+  if (error) throw error;
+  return data as MotorPreview;
 }
 
 export async function tickFactoryProcess() {

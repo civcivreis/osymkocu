@@ -27,6 +27,9 @@ import {
 import { PriorityTopics } from '@/src/features/progress/PriorityTopics';
 import { WeeklyActivityCard } from '@/src/features/progress/WeeklyActivityCard';
 import { useProgressInsights } from '@/src/features/progress/useProgressInsights';
+import { WeeklyXpCard } from '@/src/features/progress/WeeklyXpCard';
+import { useReviewQueue, useTodayStudyRecommendations } from '@/src/features/memory-lessons/useMemoryLessonPlayer';
+import { usePublicExamCatalog } from '@/src/features/curriculum/useCurriculum';
 import { formatXp, getLevelProgress } from '@/src/features/progress/xp';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
 import { postedAt, taggedName } from '@/src/features/social/identity';
@@ -78,6 +81,10 @@ export function HomeScreen() {
   const notifications = useNotifications();
   const joinExam = useJoinExamLobby();
   const upcomingExam = useUpcomingSystemExam();
+  const reviews = useReviewQueue();
+  const catalogs = usePublicExamCatalog();
+  const catalogExamId = catalogs.data?.[0]?.id ?? profile?.exam_id ?? null;
+  const todayStudy = useTodayStudyRecommendations(catalogExamId);
   const [showAllTasks, setShowAllTasks] = useState(false);
 
   const plan = planQuery.data ?? null;
@@ -157,6 +164,70 @@ export function HomeScreen() {
       <StatPill icon="radio-button-on" label={`%${goalPct} günlük hedef`} />
     </View>
   );
+
+  const dueReviews = (reviews.data ?? []).filter((row) => row.status === 'ready' || new Date(row.scheduled_at).getTime() <= Date.now());
+  const reviewCard =
+    dueReviews.length > 0 ? (
+      <Card header="Bugünkü Tekrarlar">
+        {dueReviews.slice(0, 3).map((row) => (
+          <View key={row.id} style={{ gap: 6, paddingVertical: 8 }}>
+            <AppText variant="subtitle">{row.lesson_title ?? row.topic}</AppText>
+            <AppText variant="caption" tone="muted">
+              {row.review_type === '1d' ? '1 günlük tekrar hazır' : row.review_type === '3d' ? '3 günlük tekrar hazır' : row.review_type === '7d' ? '7 günlük tekrar hazır' : 'Tekrar hazır'}
+            </AppText>
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/dersler/hafiza/[lessonId]',
+                  params: { lessonId: row.lesson_id, mode: 'review', queueId: row.id },
+                })
+              }
+              style={{ alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: colors.accent }}>
+              <AppText tone="inverse">Başla</AppText>
+            </Pressable>
+          </View>
+        ))}
+      </Card>
+    ) : null;
+
+  const studyPlanCard =
+    (todayStudy.data ?? []).length > 0 ? (
+      <Card header="Bugün Ne Çalışmalısın?">
+        {(todayStudy.data ?? []).slice(0, 3).map((row) => {
+          const label =
+            row.reason_code === 'review_due'
+              ? 'Tekrar zamanı'
+              : row.reason_code === 'prerequisite'
+                ? 'Önce bunu tamamla'
+                : row.reason_code === 'weakness'
+                  ? 'Zayıf olduğun konu'
+                  : row.reason_code === 'resume'
+                    ? 'Devam et'
+                    : 'Sıradaki ders';
+          return (
+            <View key={`${row.canonical_topic_id}-${row.lesson_id ?? 't'}`} style={{ gap: 4, paddingVertical: 8 }}>
+              <AppText variant="subtitle">{row.lesson_title ?? row.topic_name}</AppText>
+              <AppText variant="caption" tone="muted">
+                {label}
+                {row.prereq_title ? ` · Önce: ${row.prereq_title}` : ''}
+              </AppText>
+              {row.lesson_id ? (
+                <Pressable
+                  onPress={() =>
+                    router.push({
+                      pathname: '/dersler/hafiza/[lessonId]',
+                      params: { lessonId: row.lesson_id!, examCatalogId: catalogExamId ?? '' },
+                    })
+                  }
+                  style={{ alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: colors.accent }}>
+                  <AppText tone="inverse">Aç</AppText>
+                </Pressable>
+              ) : null}
+            </View>
+          );
+        })}
+      </Card>
+    ) : null;
 
   const weeklyCard = (
         <WeeklyActivityCard
@@ -321,11 +392,6 @@ export function HomeScreen() {
                       <AppText variant={index === 0 ? 'label' : 'caption'} style={{ fontWeight: '700' }}>
                         {taggedName(post.display_name, post.display_tag)}
                       </AppText>
-                      {post.is_bot ? (
-                        <AppText variant="caption" tone="muted">
-                          otomatik
-                        </AppText>
-                      ) : null}
                       <AppText variant="caption" tone="subtle">
                         {postedAt(post.created_at)}
                       </AppText>
@@ -358,9 +424,10 @@ export function HomeScreen() {
         {stats}
         {isDesktop ? (
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 24 }}>
-            <View style={{ flex: 2, gap: 16, minWidth: 0 }}>{weeklyCard}{focusCard}{tasksCard}</View>
+            <View style={{ flex: 2, gap: 16, minWidth: 0 }}>{weeklyCard}{studyPlanCard}{reviewCard}{focusCard}{tasksCard}</View>
             <View style={{ flex: 1, gap: 16, minWidth: 0 }}>
               {examCard}
+              <WeeklyXpCard compact />
               {liveCard}
               {socialCard}
               <PriorityTopics items={insights?.priorities ?? []} />
@@ -370,6 +437,9 @@ export function HomeScreen() {
           <>
             {examCard}
             {weeklyCard}
+            <WeeklyXpCard compact />
+            {studyPlanCard}
+            {reviewCard}
             {focusCard}
             {liveCard}
             {tasksCard}

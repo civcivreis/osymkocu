@@ -39,18 +39,20 @@ export function isAppNavActive(pathname: string, href: string) {
     return pathname === '/study' || pathname === '/lesson' || pathname.startsWith('/dersler');
   }
   if (href === '/messages') return pathname === '/messages' || pathname === '/chat' || pathname === '/group-chat';
-  if (href === '/profile') return pathname === '/profile' || pathname === '/user' || pathname === '/edit-profile';
+  if (href === '/profile') return pathname === '/profile' || pathname === '/user' || pathname === '/edit-profile' || pathname === '/siralama';
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function titleForPath(pathname: string) {
   if (isAppNavActive(pathname, '/')) return 'Ana Sayfa';
+  if (pathname.startsWith('/dersler/hafiza/')) return 'Hafıza Dersi';
   if (isAppNavActive(pathname, '/study')) return 'Dersler';
   if (isAppNavActive(pathname, '/test-merkezi')) return 'Test Merkezi';
   if (isAppNavActive(pathname, '/sistem-sinavlari')) return 'Sistem Sınavları';
   if (isAppNavActive(pathname, '/social')) return 'Sosyal';
   if (isAppNavActive(pathname, '/messages')) return 'Mesajlar';
   if (isAppNavActive(pathname, '/notifications')) return 'Bildirimler';
+  if (pathname === '/siralama') return 'Sıralama';
   if (isAppNavActive(pathname, '/profile')) return 'Profil';
   if (pathname === '/settings' || pathname.startsWith('/settings')) return 'Ayarlar';
   if (pathname === '/privacy') return 'Gizlilik';

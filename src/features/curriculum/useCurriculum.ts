@@ -26,6 +26,8 @@ import {
   listUnitCatalog,
   scheduleCurriculumVersion,
   setCatalogActive,
+  syncCurriculum,
+  listCurriculumProposals,
   updateCatalogName,
 } from './curriculumApi';
 
@@ -116,6 +118,14 @@ export function useCurriculumMutations() {
       onSuccess: invalidate,
     }),
     importJson: useMutation({ mutationFn: importCurriculum, onSuccess: invalidate }),
+    syncCurriculum: useMutation({
+      mutationFn: ({ examId, force }: { examId?: string | null; force?: boolean }) => syncCurriculum(examId, force),
+      onSuccess: async () => {
+        await invalidate();
+        await client.invalidateQueries({ queryKey: ['curriculum-proposals'] });
+        await client.invalidateQueries({ queryKey: ['factory-coverage'] });
+      },
+    }),
     createVersion: useMutation({
       mutationFn: createCurriculumVersion,
       onSuccess: invalidateVersions,
@@ -143,6 +153,15 @@ export function useCurriculumMutations() {
       onSuccess: invalidateVersions,
     }),
   };
+}
+
+export function useCurriculumProposals(examId?: string | null) {
+  const role = useAuthStore((s) => s.profile?.app_role);
+  return useQuery({
+    queryKey: ['curriculum-proposals', examId ?? 'all'],
+    enabled: canManageExams(role),
+    queryFn: wrap(() => listCurriculumProposals(examId)),
+  });
 }
 
 export function useCurriculumVersions(examId: string | null) {

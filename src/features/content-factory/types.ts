@@ -15,7 +15,39 @@ export type FactorySettings = {
   production_enabled: boolean;
   max_concurrency: number;
   question_pool_target?: number;
+  curriculum_workers?: number;
+  text_workers?: number;
+  image_workers?: number;
+  tts_workers?: number;
+  question_workers?: number;
+  curriculum_sync_interval?: string;
   updated_at?: string;
+};
+
+export type FactoryExamCoverage = {
+  id: string;
+  code: string;
+  name: string;
+  sort_order: number;
+  is_enabled: boolean;
+  curriculum_version_id?: string | null;
+  curriculum_status?: string | null;
+  curriculum_name?: string | null;
+  topics: number;
+  lessons_ready: number;
+  questions_ready: number;
+  failed: number;
+  pending_review: number;
+};
+
+export type MotorPreview = {
+  generate: number;
+  reused: number;
+  skipped: number;
+  queued?: number;
+  needs_confirm?: boolean;
+  production_enabled?: boolean;
+  exams?: { exam: string; code?: string; generate: number; reused: number; skipped: number; note?: string }[];
 };
 
 export type FactoryStats = {
@@ -63,6 +95,9 @@ export type FactoryJob = {
   events: { at?: string; code?: string; message?: string }[] | unknown;
   lesson_scope: string;
   coverage_mode: string;
+  generation_hash?: string | null;
+  factory_stage?: string | null;
+  locked_until?: string | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;

@@ -230,7 +230,6 @@ export function GroupChatScreen({
               showHeader={showHeader || (mine && !sameCluster(older, item))}
               showUsername={!mine}
               tight={tight}
-              isBot={item.is_bot}
               replyName={item.reply_name}
               replyBody={item.reply_body}
               mediaId={item.media_id}

@@ -28,6 +28,7 @@ export type ProfileCard = {
   current_xp: number;
   is_private?: boolean;
   is_bot?: boolean;
+  profile_type?: 'human' | 'virtual' | 'system' | null;
   avatar_url?: string | null;
   streak: number;
   follower_count: number;

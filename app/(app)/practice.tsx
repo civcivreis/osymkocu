@@ -11,6 +11,7 @@ import { Screen } from '@/src/components/ui/Screen';
 import { ChatImageViewer } from '@/src/features/social/ChatImage';
 import { usePairChatStore } from '@/src/features/study/pairChatStore';
 import { QuestionPalette } from '@/src/features/study/QuestionPalette';
+import { useCompleteLessonFinal } from '@/src/features/memory-lessons/useMemoryLessonPlayer';
 import { sortedChoices, useCompletePracticeSet, useCurriculumPracticeQuestions, usePracticeQuestions, useSubmitAttempt } from '@/src/features/study/usePractice';
 import { useStudyPresence } from '@/src/features/study/useStudyPresence';
 import { useCoachStore } from '@/src/features/teacher/coachStore';
@@ -32,10 +33,11 @@ export default function PracticeScreen() {
     setType?: string;
     count?: string;
     lessonId?: string;
+    questionIds?: string;
   }>();
   const review = params.mode === 'review';
   const mixed = params.mode === 'mixed';
-  const curriculumMode = Boolean(params.examCatalogId);
+  const curriculumMode = Boolean(params.examCatalogId || params.questionIds);
   const autoMatch = useAuthStore((s) => s.profile?.auto_match) !== false;
   const legacyQuery = usePracticeQuestions({ subjectId: params.subjectId, review, mixed });
   const curriculumQuery = useCurriculumPracticeQuestions({
@@ -44,10 +46,12 @@ export default function PracticeScreen() {
     setType: params.setType ?? (params.lessonId ? 'lesson_final' : mixed ? 'mixed' : 'topic_pool'),
     limit: Number(params.count ?? (params.lessonId ? 10 : 10)) || 10,
     memoryLessonId: params.lessonId,
+    questionIds: params.questionIds,
   });
   const questionsQuery = curriculumMode ? curriculumQuery : legacyQuery;
   const submit = useSubmitAttempt();
   const completeSet = useCompletePracticeSet();
+  const completeFinal = useCompleteLessonFinal();
   const questions = questionsQuery.data ?? [];
   const [index, setIndex] = useState(0);
   useStudyPresence(
@@ -59,6 +63,9 @@ export default function PracticeScreen() {
   const [result, setResult] = useState<AttemptResult | null>(null);
   const [correctCount, setCorrectCount] = useState(0);
   const [wrongObjectives, setWrongObjectives] = useState<string[]>([]);
+  const [wrongIds, setWrongIds] = useState<string[]>([]);
+  const [objectiveStats, setObjectiveStats] = useState<Record<string, { title: string; correct: number; attempted: number; id?: string }>>({});
+  const [anchorStats, setAnchorStats] = useState<Record<string, { visual_anchor: string; correct: number; attempted: number }>>({});
   const [startedAt, setStartedAt] = useState(Date.now());
   const [finished, setFinished] = useState(false);
   const [marked, setMarked] = useState<Record<string, boolean>>({});
@@ -112,6 +119,9 @@ export default function PracticeScreen() {
     setResult(null);
     setCorrectCount(0);
     setWrongObjectives([]);
+    setWrongIds([]);
+    setObjectiveStats({});
+    setAnchorStats({});
     setFinished(false);
     setStartedAt(Date.now());
     setId.current = crypto.randomUUID();
@@ -125,7 +135,22 @@ export default function PracticeScreen() {
       setId: setId.current,
       questionIds: questions.map((item) => item.id),
     }).catch(() => undefined);
-  }, [completeSet, finished, questions]);
+    if (params.lessonId && (params.setType === 'lesson_final' || !params.setType) && !params.questionIds) {
+      AnalyticsProvider.track('final_test_completed', { lessonId: params.lessonId, correct: correctCount, total: questions.length });
+      void completeFinal.mutateAsync({
+        lessonId: params.lessonId,
+        correct: correctCount,
+        total: questions.length,
+        objectives: Object.values(objectiveStats).map((row) => ({
+          id: row.id,
+          title: row.title,
+          correct: row.correct,
+          attempted: row.attempted,
+        })),
+        anchors: Object.values(anchorStats),
+      }).catch(() => undefined);
+    }
+  }, [anchorStats, completeFinal, completeSet, correctCount, finished, objectiveStats, params.lessonId, params.questionIds, params.setType, questions]);
 
   const onSubmit = async () => {
     if (!question || !selected) return;
@@ -139,8 +164,37 @@ export default function PracticeScreen() {
       setResult(next);
       setAnswered((current) => ({ ...current, [question.id]: true }));
       if (next.is_correct) setCorrectCount((value) => value + 1);
-      else if (question.objective_title) {
-        setWrongObjectives((current) => (current.includes(question.objective_title!) ? current : [...current, question.objective_title!]));
+      else {
+        setWrongIds((current) => (current.includes(question.id) ? current : [...current, question.id]));
+        if (question.objective_title) {
+          setWrongObjectives((current) => (current.includes(question.objective_title!) ? current : [...current, question.objective_title!]));
+        }
+      }
+      const objKey = question.learning_objective_id || question.objective_title || 'genel';
+      setObjectiveStats((current) => {
+        const prev = current[objKey] ?? { title: question.objective_title || 'Kazanım', correct: 0, attempted: 0, id: question.learning_objective_id ?? undefined };
+        return {
+          ...current,
+          [objKey]: {
+            ...prev,
+            attempted: prev.attempted + 1,
+            correct: prev.correct + (next.is_correct ? 1 : 0),
+          },
+        };
+      });
+      if (question.question_strategy === 'visual_recall') {
+        const label = question.objective_title || 'Görsel çıpa';
+        setAnchorStats((current) => {
+          const prev = current[label] ?? { visual_anchor: label, correct: 0, attempted: 0 };
+          return {
+            ...current,
+            [label]: {
+              ...prev,
+              attempted: prev.attempted + 1,
+              correct: prev.correct + (next.is_correct ? 1 : 0),
+            },
+          };
+        });
       }
     } catch (error) {
       setResult({
@@ -311,14 +365,71 @@ export default function PracticeScreen() {
               </AppText>
               {params.lessonId || params.setType === 'lesson_final' ? (
                 <>
+                  {Object.values(objectiveStats).filter((row) => row.correct === row.attempted && row.attempted > 0).length ? (
+                    <View style={{ gap: 4 }}>
+                      <AppText variant="label">GÜÇLÜ OLDUĞUN ALANLAR</AppText>
+                      {Object.values(objectiveStats)
+                        .filter((row) => row.correct === row.attempted && row.attempted > 0)
+                        .map((row) => (
+                          <AppText key={row.title} variant="caption">
+                            ✓ {row.title} {row.correct}/{row.attempted}
+                          </AppText>
+                        ))}
+                    </View>
+                  ) : null}
                   {wrongObjectives.length > 0 ? (
-                    <AppText tone="muted">Zayıf kazanımlar: {wrongObjectives.join(', ')}</AppText>
+                    <View style={{ gap: 4 }}>
+                      <AppText variant="label">TEKRAR ETMEN GEREKENLER</AppText>
+                      {Object.values(objectiveStats)
+                        .filter((row) => row.correct < row.attempted)
+                        .map((row) => (
+                          <AppText key={row.title} variant="caption">
+                            ! {row.title} {row.correct}/{row.attempted}
+                          </AppText>
+                        ))}
+                    </View>
                   ) : (
                     <AppText tone="muted">Kazanımlar bu sette sağlam görünüyor.</AppText>
                   )}
-                  <AppText variant="caption" tone="muted">
-                    Yanlışlar tekrar defterine düşer; 1/3/7 günlük tekrar setleri sonra bağlanacak.
-                  </AppText>
+                  {Object.values(anchorStats).length ? (
+                    <View style={{ gap: 4 }}>
+                      <AppText variant="label">HAFIZA KANCAN</AppText>
+                      {Object.values(anchorStats).map((row) => (
+                        <AppText key={row.visual_anchor} variant="caption">
+                          {row.visual_anchor} · {row.correct}/{row.attempted}
+                        </AppText>
+                      ))}
+                    </View>
+                  ) : null}
+                  {wrongIds.length ? (
+                    <Button
+                      label="Yanlışları Tekrar Et"
+                      variant="secondary"
+                      onPress={() =>
+                        router.replace({
+                          pathname: '/practice',
+                          params: {
+                            examCatalogId: params.examCatalogId,
+                            canonicalTopicId: params.canonicalTopicId,
+                            lessonId: params.lessonId,
+                            questionIds: wrongIds.join(','),
+                          },
+                        })
+                      }
+                    />
+                  ) : null}
+                  {params.lessonId ? (
+                    <Button
+                      label="2 Dakikalık Tekrar"
+                      variant="secondary"
+                      onPress={() =>
+                        router.push({
+                          pathname: '/dersler/hafiza/[lessonId]',
+                          params: { lessonId: params.lessonId!, examCatalogId: params.examCatalogId, mode: 'review' },
+                        })
+                      }
+                    />
+                  ) : null}
                 </>
               ) : null}
               <Button label="Çalışmaya dön" onPress={() => router.back()} />

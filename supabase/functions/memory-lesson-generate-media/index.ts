@@ -1,10 +1,8 @@
 import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { generateImage, generateSpeech, generationMeta } from "../_shared/aiRouter.ts";
 import { lessonAssetPrefix, putLessonObject } from "../_shared/lessonR2.ts";
 import { estimateSpeechMs, mp3DurationMs } from "../_shared/mp3Duration.ts";
 
-const TTS_MODEL = "tts-1-hd";
-const TTS_VOICE = "nova";
-const IMAGE_MODEL = "dall-e-3";
 const MIN_SCENE_MS = 4000;
 
 type Mode = "missing" | "all" | "narration" | "scene";
@@ -21,6 +19,7 @@ type SceneRow = {
   asset_key: string | null;
   start_ms: number;
   end_ms: number;
+  visual_priority?: string | null;
 };
 type LessonRow = {
   id: string;
@@ -111,6 +110,7 @@ async function upsertAsset(
   r2Key: string,
   mimeType: string,
   sizeBytes: number,
+  metadata?: Record<string, unknown>,
 ) {
   const { error } = await admin.from("memory_lesson_assets").upsert(
     {
@@ -119,57 +119,22 @@ async function upsertAsset(
       r2_key: r2Key,
       mime_type: mimeType,
       size_bytes: sizeBytes,
+      generation_metadata: metadata ?? {},
     },
     { onConflict: "lesson_id,r2_key" },
   );
   if (error) throw error;
 }
 
-async function speak(apiKey: string, text: string) {
-  const response = await fetch("https://api.openai.com/v1/audio/speech", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: TTS_MODEL,
-      voice: TTS_VOICE,
-      input: text,
-      response_format: "mp3",
-    }),
-  });
-  if (!response.ok) {
-    console.error("tts", response.status, (await response.text()).slice(0, 240));
-    throw new Error("TTS_FAILED");
-  }
-  return new Uint8Array(await response.arrayBuffer());
+async function speak(text: string, lessonId: string) {
+  const spoken = await generateSpeech(text, { lessonId });
+  return { bytes: spoken.bytes, meta: generationMeta(spoken, { voice: spoken.voice, prompt_version: "tts-v1" }) };
 }
 
-async function generateSceneImage(apiKey: string, prompt: string) {
-  const response = await fetch("https://api.openai.com/v1/images/generations", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: IMAGE_MODEL,
-      prompt,
-      n: 1,
-      size: "1792x1024",
-      quality: "standard",
-      response_format: "b64_json",
-    }),
-  });
-  if (!response.ok) {
-    console.error("image", response.status, (await response.text()).slice(0, 240));
-    throw new Error("IMAGE_FAILED");
-  }
-  const body = await response.json();
-  const b64 = String(body?.data?.[0]?.b64_json ?? "");
-  if (!b64) throw new Error("IMAGE_FAILED");
-  return b64ToBytes(b64);
+async function generateSceneImage(prompt: string, premium: boolean, lessonId: string) {
+  const task = premium ? "premium_image_generation" : "image_generation";
+  const image = await generateImage(task, prompt, { lessonId, size: "1792x1024" });
+  return { bytes: image.bytes, meta: generationMeta(image, { prompt_version: "scene-image-v1" }) };
 }
 
 function imagePrompt(lesson: LessonRow, scene: SceneRow) {
@@ -200,16 +165,12 @@ Deno.serve(async (req) => {
   let failLessonId = "";
   try {
     await requireLessonAdmin(req);
-    const apiKey = (Deno.env.get("OPENAI_API_KEY") ?? "").trim();
-    if (!apiKey) {
-      return json({ error: { code: "AI_NOT_CONFIGURED", message: "Üretim anahtarı yapılandırılmamış." } }, 503);
-    }
-
     const body = await req.json().catch(() => ({})) as {
       lesson_id?: string;
       mode?: string;
       scene_id?: string;
       force?: boolean;
+      premium?: boolean;
     };
     const lessonId = String(body.lesson_id ?? "").trim();
     if (!lessonId) return json({ error: { code: "INVALID", message: "lesson_id gerekli." } }, 400);
@@ -235,7 +196,7 @@ Deno.serve(async (req) => {
 
     const { data: scenesData, error: scenesError } = await admin
       .from("memory_lesson_scenes")
-      .select("id, scene_order, narration_text, visual_description, memory_hook, memory_technique, memory_target, visual_anchor, recall_prompt, asset_key, start_ms, end_ms")
+      .select("id, scene_order, narration_text, visual_description, memory_hook, memory_technique, memory_target, visual_anchor, recall_prompt, asset_key, start_ms, end_ms, visual_priority")
       .eq("lesson_id", lessonId)
       .order("scene_order", { ascending: true });
     if (scenesError) throw scenesError;
@@ -262,13 +223,21 @@ Deno.serve(async (req) => {
     let ttsError: string | null = null;
     let imageFailures = 0;
     const createdKeys: string[] = [];
+    let usedTtsModel: string | null = null;
+    let usedImageModel: string | null = null;
 
     const shouldNarration = mode === "all" || mode === "narration" || (mode === "missing" && !narrationKey);
     if (shouldNarration) {
       try {
         const chunks = chunkNarration(narration);
         const audioParts: Uint8Array[] = [];
-        for (const chunk of chunks) audioParts.push(await speak(apiKey, chunk));
+        let ttsMeta: Record<string, unknown> | undefined;
+        for (const chunk of chunks) {
+          const spoken = await speak(chunk, lessonId);
+          audioParts.push(spoken.bytes);
+          ttsMeta = spoken.meta;
+          usedTtsModel = String(spoken.meta.model);
+        }
         const mp3 = concatMp3(audioParts);
         const key = `${prefix}/narration.mp3`;
         const uploaded = await putLessonObject(key, mp3, "audio/mpeg");
@@ -281,7 +250,7 @@ Deno.serve(async (req) => {
             duration_sec: Math.max(1, Math.round(durationMs / 1000)),
           })
           .eq("id", lessonId);
-        await upsertAsset(admin, lessonId, "narration", key, "audio/mpeg", uploaded.bytes);
+        await upsertAsset(admin, lessonId, "narration", key, "audio/mpeg", uploaded.bytes, ttsMeta);
         createdKeys.push(key);
       } catch (error) {
         console.error("memory-lesson-generate-media narration", error);
@@ -316,13 +285,18 @@ Deno.serve(async (req) => {
         const skip = mode === "missing" && Boolean(scene.asset_key);
         if (skip) continue;
         try {
-          const png = await generateSceneImage(apiKey, imagePrompt(lesson as LessonRow, scene));
-          const uploaded = await putLessonObject(key, png, "image/png");
+          const premium = Boolean(body.premium)
+            || scene.scene_order === 1
+            || scene.visual_priority === "premium"
+            || scene.visual_priority === "key_anchor";
+          const png = await generateSceneImage(imagePrompt(lesson as LessonRow, scene), premium, lessonId);
+          usedImageModel = String(png.meta.model);
+          const uploaded = await putLessonObject(key, png.bytes, "image/png");
           await admin
             .from("memory_lesson_scenes")
             .update({ asset_key: key, asset_type: "image" })
             .eq("id", scene.id);
-          await upsertAsset(admin, lessonId, "image", key, "image/png", uploaded.bytes);
+          await upsertAsset(admin, lessonId, "image", key, "image/png", uploaded.bytes, png.meta);
           scene.asset_key = key;
           createdKeys.push(key);
           if (scene.scene_order === 1 || !lesson.thumbnail_key) {
@@ -386,8 +360,8 @@ Deno.serve(async (req) => {
       lesson: out,
       keys: createdKeys,
       skipped: mode === "missing",
-      tts_model: TTS_MODEL,
-      image_model: IMAGE_MODEL,
+      tts_model: usedTtsModel,
+      image_model: usedImageModel,
     });
   } catch (error) {
     console.error("memory-lesson-generate-media", error);

@@ -24,6 +24,11 @@ export type SocialPost = {
   kind: string;
   created_at: string;
   subject_id: string | null;
+  topic_id?: string | null;
+  canonical_topic_id?: string | null;
+  topic_name?: string | null;
+  canonical_topic_name?: string | null;
+  unit_name?: string | null;
   session_id?: string | null;
   capacity?: number | null;
   duration_minutes?: number | null;
@@ -101,13 +106,6 @@ export type StoryItem = {
   display_tag?: number | null;
 };
 
-function decodeBase64(value: string) {
-  const chars = globalThis.atob(value);
-  const bytes = new Uint8Array(chars.length);
-  for (let i = 0; i < chars.length; i += 1) bytes[i] = chars.charCodeAt(i);
-  return bytes;
-}
-
 export type Friendship = {
   id: string;
   requester_id: string;
@@ -175,6 +173,7 @@ export function mapSocialError(message: string): string {
   if (message.includes('BLOCKED')) return 'Bu kişiyle iletişim kapalı.';
   if (message.includes('EMPTY_MESSAGE')) return 'Boş mesaj gönderilemez.';
   if (message.includes('INVALID_DM') || message.includes('INVALID_FRIEND')) return 'Geçersiz istek.';
+  if (message.includes('STORY_RATE_LIMIT')) return 'Aktif hikaye limitine ulaştın. Süresi biteni bekle.';
   if (message.includes('BOT_NO_FRIEND')) return 'Bu profil arkadaşlık isteği kabul etmiyor.';
   if (message.includes('BOT_NO_DM')) return 'Bu kişi mesaj kabul etmiyor.';
   if (message.includes('BOT_NO_STUDY')) return 'Şu an müsait değil. Sınav veya yarışma odasına katıl.';
@@ -421,18 +420,26 @@ export function usePublishPost() {
     mutationFn: async (input: {
       body: string;
       subjectId?: string | null;
+      topicId?: string | null;
+      canonicalTopicId?: string | null;
       minutes?: 30 | 60 | 120 | 240;
-      intent?: 'status' | 'study_partner' | 'goal';
+      intent?: 'status' | 'study_partner' | 'goal' | 'ask';
       goal?: string;
     }) => {
       const kind =
-        input.intent === 'study_partner' ? 'ask' : input.intent === 'goal' ? 'activity' : 'status';
+        input.intent === 'study_partner' || input.intent === 'ask'
+          ? 'ask'
+          : input.intent === 'goal'
+            ? 'activity'
+            : 'status';
       const args: {
         p_body: string;
         p_subject_id: string | null;
         p_minutes: number;
         p_kind?: string;
         p_goal?: string;
+        p_topic_id?: string | null;
+        p_canonical_topic_id?: string | null;
       } = {
         p_body: input.body.trim(),
         p_subject_id: input.subjectId ?? null,
@@ -440,6 +447,8 @@ export function usePublishPost() {
       };
       if (kind !== 'status') args.p_kind = kind;
       if (input.goal) args.p_goal = input.goal;
+      if (input.topicId) args.p_topic_id = input.topicId;
+      if (input.canonicalTopicId) args.p_canonical_topic_id = input.canonicalTopicId;
       const { error } = await getSupabase().rpc('publish_status', args);
       if (error) throw new Error(mapSocialError(error.message));
     },
@@ -734,22 +743,33 @@ export function useGroupRooms() {
 
 export function useStories() {
   const userId = useAuthStore((s) => s.session?.user.id);
-  return useQuery({
+  const client = useQueryClient();
+  const query = useQuery({
     queryKey: ['stories', userId],
     enabled: Boolean(userId),
     refetchInterval: 60000,
     queryFn: async () => {
       const supabase = getSupabase();
-      try {
-        await supabase.functions.invoke('ai', { body: { action: 'pulseBotStory', payload: {} } });
-      } catch {
-        // Bot görseli yoksa akış yine açılır.
-      }
       const { data, error } = await supabase.rpc('get_stories');
       if (error) throw error;
       return (Array.isArray(data) ? data : []) as StoryItem[];
     },
   });
+
+  useEffect(() => {
+    const next = (query.data ?? [])
+      .map((row) => new Date(row.expires_at).getTime())
+      .filter((time) => time > Date.now())
+      .sort((a, b) => a - b)[0];
+    if (!next) return undefined;
+    const wait = Math.max(1000, Math.min(next - Date.now() + 750, 60 * 60 * 1000));
+    const timer = setTimeout(() => {
+      void client.invalidateQueries({ queryKey: ['stories', userId] });
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [client, query.data, userId]);
+
+  return query;
 }
 
 export function usePublishStory() {
@@ -758,16 +778,17 @@ export function usePublishStory() {
   return useMutation({
     mutationFn: async (input: { base64: string; caption?: string }) => {
       if (!userId) throw new Error('UNAUTHORIZED');
-      const path = `${userId}/${Date.now()}.jpg`;
-      const { error: uploadError } = await getSupabase().storage.from('stories').upload(path, decodeBase64(input.base64), {
-        contentType: 'image/jpeg',
-        upsert: false,
+      const invoked = await getSupabase().functions.invoke('media-upload', {
+        body: { purpose: 'story', base64: input.base64, mime: 'image/jpeg' },
       });
-      if (uploadError) throw uploadError;
-      const { data } = getSupabase().storage.from('stories').getPublicUrl(path);
+      const payload = invoked.data as { data?: { mediaId?: string }; error?: { code?: string; message?: string } } | null;
+      if (invoked.error || payload?.error || !payload?.data?.mediaId) {
+        throw new Error(mapSocialError(payload?.error?.message ?? invoked.error?.message ?? 'IMAGE_REJECTED'));
+      }
       const { error } = await getSupabase().rpc('publish_story', {
-        p_image_url: data.publicUrl,
+        p_image_url: `media:${payload.data.mediaId}`,
         p_caption: input.caption ?? '',
+        p_media_id: payload.data.mediaId,
       });
       if (error) throw new Error(mapSocialError(error.message));
     },
@@ -1004,6 +1025,70 @@ export function friendState(
   if (row.status === 'accepted') return 'friends';
   if (row.requester_id === me) return 'outgoing';
   return 'incoming';
+}
+
+export type ActiveStudyTopic = {
+  id: string;
+  topic_id?: string | null;
+  canonical_topic_id?: string | null;
+  name: string;
+  subject_name?: string | null;
+  people: number;
+};
+
+export type RecommendedPartner = {
+  user_id: string;
+  display_name: string;
+  display_tag?: number | null;
+  avatar_url?: string | null;
+  exam_name?: string | null;
+  subject_name?: string | null;
+  topic_name?: string | null;
+  subject_id?: string | null;
+  topic_id?: string | null;
+  canonical_topic_id?: string | null;
+  reason?: string | null;
+  score?: number;
+};
+
+export function useActiveStudyTopics() {
+  const userId = useAuthStore((s) => s.session?.user.id);
+  return useQuery({
+    queryKey: ['active-study-topics', userId],
+    enabled: Boolean(userId),
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+    queryFn: async () => {
+      const { data, error } = await getSupabase().rpc('get_active_study_topics');
+      if (error) throw error;
+      return (Array.isArray(data) ? data : []) as ActiveStudyTopic[];
+    },
+  });
+}
+
+export function useRecommendedPartners(input: {
+  topicId?: string | null;
+  subjectId?: string | null;
+  canonicalTopicId?: string | null;
+  learningObjectiveId?: string | null;
+}) {
+  const userId = useAuthStore((s) => s.session?.user.id);
+  return useQuery({
+    queryKey: ['recommended-partners', userId, input],
+    enabled: Boolean(userId),
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+    queryFn: async () => {
+      const { data, error } = await getSupabase().rpc('get_recommended_study_partners', {
+        p_topic_id: input.topicId ?? null,
+        p_subject_id: input.subjectId ?? null,
+        p_canonical_topic_id: input.canonicalTopicId ?? null,
+        p_learning_objective_id: input.learningObjectiveId ?? null,
+      });
+      if (error) throw error;
+      return (Array.isArray(data) ? data : []) as RecommendedPartner[];
+    },
+  });
 }
 
 export function useGroupMembers(slug: string | null) {

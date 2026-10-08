@@ -12,9 +12,11 @@ import { ProgressBar } from '@/src/components/ui/ProgressBar';
 import { Screen } from '@/src/components/ui/Screen';
 import { toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
 import { formatXp, getLevelProgress } from '@/src/features/progress/xp';
+import { useXpSummary } from '@/src/features/progress/useXpBoard';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
 import { EditPostSheet, ReportSheet, StudyInviteSheet } from '@/src/features/social/ReportSheet';
 import { postedAt, taggedName } from '@/src/features/social/identity';
+import { VirtualDisclosure, isVirtualProfile } from '@/src/features/social/VirtualDisclosure';
 import {
     followLabel,
     formatStudyDuration,
@@ -109,6 +111,7 @@ export function UserProfileScreen({
   const card = cardQuery.data;
   const xpTotal = mine ? (meXp ?? card?.current_xp ?? 0) : (card?.current_xp ?? 0);
   const xpProgress = getLevelProgress(xpTotal);
+  const xpSummary = useXpSummary(mine ? id : null);
   const name = taggedName(card?.display_name, card?.display_tag);
   const posts = (card?.posts ?? []).slice(0, showAllPosts ? 12 : 3);
   const hasWeek = Boolean(card && (card.week_questions > 0 || card.week_ms > 0));
@@ -192,11 +195,7 @@ export function UserProfileScreen({
             <LetterAvatar id={id} name={card.display_name} size={84} imageUrl={card.avatar_url} />
           </View>
           <AppText variant="title">{name}</AppText>
-          {card.is_bot ? (
-            <AppText variant="caption" tone="muted">
-              Otomatik çalışma hesabı
-            </AppText>
-          ) : null}
+          <VirtualDisclosure profile={card} />
           {mine ? (
             <View style={{ width: '100%', gap: 8, paddingHorizontal: 12 }}>
               <AppText variant="subtitle" style={{ textAlign: 'center' }}>
@@ -206,6 +205,17 @@ export function UserProfileScreen({
                 {formatXp(xpProgress.xpInLevel)} / {formatXp(xpProgress.xpForNext)} XP
               </AppText>
               <ProgressBar value={xpProgress.ratio} height={5} />
+              {xpSummary.data ? (
+                <View style={{ gap: 2, paddingTop: 6 }}>
+                  <AppText variant="caption" style={{ textAlign: 'center' }}>
+                    {formatXp(xpSummary.data.total_xp)} XP · Bu hafta {formatXp(xpSummary.data.weekly_xp)} XP
+                  </AppText>
+                  <AppText variant="caption" tone="muted" style={{ textAlign: 'center' }}>
+                    Genel {xpSummary.data.global_rank ? `#${xpSummary.data.global_rank}` : '—'}
+                    {' · '}Haftalık {xpSummary.data.weekly_rank ? `#${xpSummary.data.weekly_rank}` : '—'}
+                  </AppText>
+                </View>
+              ) : null}
               {examStats.data && examStats.data.count > 0 ? (
                 <Pressable onPress={() => router.push('/system-exams')} style={{ gap: 2, paddingTop: 4 }}>
                   <AppText variant="caption" style={{ textAlign: 'center' }}>
@@ -480,6 +490,17 @@ export function UserProfileScreen({
         title={name}
         onClose={() => setProfileMenu(false)}
         actions={[
+          ...(isVirtualProfile(card)
+            ? [
+                {
+                  key: 'virtual-info',
+                  icon: 'information-circle-outline' as const,
+                  label: 'Sanal çalışma profili',
+                  hint: 'ÖSYM Koçu tarafından çalışma ortamını desteklemek için kullanılır.',
+                  onPress: () => toastInfo('Sanal çalışma profili'),
+                },
+              ]
+            : []),
           { key: 'report', icon: 'flag-outline', label: 'Şikayet et', onPress: () => setReportOpen(true) },
           {
             key: 'block',

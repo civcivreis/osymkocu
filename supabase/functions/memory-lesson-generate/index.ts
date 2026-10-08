@@ -1,7 +1,7 @@
 import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { generateStructured, generationMeta, friendlyAiError } from "../_shared/aiRouter.ts";
 import {
   MEMORY_LESSON_JSON_SCHEMA,
-  MEMORY_LESSON_MODEL,
   MEMORY_LESSON_PROMPT_VERSION,
   MEMORY_PEDAGOGY_VERSION,
   MEMORY_TECHNIQUES,
@@ -93,46 +93,69 @@ function parsePackage(raw: string): Package {
   return parsed;
 }
 
-async function generatePackage(apiKey: string, ctx: {
+async function generatePackage(ctx: {
   exam: string;
   subject: string;
   unit: string;
   topic: string;
   title: string;
-}) {
-  const payload = {
-    model: MEMORY_LESSON_MODEL,
-    temperature: 0.3,
-    max_tokens: 8192,
-    messages: buildMemoryLessonMessages(ctx),
-    response_format: { type: "json_schema", json_schema: MEMORY_LESSON_JSON_SCHEMA },
-  };
-  let response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
+}, lessonId: string) {
+  const messages = buildMemoryLessonMessages(ctx);
+  const generated = await generateStructured("lesson_generation", messages, MEMORY_LESSON_JSON_SCHEMA, {
+    promptVersion: MEMORY_LESSON_PROMPT_VERSION,
+    lessonId,
+    cache: true,
   });
-  if (response.status === 400) {
-    response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+  let pkg: Package;
+  try {
+    pkg = parsePackage(generated.text);
+  } catch {
+    throw new Error("INVALID_PACKAGE");
+  }
+  try {
+    await generateStructured("memory_pedagogy_generation", [
+      { role: "system", content: "Hafıza pedagojisini kontrol et. JSON: {ok:boolean,issues:string[]}" },
+      { role: "user", content: JSON.stringify({ technique: pkg.primary_memory_technique, facts: pkg.core_facts?.length, scenes: pkg.scenes?.length }) },
+    ], {
+      name: "pedagogy_check",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["ok", "issues"],
+        properties: { ok: { type: "boolean" }, issues: { type: "array", items: { type: "string" } } },
       },
-      body: JSON.stringify({ ...payload, response_format: { type: "json_object" } }),
-    });
+    }, { promptVersion: MEMORY_PEDAGOGY_VERSION, lessonId, cache: true });
+  } catch (error) {
+    console.error("pedagogy check skipped", error instanceof Error ? error.message : error);
   }
-  if (!response.ok) {
-    const raw = await response.text();
-    console.error("openai http", response.status, raw.slice(0, 400));
-    throw new Error(response.status === 401 || response.status === 429 ? "AI_PROVIDER" : "AI_PROVIDER");
+  try {
+    const quality = await generateStructured("lesson_quality_validation", [
+      { role: "system", content: "ÖSYM ders paketi kalite kontrolü. JSON: {ok:boolean,issues:string[]}" },
+      { role: "user", content: generated.text.slice(0, 8000) },
+    ], {
+      name: "lesson_quality",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["ok", "issues"],
+        properties: { ok: { type: "boolean" }, issues: { type: "array", items: { type: "string" } } },
+      },
+    }, { promptVersion: MEMORY_LESSON_PROMPT_VERSION, lessonId, cache: false });
+    const parsed = quality.parsed as { ok?: boolean };
+    if (parsed?.ok === false) {
+      const retry = await generateStructured("lesson_generation", [
+        ...messages,
+        { role: "user", content: `Önceki paket reddedildi. Düzelt: ${JSON.stringify(quality.parsed)}` },
+      ], MEMORY_LESSON_JSON_SCHEMA, { promptVersion: MEMORY_LESSON_PROMPT_VERSION, lessonId, cache: false });
+      pkg = parsePackage(retry.text);
+      return { pkg, meta: generationMeta(retry, { prompt_version: MEMORY_LESSON_PROMPT_VERSION, retry_count: 1, input_hash: null }) };
+    }
+  } catch (error) {
+    console.error("lesson quality skipped", error instanceof Error ? error.message : error);
   }
-  const body = await response.json();
-  const content = String(body.choices?.[0]?.message?.content ?? "");
-  return { pkg: parsePackage(content), tokens: Number(body.usage?.total_tokens ?? 0) };
+  return { pkg, meta: generationMeta(generated, { prompt_version: MEMORY_LESSON_PROMPT_VERSION, retry_count: 0 }) };
 }
 
 Deno.serve(async (req) => {
@@ -153,9 +176,6 @@ Deno.serve(async (req) => {
     if (!lessonId) {
       return json({ error: { code: "INVALID_INPUT", message: "lesson_id gerekli." } }, 400);
     }
-
-    const apiKey = Deno.env.get("OPENAI_API_KEY") ?? "";
-    if (!apiKey) throw new Error("AI_NOT_CONFIGURED");
 
     const { data: lesson } = await admin.from("memory_lessons").select("*").eq("id", lessonId).maybeSingle();
     if (!lesson) {
@@ -198,13 +218,13 @@ Deno.serve(async (req) => {
       await admin.from("topic_catalog").update({ content_status: "generating" }).eq("id", lesson.topic_id);
     }
 
-    const { pkg } = await generatePackage(apiKey, {
+    const { pkg, meta } = await generatePackage({
       exam: examName,
       subject: subjectName,
       unit: unitName,
       topic: topicName,
       title: String(lesson.title ?? topicName),
-    });
+    }, lessonId);
 
     await admin.from("memory_lesson_review_anchors").delete().eq("lesson_id", lessonId);
     await admin.from("memory_lesson_questions").delete().eq("lesson_id", lessonId);
@@ -232,6 +252,7 @@ Deno.serve(async (req) => {
         recall_prompt: String(scene.recall_prompt ?? "").slice(0, 300),
         reinforcement_note: String(scene.reinforcement_note ?? "").slice(0, 400),
         journey_step: String(scene.journey_step ?? "").slice(0, 160),
+        visual_priority: index === 0 ? "premium" : String(scene.visual_anchor ?? "").trim().length > 12 ? "key_anchor" : "standard",
       };
     });
     const { error: sceneError } = await admin.from("memory_lesson_scenes").insert(sceneRows);
@@ -296,9 +317,10 @@ Deno.serve(async (req) => {
         duration_sec: Math.round(cursor / 1000),
         status: "pending_validation",
         generation_status: "succeeded",
-        generation_model: MEMORY_LESSON_MODEL,
+        generation_model: meta.model,
         generated_at: new Date().toISOString(),
         prompt_version: MEMORY_LESSON_PROMPT_VERSION,
+        generation_metadata: meta,
         generation_error: null,
       })
       .eq("id", lessonId)
@@ -316,11 +338,10 @@ Deno.serve(async (req) => {
     return json({ lesson: scored ?? updated });
   } catch (error) {
     if (lessonId) {
-      const friendly = error instanceof Error && error.message === "INVALID_PACKAGE"
-        ? "Üretilen paket eksik. Tekrar dene."
-        : error instanceof Error && error.message === "AI_NOT_CONFIGURED"
-          ? "OPENAI_API_KEY yok."
-        : "İçerik üretilemedi.";
+      const mapped = error instanceof Error && error.message === "INVALID_PACKAGE"
+        ? { text: "Üretilen paket eksik. Tekrar dene." }
+        : friendlyAiError(error, "lesson");
+      const friendly = mapped.text;
       await admin.from("memory_lessons").update({
         status: previousStatus === "generating" ? "draft" : previousStatus,
         generation_status: "failed",
@@ -328,13 +349,13 @@ Deno.serve(async (req) => {
       }).eq("id", lessonId).then(() => undefined, () => undefined);
     }
     if (error instanceof Error && error.message === "AI_NOT_CONFIGURED") {
-      return json({ error: { code: "AI_NOT_CONFIGURED", message: "OPENAI_API_KEY sırrı yok." } }, 503);
+      return json({ error: { code: "AI_NOT_CONFIGURED", message: "AI yapılandırması eksik." } }, 503);
     }
     if (error instanceof Error && error.message === "INVALID_PACKAGE") {
       return json({ error: { code: "INVALID_PACKAGE", message: "Üretilen paket eksik. Tekrar dene." } }, 502);
     }
-    if (error instanceof Error && error.message === "AI_PROVIDER") {
-      return json({ error: { code: "PROVIDER_ERROR", message: "Üretim servisi yanıt vermedi." } }, 502);
+    if (error instanceof Error && ["AI_PROVIDER", "AI_RETRYABLE", "AI_TIMEOUT"].includes(error.message)) {
+      return json({ error: { code: "PROVIDER_ERROR", message: "Ders içeriği üretilemedi." } }, 502);
     }
     console.error("memory-lesson-generate", error);
     return mapHttpError(error);

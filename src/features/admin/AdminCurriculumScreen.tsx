@@ -6,6 +6,7 @@ import { AppText } from '@/src/components/ui/AppText';
 import { toastError, toastSuccess } from '@/src/components/ui/feedbackStore';
 import { adminBtn, adminGhost } from '@/src/features/admin/adminUi';
 import { AdminDecomposeEditor } from '@/src/features/admin/AdminDecomposeEditor';
+import { AdminOrderingBoard } from '@/src/features/admin/AdminOrderingBoard';
 import { mapAdminError } from '@/src/features/admin/roles';
 import { AdminCurriculumVersions } from '@/src/features/admin/AdminCurriculumVersions';
 import { listCanonicalTopicMeta, runCurriculumDecompose } from '@/src/features/curriculum/decomposeApi';
@@ -13,11 +14,14 @@ import type { CanonicalTopicMeta, DecompositionProposal } from '@/src/features/c
 import {
   useActiveCurriculumVersion,
   useCurriculumMutations,
+  useCurriculumProposals,
   useExamCatalog,
   useSubjectCatalog,
   useTopicCatalog,
   useUnitCatalog,
 } from '@/src/features/curriculum/useCurriculum';
+import { useFactoryExamCoverage } from '@/src/features/content-factory/useContentFactory';
+import { curriculumDiff } from '@/src/features/curriculum/curriculumApi';
 
 const field = {
   minHeight: 44,
@@ -108,6 +112,8 @@ function Row({
 export function AdminCurriculumScreen() {
   const queryClient = useQueryClient();
   const exams = useExamCatalog();
+  const coverage = useFactoryExamCoverage();
+  const proposals = useCurriculumProposals();
   const mutations = useCurriculumMutations();
   const [examId, setExamId] = useState<string | null>(null);
   const [subjectId, setSubjectId] = useState<string | null>(null);
@@ -121,6 +127,7 @@ export function AdminCurriculumScreen() {
   const [unitName, setUnitName] = useState('');
   const [topicName, setTopicName] = useState('');
   const [bulk, setBulk] = useState(SAMPLE);
+  const [diffText, setDiffText] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [proposal, setProposal] = useState<DecompositionProposal | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -157,14 +164,73 @@ export function AdminCurriculumScreen() {
 
   return (
     <View style={{ gap: 16 }}>
-      <AppText variant="title">Müfredat</AppText>
+      <AppText variant="title">Güncel Müfredatlar</AppText>
       <AppText tone="muted">
-        Sınav → Ders → Ünite → Konu. Öğrenci yalnızca sınav seçer; güncel müfredat sürümü otomatik çözülür. Yıl
-        iş kuralı değildir.
+        Öğrenci yıl seçmez. Motor kaynakları senkronize eder; JSON içe aktarma yalnızca yedek yoldur.
       </AppText>
 
       <View style={{ backgroundColor: '#FFFcf7', borderRadius: 16, padding: 16, gap: 10 }}>
-        <AppText variant="subtitle">Toplu Müfredat İçe Aktar</AppText>
+        {(coverage.data ?? []).map((row) => (
+          <View key={row.id} style={{ gap: 6, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EDE6D8' }}>
+            <AppText variant="subtitle">{row.name}</AppText>
+            <AppText variant="caption" tone="muted">
+              {row.curriculum_name ?? 'Müfredat yok'} · {row.curriculum_status ?? '—'} · {row.topics} konu · {row.lessons_ready} ders
+            </AppText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              <Pressable
+                onPress={() =>
+                  void mutations.syncCurriculum
+                    .mutateAsync({ examId: row.id })
+                    .then((result) => toastSuccess(`Senkron: ${result.unchanged} değişmedi · ${result.proposals} öneri. Uzak tarama yok.`))
+                    .catch(fail)
+                }
+                style={adminGhost}>
+                <AppText>Senkronize Et</AppText>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setExamId(row.id);
+                  setSubjectId(null);
+                  setUnitId(null);
+                }}
+                style={adminGhost}>
+                <AppText>Müfredatı İncele</AppText>
+              </Pressable>
+            </View>
+          </View>
+        ))}
+        <Pressable
+          onPress={() =>
+            void mutations.syncCurriculum
+              .mutateAsync({})
+              .then((result) => toastSuccess(`Tüm sınavlar: ${result.unchanged} değişmedi · ${result.proposals} öneri`))
+              .catch(fail)
+          }
+          style={adminBtn}>
+          <AppText tone="inverse">Tümünü Senkronize Et</AppText>
+        </Pressable>
+        {(proposals.data ?? []).length ? <AppText variant="label">Değişiklik önerileri</AppText> : null}
+        {(proposals.data ?? []).slice(0, 8).map((row) => (
+          <AppText key={row.id} variant="caption">
+            {row.exam_name} · {row.status} · {String(row.diff?.result ?? row.diff?.hash ?? '')}
+          </AppText>
+        ))}
+        {examId && active.data?.id ? (
+          <Pressable
+            onPress={() =>
+              void curriculumDiff(active.data!.id, active.data!.id)
+                .then((d) => setDiffText(`${d.unchanged} aynı · ${d.added} yeni · ${d.removed} kapsam dışı · ${d.changed_scope} derinlik`))
+                .catch(fail)
+            }
+            style={adminGhost}>
+            <AppText>Değişiklikleri Gör</AppText>
+          </Pressable>
+        ) : null}
+        {diffText ? <AppText variant="caption">{diffText}</AppText> : null}
+      </View>
+
+      <View style={{ backgroundColor: '#FFFcf7', borderRadius: 16, padding: 16, gap: 10 }}>
+        <AppText variant="subtitle">Gelişmiş: JSON içe aktar</AppText>
         <TextInput
           value={bulk}
           onChangeText={setBulk}
@@ -319,6 +385,10 @@ export function AdminCurriculumScreen() {
             <AppText tone="inverse">Ünite ekle</AppText>
           </Pressable>
         </View>
+      ) : null}
+
+      {selectedUnit && active.data?.id ? (
+        <AdminOrderingBoard versionId={active.data.id} unitId={selectedUnit.id} />
       ) : null}
 
       {selectedUnit ? (

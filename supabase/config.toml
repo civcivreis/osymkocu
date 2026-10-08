@@ -12,6 +12,9 @@ verify_jwt = false
 [functions.media-upload]
 verify_jwt = false
 
+[functions.moderate-chat-media]
+verify_jwt = false
+
 [functions.media-url]
 verify_jwt = false
 
@@ -40,4 +43,13 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.question-generate]
+verify_jwt = false
+
+[functions.curriculum-sync]
+verify_jwt = false
+
+[functions.curriculum-order-suggest]
+verify_jwt = false
+
+[functions.virtual-student-tick]
 verify_jwt = false

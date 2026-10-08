@@ -1,6 +1,5 @@
 import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
-
-const MODEL = "gpt-4o-mini";
+import { generateStructured } from "../_shared/aiRouter.ts";
 
 type Suggestion = { name: string; note?: string };
 
@@ -26,64 +25,39 @@ Deno.serve(async (req) => {
     if (!sourceName) {
       return json({ error: { code: "INVALID_INPUT", message: "Kaynak konu adı gerekli." } }, 400);
     }
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!apiKey) {
-      return json({ error: { code: "AI_NOT_CONFIGURED", message: "OPENAI_API_KEY sırrı yok." } }, 503);
-    }
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const generated = await generateStructured("curriculum_decomposition", [
+      {
+        role: "system",
+        content: "ÖSYM müfredatı için kanonik alt konular öner. Üretim kuyruğuna alma. Yalnızca konu adları.",
       },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.2,
-        max_tokens: 1200,
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "topic_breakdown",
-            strict: true,
-            schema: {
+      {
+        role: "user",
+        content: `Ana konu: ${sourceName}\nAlt konular öner (ör. Kut Anlayışı, Kurultay, Töre).`,
+      },
+    ], {
+      name: "topic_breakdown",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["topics"],
+        properties: {
+          topics: {
+            type: "array",
+            items: {
               type: "object",
               additionalProperties: false,
-              required: ["topics"],
+              required: ["name", "note"],
               properties: {
-                topics: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    additionalProperties: false,
-                    required: ["name", "note"],
-                    properties: {
-                      name: { type: "string" },
-                      note: { type: "string" },
-                    },
-                  },
-                },
+                name: { type: "string" },
+                note: { type: "string" },
               },
             },
           },
         },
-        messages: [
-          {
-            role: "system",
-            content: "ÖSYM müfredatı için kanonik alt konular öner. Üretim kuyruğuna alma. Yalnızca konu adları.",
-          },
-          {
-            role: "user",
-            content: `Ana konu: ${sourceName}\nAlt konular öner (ör. Kut Anlayışı, Kurultay, Töre).`,
-          },
-        ],
-      }),
-    });
-    if (!response.ok) {
-      return json({ error: { code: "PROVIDER_ERROR", message: "Öneri servisi yanıt vermedi." } }, 502);
-    }
-    const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
-    const suggestions = parseSuggestions(payload.choices?.[0]?.message?.content ?? "{}");
+      },
+    }, { promptVersion: "topic-breakdown-v1", cache: true });
+    const suggestions = parseSuggestions(generated.text);
     if (suggestions.length === 0) {
       return json({ error: { code: "INVALID_PACKAGE", message: "Alt konu önerisi boş." } }, 502);
     }

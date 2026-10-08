@@ -93,11 +93,11 @@ export function AdminMemoryLessonsScreen() {
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <View style={{ gap: 4 }}>
           <AppText variant="title">Hafıza Dersleri</AppText>
-          <AppText tone="muted">Ders üretim panosu</AppText>
+          <AppText tone="muted">Motorun ürettiği dersler. Manuel oluşturma yalnızca yedek yoldur.</AppText>
         </View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          <Pressable onPress={() => setModalOpen(true)} style={adminBtn}>
-            <AppText tone="inverse">+ Yeni Ders</AppText>
+          <Pressable onPress={() => setModalOpen(true)} style={adminGhost}>
+            <AppText>+ Yeni Ders</AppText>
           </Pressable>
           <Pressable onPress={() => router.push('/admin/mufredat' as never)} style={adminGhost}>
             <AppText>Müfredatı Yönet</AppText>

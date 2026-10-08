@@ -18,7 +18,6 @@ export function ChatBubble({
   showHeader,
   showUsername,
   tight,
-  isBot,
   replyName,
   replyBody,
   imageUrl,
@@ -40,7 +39,6 @@ export function ChatBubble({
   showHeader: boolean;
   showUsername?: boolean;
   tight?: boolean;
-  isBot?: boolean;
   replyName?: string | null;
   replyBody?: string | null;
   imageUrl?: string | null;
@@ -84,11 +82,6 @@ export function ChatBubble({
             {!mine && showUsername ? (
               <AppText variant="caption" style={{ fontWeight: '700' }}>
                 {name}
-              </AppText>
-            ) : null}
-            {isBot ? (
-              <AppText variant="caption" tone="muted">
-                otomatik
               </AppText>
             ) : null}
             <AppText variant="caption" tone="subtle">

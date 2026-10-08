@@ -14,13 +14,18 @@ import {
   formatIstanbulDateTime,
 } from '@/src/features/system-exams/examTime';
 import { useAdminExams, useAdminUpsertExam } from '@/src/features/admin/useAdmin';
+import { useExamCatalog } from '@/src/features/curriculum/useCurriculum';
 import { todayIsoIstanbul } from '@/src/lib/time/istanbul';
 import { toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
 
 export function AdminExamsScreen() {
   const exams = useAdminExams();
+  const catalog = useExamCatalog();
   const save = useAdminUpsertExam();
   const [title, setTitle] = useState('');
+  const [mode, setMode] = useState<'motor' | 'manual'>('motor');
+  const [questionCount, setQuestionCount] = useState('20');
+  const [catalogExamId, setCatalogExamId] = useState<string | null>(null);
   const [type, setType] = useState<'tyt' | 'ayt' | 'kpss'>('tyt');
   const [date, setDate] = useState(todayIsoIstanbul());
   const [slot, setSlot] = useState(DEFAULT_EXAM_SLOT);
@@ -51,14 +56,25 @@ export function AdminExamsScreen() {
         status,
       })
       .then(async (row) => {
-        if (picked.length) {
+        if (mode === 'motor') {
+          const { data, error } = await getSupabase().rpc('admin_auto_fill_system_exam', {
+            p_exam: row.id,
+            p_count: Number(questionCount) || 20,
+            p_exam_catalog_id: catalogExamId,
+          });
+          if (error) throw error;
+          const filled = (data as { filled?: number; reason?: string } | null)?.filled ?? 0;
+          toastSuccess(filled ? `${filled} soru seçildi` : 'Yayınlı soru yok; sınav taslak kaldı');
+        } else if (picked.length) {
           const { error } = await getSupabase().rpc('admin_set_exam_questions', {
             p_exam: row.id,
             p_question_ids: picked,
           });
           if (error) throw error;
+          toastSuccess('Kaydedildi');
+        } else {
+          toastSuccess('Kaydedildi');
         }
-        toastSuccess('Kaydedildi');
         setTitle('');
         setDescription('');
         setPicked([]);
@@ -83,8 +99,32 @@ export function AdminExamsScreen() {
       <AppText variant="title">Sistem Sınavları</AppText>
       <View style={{ backgroundColor: '#FFFcf7', borderRadius: 16, padding: 16, gap: 10 }}>
         <AppText variant="subtitle">Yeni sınav</AppText>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <Pressable onPress={() => setMode('motor')} style={[chip, mode === 'motor' && chipOn]}>
+            <AppText>Motor Oluştursun</AppText>
+          </Pressable>
+          <Pressable onPress={() => setMode('manual')} style={[chip, mode === 'manual' && chipOn]}>
+            <AppText>Manuel</AppText>
+          </Pressable>
+        </View>
         <TextInput value={title} onChangeText={setTitle} placeholder="Başlık" style={field} />
         <TextInput value={description} onChangeText={setDescription} placeholder="Açıklama (isteğe bağlı)" style={field} />
+        <AppText variant="caption">Sınav ailesi</AppText>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {(catalog.data ?? []).filter((row) => row.is_active).map((row) => (
+            <Pressable
+              key={row.id}
+              onPress={() => {
+                setCatalogExamId(row.id);
+                const next = row.code === 'AYT' ? 'ayt' : row.code === 'TYT' ? 'tyt' : 'kpss';
+                setType(next);
+                setDuration(String(defaultDuration(next)));
+              }}
+              style={[chip, catalogExamId === row.id && chipOn]}>
+              <AppText>{row.name}</AppText>
+            </Pressable>
+          ))}
+        </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {(['tyt', 'ayt', 'kpss'] as const).map((item) => (
             <Pressable key={item} onPress={() => { setType(item); setDuration(String(defaultDuration(item))); }} style={[chip, type === item && chipOn]}>
@@ -92,6 +132,9 @@ export function AdminExamsScreen() {
             </Pressable>
           ))}
         </View>
+        {mode === 'motor' ? (
+          <TextInput value={questionCount} onChangeText={setQuestionCount} placeholder="Soru sayısı" keyboardType="number-pad" style={field} />
+        ) : null}
         <TextInput value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" style={field} />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           {EXAM_TIME_SLOTS.map((item) => (

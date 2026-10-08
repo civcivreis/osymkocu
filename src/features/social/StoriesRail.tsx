@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
+import { RemoteImage } from '@/src/components/ui/RemoteImage';
 import { taggedName } from '@/src/features/social/identity';
 import { pickDeviceImage } from '@/src/features/media/pickDeviceImage';
 import { usePublishStory, useStories, type StoryItem } from '@/src/features/social/useSocial';
@@ -45,8 +46,12 @@ export function StoriesRail() {
   };
 
   return (
-    <View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+    <View style={{ width: '100%', alignSelf: 'stretch', minWidth: 0 }}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ width: '100%' }}
+        contentContainerStyle={{ gap: 12, paddingRight: 8 }}>
         <Pressable onPress={() => void addStory()} style={{ alignItems: 'center', width: 72 }}>
           <View
             style={{
@@ -77,10 +82,17 @@ export function StoriesRail() {
                 borderWidth: 2,
                 borderColor: item.user_id === me ? colors.navy : colors.accent,
               }}>
-              <Image
-                source={{ uri: item.image_url }}
-                style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: colors.surfaceMuted }}
-              />
+              {item.image_url.startsWith('media:') ? (
+                <RemoteImage
+                  mediaId={item.image_url.slice(6)}
+                  style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: colors.surfaceMuted }}
+                />
+              ) : (
+                <Image
+                  source={{ uri: item.image_url }}
+                  style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: colors.surfaceMuted }}
+                />
+              )}
             </View>
             <AppText variant="caption" numberOfLines={1} style={{ marginTop: 6 }}>
               {item.user_id === me ? 'Sen' : taggedName(item.display_name, item.display_tag)}
@@ -95,7 +107,11 @@ export function StoriesRail() {
           style={{ flex: 1, backgroundColor: '#0E1520', justifyContent: 'center' }}>
           {open ? (
             <View style={{ flex: 1 }}>
-              <Image source={{ uri: open.image_url }} style={{ flex: 1 }} resizeMode="contain" />
+              {open.image_url.startsWith('media:') ? (
+                <RemoteImage mediaId={open.image_url.slice(6)} style={{ flex: 1 }} />
+              ) : (
+                <Image source={{ uri: open.image_url }} style={{ flex: 1 }} resizeMode="contain" />
+              )}
               <View style={{ position: 'absolute', top: 54, left: 20, right: 20 }}>
                 <AppText variant="subtitle" style={{ color: '#F4F1EA' }}>
                   {open.user_id === me ? 'Sen' : taggedName(open.display_name, open.display_tag)}

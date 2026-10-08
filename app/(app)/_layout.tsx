@@ -42,6 +42,7 @@ export default function AppGroupLayout() {
       <Stack.Screen name="dersler" />
       <Stack.Screen name="chat" />
       <Stack.Screen name="group-chat" />
+      <Stack.Screen name="mesajlar" />
       <Stack.Screen name="user" />
       <Stack.Screen name="follows" />
       <Stack.Screen name="edit-profile" />
@@ -52,6 +53,7 @@ export default function AppGroupLayout() {
       <Stack.Screen name="system-exams" />
       <Stack.Screen name="sistem-sinavlari" />
       <Stack.Screen name="test-merkezi" />
+      <Stack.Screen name="siralama" />
       <Stack.Screen name="system-exam" />
       <Stack.Screen name="system-exam-result" />
     </Stack>

@@ -1,4 +1,3 @@
-export const DECOMPOSE_MODEL = "gpt-4o-mini";
 export const DECOMPOSE_PROMPT_VERSION = "curriculum-decompose-v1";
 
 export function foldName(value: string) {
@@ -69,6 +68,9 @@ export const UNIT_SCHEMA = {
             "reason",
             "memory_journey_feasibility",
             "learning_objectives",
+            "sort_order",
+            "difficulty_level",
+            "prerequisites",
           ],
           properties: {
             title: { type: "string" },
@@ -81,6 +83,21 @@ export const UNIT_SCHEMA = {
             reason: { type: "string" },
             memory_journey_feasibility: { type: "string", enum: ["high", "medium", "low"] },
             learning_objectives: { type: "array", items: { type: "string" } },
+            sort_order: { type: "integer" },
+            difficulty_level: { type: "integer" },
+            prerequisites: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["topic", "type", "reason"],
+                properties: {
+                  topic: { type: "string" },
+                  type: { type: "string", enum: ["hard_prerequisite", "soft_prerequisite", "recommended_before", "related"] },
+                  reason: { type: "string" },
+                },
+              },
+            },
           },
         },
       },
@@ -135,7 +152,7 @@ export const TOPIC_SCHEMA = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "description", "estimated_minutes", "estimated_core_fact_count", "should_have_own_lesson", "reason"],
+          required: ["title", "description", "estimated_minutes", "estimated_core_fact_count", "should_have_own_lesson", "reason", "sort_order", "difficulty_level"],
           properties: {
             title: { type: "string" },
             description: { type: "string" },
@@ -143,6 +160,8 @@ export const TOPIC_SCHEMA = {
             estimated_core_fact_count: { type: "integer" },
             should_have_own_lesson: { type: "boolean" },
             reason: { type: "string" },
+            sort_order: { type: "integer" },
+            difficulty_level: { type: "integer" },
           },
         },
       },
@@ -159,7 +178,9 @@ Kurallar:
 - Küçük 1–2 dakikalık parçalara bölme.
 - Müfredat dışı akademik konu uydurma.
 - Az, temiz, pedagojik konular tercih et; maksimum konu sayısı hedefi yok.
-- required_points dahil et, excluded_points önerme.`;
+- required_points dahil et, excluded_points önerme.
+- sort_order: resmi/pedagojik sıra (1..n). difficulty_level: 1 temel … 5 ileri.
+- prerequisites: yalnızca aynı ünite/sınav kapsamındaki mevcut veya önerilen konu adları. Kendine bağımlılık yok. Çevrim yok. Emin değilsen type=soft_prerequisite.`;
 
 export const TOPIC_SYSTEM = `Bir kanonik konunun tek hafıza dersi olup olamayacağını değerlendir.
 Hedef: 5–10 dk, 5–12 olgu, tek bellek yolculuğu.

@@ -132,6 +132,39 @@ export async function setCatalogActive(
   if (error) throw error;
 }
 
+export async function syncCurriculum(examId?: string | null, force = false) {
+  const { data, error } = await getSupabase().rpc('admin_curriculum_sync', {
+    p_exam_id: examId ?? null,
+    p_force: force,
+  });
+  if (error) throw error;
+  return data as { unchanged: number; proposals: number; ai_called: boolean; fetched_remote: boolean };
+}
+
+export async function listCurriculumProposals(examId?: string | null) {
+  const { data, error } = await getSupabase().rpc('admin_list_curriculum_proposals', {
+    p_exam_id: examId ?? null,
+  });
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []) as {
+    id: string;
+    exam_id: string;
+    exam_name: string;
+    status: string;
+    diff: Record<string, unknown>;
+    created_at: string;
+  }[];
+}
+
+export async function curriculumDiff(fromId: string, toId: string) {
+  const { data, error } = await getSupabase().rpc('admin_curriculum_diff', {
+    p_from: fromId,
+    p_to: toId,
+  });
+  if (error) throw error;
+  return data as { added: number; removed: number; unchanged: number; changed_scope: number };
+}
+
 export async function importCurriculum(items: unknown): Promise<CurriculumImportSummary> {
   const { data, error } = await getSupabase().rpc('admin_import_curriculum', { p_items: items });
   if (error) throw error;

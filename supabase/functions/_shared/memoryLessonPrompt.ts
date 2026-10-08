@@ -1,4 +1,3 @@
-export const MEMORY_LESSON_MODEL = "gpt-4o-mini";
 export const MEMORY_LESSON_PROMPT_VERSION = "memory-pedagogy-v1";
 export const MEMORY_PEDAGOGY_VERSION = "memory-pedagogy-v1";
 

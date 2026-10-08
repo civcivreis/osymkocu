@@ -384,19 +384,67 @@ export function useToggleThreadMute() {
 }
 
 export function useHideThread() {
-  const userId = useAuthStore((s) => s.session?.user.id);
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (input: { kind: InboxKind; thread: string }) => {
-      if (!userId) return;
-      if (input.kind === 'group') {
-        await getSupabase().from('exam_chat_members').delete().eq('slug', input.thread).eq('user_id', userId);
-      }
-      const meta = await loadMeta(userId);
-      const id = threadId(input.kind, input.thread);
-      if (!meta.hidden.includes(id)) meta.hidden = [...meta.hidden, id];
-      await saveMeta(userId, meta);
+      const { error } = await getSupabase().rpc('hide_conversation', {
+        p_kind: input.kind,
+        p_thread: input.thread,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['inbox'] });
+      void client.invalidateQueries({ queryKey: ['hidden-conversations'] });
+    },
+  });
+}
+
+export function useUnhideThread() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { kind: InboxKind; thread: string }) => {
+      const { error } = await getSupabase().rpc('unhide_conversation', {
+        p_kind: input.kind,
+        p_thread: input.thread,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['inbox'] });
+      void client.invalidateQueries({ queryKey: ['hidden-conversations'] });
+    },
+  });
+}
+
+export function useLeaveExamGroup() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (slug: string) => {
+      const { error } = await getSupabase().rpc('leave_exam_group', { p_slug: slug });
+      if (error) throw error;
     },
     onSuccess: () => client.invalidateQueries({ queryKey: ['inbox'] }),
+  });
+}
+
+export type HiddenConversation = {
+  kind: InboxKind;
+  thread_key: string;
+  hidden_at: string;
+  title: string;
+  last_body?: string | null;
+};
+
+export function useHiddenConversations() {
+  const userId = useAuthStore((s) => s.session?.user.id);
+  return useQuery({
+    queryKey: ['hidden-conversations', userId],
+    enabled: Boolean(userId),
+    queryFn: async () => {
+      const { data, error } = await getSupabase().rpc('get_hidden_conversations');
+      if (error) throw error;
+      return (Array.isArray(data) ? data : []) as HiddenConversation[];
+    },
   });
 }

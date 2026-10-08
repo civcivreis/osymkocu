@@ -1,4 +1,3 @@
-export const QUESTION_GEN_MODEL = "gpt-4o-mini";
 export const QUESTION_GEN_PROMPT = "question-bank-v1";
 
 export const STRATEGIES = [

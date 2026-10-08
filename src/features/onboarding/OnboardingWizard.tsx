@@ -208,7 +208,7 @@ function stepCopy(step: number, kind?: ExamKind, examName?: string, tight?: bool
   }
   if (step === 2) {
     return {
-      title: kind === 'kpss_onlisans' ? 'Bir sonraki KPSS Önlisans' : 'Hangisine hazırlanıyorsun?',
+      title: examName ? `Bir sonraki ${examName}` : 'Hangisine hazırlanıyorsun?',
       subtitle: examName ? `${examName} için oturum yılı.` : undefined,
     };
   }
@@ -294,8 +294,8 @@ function ExamStep({
           <View key={exam.id} style={{ width: cardWidth, alignSelf: 'stretch' }}>
             <OnboardingSelectionCard
               title={exam.name}
-              subtitle={examSubtitle(exam.kind)}
-              icon={examIcon(exam.kind)}
+              subtitle={examSubtitle(exam)}
+              icon={examIcon(exam.kind, exam.slug)}
               selected={selectedId === exam.id}
               onPress={() => onSelect(exam.id)}
             />
@@ -528,8 +528,9 @@ function SuccessMark() {
   );
 }
 
-function examSubtitle(kind: ExamKind): string {
-  switch (kind) {
+function examSubtitle(exam: Exam): string {
+  if (exam.slug === 'kpss_ortaogretim') return 'Ortaöğretim GK-GY';
+  switch (exam.kind) {
     case 'tyt':
       return 'Üniversite 1. oturum';
     case 'ayt':
@@ -545,7 +546,8 @@ function examSubtitle(kind: ExamKind): string {
   }
 }
 
-function examIcon(kind: ExamKind): ComponentProps<typeof Ionicons>['name'] {
+function examIcon(kind: ExamKind, slug?: string): ComponentProps<typeof Ionicons>['name'] {
+  if (slug === 'kpss_ortaogretim') return 'book-outline';
   switch (kind) {
     case 'tyt':
       return 'school-outline';

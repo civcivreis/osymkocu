@@ -32,7 +32,6 @@ export function StatusComposer() {
   const publish = usePublishPost();
   const [draft, setDraft] = useState('');
   const [fromIdea, setFromIdea] = useState(false);
-  const [details, setDetails] = useState(false);
   const [subjectId, setSubjectId] = useState<string | null>(null);
   const [minutes, setMinutes] = useState<30 | 60 | 120 | 240>(60);
   const [durationPicked, setDurationPicked] = useState(false);
@@ -65,7 +64,7 @@ export function StatusComposer() {
         body,
         subjectId,
         minutes: durationPicked ? minutes : undefined,
-        intent: goal.trim() ? 'goal' : 'status',
+        intent: goal.trim() ? 'goal' : draft.toLowerCase().includes('soru') ? 'ask' : 'status',
         goal: goal.trim() || undefined,
       });
       setDraft('');
@@ -75,7 +74,6 @@ export function StatusComposer() {
       setDurationPicked(false);
       setGoal('');
       setPicker(null);
-      setDetails(false);
     } catch (error) {
       toastError(error);
     }
@@ -88,6 +86,8 @@ export function StatusComposer() {
         borderRadius: 22,
         padding: 12,
         gap: 10,
+        width: '100%',
+        alignSelf: 'stretch',
         shadowColor: '#142033',
         shadowOpacity: 0.06,
         shadowRadius: 16,
@@ -128,21 +128,19 @@ export function StatusComposer() {
         </View>
       ) : null}
 
-      <Pressable onPress={() => setDetails((value) => !value)} style={{ minHeight: 32, justifyContent: 'center' }}>
-        <AppText variant="caption" tone="accent" style={{ fontWeight: '700' }}>
-          {details ? '− Detay' : '+ Detay ekle'}
-        </AppText>
-      </Pressable>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        <ActionPlus label="Konu ekle" open={picker === 'subject'} onPress={() => toggle('subject')} />
+        <ActionPlus label="Hedef ekle" open={picker === 'goal'} onPress={() => toggle('goal')} />
+        <ActionPlus
+          label="Soru paylaş"
+          onPress={() => {
+            setDraft((current) => current || 'Bu soruyu çözemedim, birlikte bakabilir miyiz?');
+            toggle('subject');
+          }}
+        />
+      </View>
 
-      {details ? (
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          <ActionPlus label="Ders" open={picker === 'subject'} onPress={() => toggle('subject')} />
-          <ActionPlus label="Süre" open={picker === 'duration'} onPress={() => toggle('duration')} />
-          <ActionPlus label="Hedef" open={picker === 'goal'} onPress={() => toggle('goal')} />
-        </View>
-      ) : null}
-
-      {details && picker ? (
+      {picker ? (
         <Animated.View
           style={{
             opacity: panel,

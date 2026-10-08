@@ -1,6 +1,6 @@
 import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { generateStructured, generationMeta } from "../_shared/aiRouter.ts";
 import {
-  DECOMPOSE_MODEL,
   DECOMPOSE_PROMPT_VERSION,
   TOPIC_SCHEMA,
   TOPIC_SYSTEM,
@@ -18,28 +18,14 @@ type ExistingTopic = {
   canonical_unit_id: string;
 };
 
-async function chatJson(apiKey: string, system: string, user: string, schema: unknown) {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: DECOMPOSE_MODEL,
-      temperature: 0.2,
-      max_tokens: 4500,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      response_format: { type: "json_schema", json_schema: schema },
-    }),
-  });
-  if (!response.ok) throw new Error("AI_PROVIDER");
-  const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
-  const raw = payload.choices?.[0]?.message?.content ?? "{}";
-  return JSON.parse(raw) as Record<string, unknown>;
+async function chatJson(system: string, user: string, schema: unknown, forcePremium = false) {
+  const result = await generateStructured("curriculum_decomposition", [
+    { role: "system", content: system },
+    { role: "user", content: user },
+  ], schema, { promptVersion: DECOMPOSE_PROMPT_VERSION, cache: true, forcePremium });
+  const parsed = result.parsed as Record<string, unknown>;
+  parsed.__ai_meta = generationMeta(result, { prompt_version: DECOMPOSE_PROMPT_VERSION });
+  return parsed;
 }
 
 function matchExisting(title: string, existing: ExistingTopic[]) {
@@ -59,16 +45,13 @@ Deno.serve(async (req) => {
     if (mode !== "unit" && mode !== "topic") {
       return json({ error: { code: "INVALID_INPUT", message: "mode unit veya topic olmalı." } }, 400);
     }
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!apiKey) return json({ error: { code: "AI_NOT_CONFIGURED", message: "OPENAI_API_KEY sırrı yok." } }, 503);
-
     const admin = serviceClient();
     if (mode === "unit") {
-      return await decomposeUnit(admin, user.id, apiKey, body ?? {});
+      return await decomposeUnit(admin, user.id, body ?? {});
     }
-    return await decomposeTopic(admin, user.id, apiKey, body ?? {});
+    return await decomposeTopic(admin, user.id, body ?? {});
   } catch (error) {
-    if (error instanceof Error && error.message === "AI_PROVIDER") {
+    if (error instanceof Error && ["AI_PROVIDER", "AI_RETRYABLE", "AI_TIMEOUT"].includes(error.message)) {
       return json({ error: { code: "PROVIDER_ERROR", message: "Analiz servisi yanıt vermedi." } }, 502);
     }
     console.error("curriculum-decompose", error);
@@ -79,7 +62,6 @@ Deno.serve(async (req) => {
 async function decomposeUnit(
   admin: ReturnType<typeof serviceClient>,
   userId: string,
-  apiKey: string,
   body: Record<string, unknown>,
 ) {
   const unitId = String(body.unit_id ?? "");
@@ -120,7 +102,12 @@ async function decomposeUnit(
     "Hedef ders 5–10 dk / 5–12 olgu. Kapsam dışına çıkma. Mümkünse mevcut konuları tekrar etme.",
   ].join("\n");
 
-  const ai = await chatJson(apiKey, UNIT_SYSTEM, userPrompt, UNIT_SCHEMA);
+  let ai = await chatJson(UNIT_SYSTEM, userPrompt, UNIT_SCHEMA);
+  const low = String(ai.confidence ?? ai.memory_journey_feasibility ?? "") === "low"
+    || String(ai.status ?? "").includes("ambiguous")
+    || Boolean(ai.low_confidence)
+    || Boolean(ai.conflicting_sources);
+  if (low) ai = await chatJson(UNIT_SYSTEM, `${userPrompt}\nKaynaklar belirsiz. Tahmin etme; emin değilsen coverage_warnings doldur.`, UNIT_SCHEMA, true);
   const recommended = Array.isArray(ai.recommended_topics) ? ai.recommended_topics as Record<string, unknown>[] : [];
   const duplicates: { title: string; existing_title: string; reason: string }[] = [];
   const items = recommended.map((row, index) => {
@@ -154,7 +141,16 @@ async function decomposeUnit(
       matched_canonical_topic_id: match.matched_canonical_topic_id,
       matched_title: match.matched_title,
       match_action: match.match_status === "MATCH_EXISTING" ? "use_existing" : "create",
-      item_order: index,
+      item_order: Number(row.sort_order ?? index + 1),
+      sort_order: Number(row.sort_order ?? index + 1),
+      difficulty_level: Math.min(5, Math.max(1, Number(row.difficulty_level ?? 3))),
+      prerequisites: Array.isArray(row.prerequisites)
+        ? (row.prerequisites as { topic?: string; type?: string; reason?: string }[]).map((p) => ({
+          topic: String(p.topic ?? ""),
+          type: String(p.type ?? "soft_prerequisite"),
+          reason: String(p.reason ?? ""),
+        }))
+        : [],
     };
   });
 
@@ -167,7 +163,7 @@ async function decomposeUnit(
     unit_id: unitId,
     canonical_unit_id: canonicalUnitId,
     title: String(ai.unit_title ?? unit.name),
-    ai_payload: { ...ai, prompt_version: DECOMPOSE_PROMPT_VERSION, model: DECOMPOSE_MODEL },
+    ai_payload: { ...ai, prompt_version: DECOMPOSE_PROMPT_VERSION, model: (ai.__ai_meta as { model?: string } | undefined)?.model },
     items,
     coverage_warnings: ai.coverage_warnings ?? [],
     missing_areas: ai.missing_areas ?? [],
@@ -182,7 +178,6 @@ async function decomposeUnit(
 async function decomposeTopic(
   admin: ReturnType<typeof serviceClient>,
   userId: string,
-  apiKey: string,
   body: Record<string, unknown>,
 ) {
   const topicId = String(body.canonical_topic_id ?? "");
@@ -213,7 +208,10 @@ async function decomposeTopic(
     "Pedagoji: 5–10 dk, 5–12 olgu, tek bellek yolculuğu. Soru/medya üretme.",
   ].join("\n");
 
-  const ai = await chatJson(apiKey, TOPIC_SYSTEM, userPrompt, TOPIC_SCHEMA);
+  let ai = await chatJson(TOPIC_SYSTEM, userPrompt, TOPIC_SCHEMA);
+  if (Boolean(ai.too_broad_for_single_lesson) || Boolean(ai.low_confidence) || Boolean(ai.conflicting_sources)) {
+    ai = await chatJson(TOPIC_SYSTEM, `${userPrompt}\nBelirsizlik var. Tahmin etme.`, TOPIC_SCHEMA, true);
+  }
   const minutes = Number(ai.estimated_minutes ?? 8);
   const facts = Number(ai.estimated_core_fact_count ?? 7);
   const broad = Boolean(ai.too_broad_for_single_lesson) || isTooBroad({
@@ -245,7 +243,9 @@ async function decomposeTopic(
       matched_canonical_topic_id: match.matched_canonical_topic_id,
       matched_title: match.matched_title,
       match_action: match.match_status === "MATCH_EXISTING" ? "use_existing" : "create",
-      item_order: index,
+      item_order: Number(row.sort_order ?? index + 1),
+      sort_order: Number(row.sort_order ?? index + 1),
+      difficulty_level: Math.min(5, Math.max(1, Number(row.difficulty_level ?? 3))),
       learning_objectives: [],
     };
   });
@@ -264,7 +264,7 @@ async function decomposeTopic(
       ...ai,
       too_broad_for_single_lesson: tooBroad,
       prompt_version: DECOMPOSE_PROMPT_VERSION,
-      model: DECOMPOSE_MODEL,
+      model: (ai.__ai_meta as { model?: string } | undefined)?.model,
     },
     items,
     possible_duplicates: items.filter((item) => item.match_status === "MATCH_EXISTING").map((item) => ({

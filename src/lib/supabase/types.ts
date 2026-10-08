@@ -23,6 +23,8 @@ export type Profile = {
   onboarding_completed_at: string | null;
   theme_preference: ThemePreference;
   app_role?: 'user' | 'moderator' | 'admin' | 'super_admin';
+  profile_type?: 'human' | 'virtual' | 'system' | null;
+  is_bot?: boolean;
   account_status?: 'active' | 'warned' | 'restricted' | 'banned';
   system_exam_reminders?: boolean;
   last_active_at?: string | null;
@@ -103,6 +105,7 @@ export type Question = {
   image_url?: string | null;
   learning_objective_id?: string | null;
   objective_title?: string | null;
+  question_strategy?: string | null;
 };
 
 export type AttemptResult = {

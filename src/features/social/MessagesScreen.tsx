@@ -9,7 +9,7 @@ import { SegmentedTabs } from '@/src/components/ui/SegmentedTabs';
 import { ChatScreen } from '@/src/features/social/ChatScreen';
 import { ConversationMediaPanel } from '@/src/features/social/ConversationMediaPanel';
 import { GroupChatScreen } from '@/src/features/social/GroupChatScreen';
-import { toastError } from '@/src/components/ui/feedbackStore';
+import { askConfirm, toastError, toastSuccess } from '@/src/components/ui/feedbackStore';
 import { ConversationActionSheet, type ConversationSheetTarget } from '@/src/features/social/ConversationActionSheet';
 import { InboxRow } from '@/src/features/social/InboxRow';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
@@ -18,6 +18,7 @@ import { taggedName } from '@/src/features/social/identity';
 import {
   useHideThread,
   useInbox,
+  useLeaveExamGroup,
   useMarkThreadRead,
   useToggleThreadMute,
   useToggleThreadPin,
@@ -64,6 +65,7 @@ export function MessagesScreen() {
   const mute = useToggleThreadMute();
   const markRead = useMarkThreadRead();
   const hide = useHideThread();
+  const leaveGroup = useLeaveExamGroup();
   const blockUser = useBlockUser();
   const reportUser = useReportUser();
   const [sheet, setSheet] = useState<ConversationSheetTarget | null>(null);
@@ -168,6 +170,11 @@ export function MessagesScreen() {
             style={{ flex: 1, color: colors.text, fontSize: 16, paddingVertical: 10 }}
           />
         </View>
+        <Pressable onPress={() => router.push('/mesajlar/gizlenenler' as never)}>
+          <AppText variant="caption" tone="accent" style={{ fontWeight: '700' }}>
+            Gizlenen sohbetler
+          </AppText>
+        </Pressable>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {(
             [
@@ -351,11 +358,19 @@ export function MessagesScreen() {
               </AppText>
               <Pressable
                 onPress={() =>
-                  void hide.mutateAsync({ kind: 'group', thread: selectedGroup.slug }).then(undefined, (error: unknown) =>
-                    toastError(error),
-                  )
+                  askConfirm({
+                    title: 'Sohbeti gizle',
+                    subtitle: 'Gruptan ayrılmadan sohbeti gizlemek istiyor musun?',
+                    confirmLabel: 'Gizle',
+                    onConfirm: () => {
+                      void hide.mutateAsync({ kind: 'group', thread: selectedGroup.slug }).then(
+                        () => toastSuccess('Sohbet gizlendi.'),
+                        (error: unknown) => toastError(error),
+                      );
+                    },
+                  })
                 }>
-                <AppText tone="danger">Grubu gizle</AppText>
+                <AppText>Gizle</AppText>
               </Pressable>
               <ConversationMediaPanel messages={groupMessages.data ?? []} />
             </View>
@@ -378,9 +393,29 @@ export function MessagesScreen() {
           if (!sheet) return;
           run(markRead.mutateAsync({ kind: sheet.kind, thread: sheet.thread }));
         }}
+        onHide={() => {
+          if (!sheet) return;
+          askConfirm({
+            title: 'Sohbeti gizle',
+            subtitle: 'Gruptan ayrılmadan sohbeti gizlemek istiyor musun?',
+            confirmLabel: 'Gizle',
+            onConfirm: () => {
+              void hide.mutateAsync({ kind: sheet.kind, thread: sheet.thread }).then(
+                () => toastSuccess('Sohbet gizlendi.'),
+                (error: unknown) => toastError(error),
+              );
+            },
+          });
+        }}
         onLeave={() => {
           if (!sheet) return;
-          run(hide.mutateAsync({ kind: 'group', thread: sheet.thread }));
+          askConfirm({
+            title: 'Gruptan ayrıl',
+            subtitle: 'Üyeliğin kalkar. Mesajlar silinmez.',
+            confirmLabel: 'Ayrıl',
+            danger: true,
+            onConfirm: () => run(leaveGroup.mutateAsync(sheet.thread)),
+          });
         }}
         onBlock={() => {
           if (!sheet?.otherId) return;
@@ -388,7 +423,16 @@ export function MessagesScreen() {
         }}
         onDelete={() => {
           if (!sheet) return;
-          run(hide.mutateAsync({ kind: 'dm', thread: sheet.thread }));
+          askConfirm({
+            title: 'Sohbeti gizle',
+            subtitle: 'Sohbet gizlenir. Mesajlar silinmez.',
+            confirmLabel: 'Gizle',
+            onConfirm: () =>
+              void hide.mutateAsync({ kind: 'dm', thread: sheet.thread }).then(
+                () => toastSuccess('Sohbet gizlendi.'),
+                (error: unknown) => toastError(error),
+              ),
+          });
         }}
       />
     </Screen>

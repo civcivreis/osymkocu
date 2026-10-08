@@ -12,7 +12,7 @@ export function useExams() {
         .from('exams')
         .select('id, slug, name, kind');
       if (error) throw error;
-      const order = ['tyt', 'ayt', 'tyt_ayt', 'kpss_onlisans', 'kpss_lisans'];
+      const order = ['tyt', 'ayt', 'tyt_ayt', 'kpss_ortaogretim', 'kpss_onlisans', 'kpss_lisans'];
       return ((data ?? []) as Exam[]).sort(
         (a, b) => order.indexOf(a.slug) - order.indexOf(b.slug),
       );

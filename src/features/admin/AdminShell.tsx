@@ -62,6 +62,8 @@ export function AdminShell() {
         items: [
           { href: '/admin/users', label: 'Kullanıcılar', show: canManageUsers(role) },
           { href: '/admin/reports', label: 'Şikayetler', show: canModerate(role) },
+          { href: '/admin/moderasyon', label: 'Moderasyon', show: canModerate(role) },
+          { href: '/admin/sanal-ogrenciler', label: 'Sanal Öğrenciler', show: canManageUsers(role) },
           { href: '/admin/notifications', label: 'Bildirimler', show: canManageUsers(role) },
         ],
       },
@@ -70,6 +72,7 @@ export function AdminShell() {
         label: 'YÖNETİM',
         items: [
           { href: '/admin/team', label: 'Yönetim Ekibi', show: isSuperAdmin(role) },
+          { href: '/admin/ai-ayarlari', label: 'AI Ayarları', show: allowed },
           { href: '/admin/stats', label: 'İstatistikler', show: allowed },
           { href: '/admin/settings', label: 'Ayarlar', show: allowed },
         ],

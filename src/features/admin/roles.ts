@@ -23,7 +23,7 @@ export function isSuperAdmin(role?: string | null) {
 export function mapAdminError(message: string) {
   const raw = message.toLowerCase();
   if (raw.includes('schema cache') || raw.includes('could not find the function') || raw.includes('pgrst202')) {
-    return 'Sunucu şeması eksik. 0038–0046 migration’larını kontrol et.';
+    return 'Sunucu şeması eksik. 0038–0056 migration’larını kontrol et.';
   }
   if (raw.includes('column') && (raw.includes('does not exist') || raw.includes('undefined'))) {
     return 'Veritabanı sütunu eksik. 0036–0038 migration’larını kontrol et.';
@@ -45,5 +45,7 @@ export function mapAdminError(message: string) {
   if (raw.includes('ai_not_configured') || raw.includes('openai')) return 'AI yapılandırması eksik.';
   if (raw.includes('queue_confirm_required')) return 'Toplu kuyruk için onay gerekli.';
   if (raw.includes('factory_paused') || raw.includes('production')) return 'Üretim duraklatıldı.';
+  if (raw.includes('cycle_detected')) return 'Bu bağ çevrim oluşturur.';
+  if (raw.includes('self_dependency')) return 'Konu kendisine bağlanamaz.';
   return message;
 }

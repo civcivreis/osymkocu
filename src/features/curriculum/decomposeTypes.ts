@@ -20,6 +20,9 @@ export type DecompositionItem = {
   match_action?: DecomposeMatchAction | string;
   should_have_own_lesson?: boolean;
   item_order: number;
+  sort_order?: number;
+  difficulty_level?: number;
+  prerequisites?: { topic: string; type: string; reason: string }[];
 };
 
 export type DecompositionProposal = {

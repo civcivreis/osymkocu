@@ -500,11 +500,49 @@ export function useCurriculumPracticeQuestions(input: {
   setType?: string;
   limit?: number;
   memoryLessonId?: string;
+  questionIds?: string;
 }) {
   return useQuery({
     queryKey: ['curriculum-practice', input],
-    enabled: Boolean(input.examCatalogId && (input.canonicalTopicId || input.memoryLessonId || input.setType === 'mixed')),
+    enabled: Boolean(
+      input.questionIds ||
+        (input.examCatalogId && (input.canonicalTopicId || input.memoryLessonId || input.setType === 'mixed')),
+    ),
     queryFn: async () => {
+      if (input.questionIds) {
+        const ids = input.questionIds.split(',').map((id) => id.trim()).filter(Boolean).slice(0, 12);
+        if (!ids.length) return [];
+        const { data, error } = await getSupabase()
+          .from('questions')
+          .select('id, stem, choices, difficulty, image_url, learning_objective_id, question_strategy, canonical_topic_id')
+          .in('id', ids)
+          .eq('is_published', true);
+        if (error) throw error;
+        const order = new Map(ids.map((id, index) => [id, index]));
+        const rows = (data ?? []) as Array<{
+          id: string;
+          stem: string;
+          choices: Record<string, string> | null;
+          difficulty: Question['difficulty'];
+          image_url?: string | null;
+          learning_objective_id?: string | null;
+          question_strategy?: string | null;
+        }>;
+        return rows
+          .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+          .map((row) => ({
+            id: row.id,
+            exam_id: '',
+            subject_id: '',
+            topic_id: null,
+            stem: row.stem,
+            choices: row.choices ?? {},
+            difficulty: row.difficulty,
+            image_url: row.image_url,
+            learning_objective_id: row.learning_objective_id,
+            question_strategy: row.question_strategy,
+          })) as Question[];
+      }
       const { getCurriculumPracticeQuestions } = await import('@/src/features/questions/questionBankApi');
       const rows = await getCurriculumPracticeQuestions({
         examCatalogId: input.examCatalogId!,
@@ -525,6 +563,7 @@ export function useCurriculumPracticeQuestions(input: {
         image_url: row.image_url,
         learning_objective_id: row.learning_objective_id,
         objective_title: row.objective_title,
+        question_strategy: row.question_strategy,
       })) as Question[];
     },
   });

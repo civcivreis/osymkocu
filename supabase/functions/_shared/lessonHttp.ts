@@ -22,6 +22,20 @@ export function serviceClient() {
   });
 }
 
+export async function requireUser(req: Request): Promise<User> {
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "",
+    { global: { headers: { Authorization: authHeader } }, auth: { persistSession: false, autoRefreshToken: false } },
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    throw Object.assign(new Error("UNAUTHORIZED"), { status: 401 });
+  }
+  return user;
+}
+
 export async function requireLessonAdmin(req: Request): Promise<User> {
   const authHeader = req.headers.get("Authorization") ?? "";
   const supabase = createClient(
@@ -59,6 +73,28 @@ export function mapHttpError(error: unknown) {
   }
   if (message.startsWith("LESSON_R2_")) {
     return json({ error: { code: "STORAGE_ERROR", message: "Depolama isteği başarısız." } }, 502);
+  }
+  if (message === "AI_NOT_CONFIGURED") {
+    return json({ error: { code: "AI_NOT_CONFIGURED", message: "AI yapılandırması eksik." } }, 503);
+  }
+  if (message === "AI_DAILY_CAP") {
+    return json({ error: { code: "AI_DAILY_CAP", message: "Günlük AI kotası doldu." } }, 429);
+  }
+  if (message === "AI_TASK_DISABLED") {
+    return json({ error: { code: "AI_TASK_DISABLED", message: "Bu AI görevi kapalı." } }, 503);
+  }
+  if (message === "IMAGE_FAILED") {
+    return json({ error: { code: "PROVIDER_ERROR", message: "Görsel oluşturulamadı." } }, 502);
+  }
+  if (message === "TTS_FAILED") {
+    return json({ error: { code: "PROVIDER_ERROR", message: "Seslendirme oluşturulamadı." } }, 502);
+  }
+  if (
+    message === "AI_PROVIDER" ||
+    message === "AI_TIMEOUT" ||
+    message.startsWith("AI_RETRYABLE")
+  ) {
+    return json({ error: { code: "PROVIDER_ERROR", message: "İşlem tamamlanamadı." } }, 502);
   }
   return json({ error: { code: "PROVIDER_ERROR", message: "İşlem tamamlanamadı." } }, 500);
 }

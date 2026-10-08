@@ -20,6 +20,7 @@ const TITLES: { test: (path: string) => boolean; title: string }[] = [
   { test: (p) => p === '/social' || p === '/study-room', title: 'Sosyal Çalışma' },
   { test: (p) => p === '/messages' || p === '/chat' || p === '/group-chat', title: 'Mesajlar' },
   { test: (p) => p === '/notifications', title: 'Bildirimler' },
+  { test: (p) => p === '/siralama', title: 'Sıralama' },
   { test: (p) => p === '/profile' || p === '/user' || p === '/edit-profile' || p === '/follows', title: 'Profil' },
   { test: (p) => p === '/settings' || p === '/privacy', title: 'Ayarlar' },
   { test: (p) => p === '/teacher', title: 'AI Koç' },

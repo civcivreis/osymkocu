@@ -284,10 +284,14 @@ export async function applyDecomposition(input: {
 
   await db.from('curriculum_decomposition_proposals').update({ status: 'approved', items: input.items }).eq('id', input.proposal.id);
 
+  await persistOrderingSuggestions(input.proposal, selected, createdIds);
+
   if (input.enqueue) {
     for (const id of createdIds) {
       const { data: ready } = await db.rpc('canonical_topic_factory_ready', { p_id: id });
       if (!ready) continue;
+      const { data: blocked } = await db.rpc('topic_ordering_blocks_generation', { p_topic: id });
+      if (blocked) continue;
       await queueSingleTopic({
         canonical_topic_id: id,
         curriculum_version_id: input.proposal.curriculum_version_id,
@@ -299,4 +303,68 @@ export async function applyDecomposition(input: {
   }
 
   return { created: createdIds.length, queued: Boolean(input.enqueue) };
+}
+
+function foldTitle(value: string) {
+  return value
+    .replace(/[çÇ]/g, 'c')
+    .replace(/[ğĞ]/g, 'g')
+    .replace(/[ıIİ]/g, 'i')
+    .replace(/[öÖ]/g, 'o')
+    .replace(/[şŞ]/g, 's')
+    .replace(/[üÜ]/g, 'u')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function persistOrderingSuggestions(
+  proposal: DecompositionProposal,
+  items: DecompositionItem[],
+  createdIds: string[],
+) {
+  const db = getSupabase();
+  const versionId = proposal.curriculum_version_id;
+  if (!versionId) return;
+
+  const { data: mapped } = await db
+    .from('exam_topic_map')
+    .select('canonical_topic_id')
+    .eq('curriculum_version_id', versionId);
+
+  const ids = [...new Set((mapped ?? []).map((row) => row.canonical_topic_id).filter(Boolean))];
+  const { data: topics } = ids.length
+    ? await db.from('canonical_topics').select('id, name').in('id', ids)
+    : { data: [] as { id: string; name: string }[] };
+
+  const names = new Map<string, string>();
+  for (const row of topics ?? []) names.set(foldTitle(row.name), row.id);
+  for (const item of items) {
+    const id = item.matched_canonical_topic_id;
+    if (id) names.set(foldTitle(item.title), id);
+  }
+
+  const rows: Record<string, unknown>[] = [];
+  for (const item of items) {
+    const topicId = item.matched_canonical_topic_id ?? names.get(foldTitle(item.title));
+    if (topicId && item.difficulty_level) {
+      await db.from('canonical_topics').update({ difficulty_level: item.difficulty_level }).eq('id', topicId);
+    }
+    for (const prereq of item.prerequisites ?? []) {
+      const depId = names.get(foldTitle(prereq.topic));
+      if (!topicId || !depId || topicId === depId) continue;
+      rows.push({
+        curriculum_version_id: versionId,
+        topic_id: topicId,
+        depends_on_topic_id: depId,
+        dependency_type: ['hard_prerequisite', 'soft_prerequisite', 'recommended_before', 'related'].includes(prereq.type)
+          ? prereq.type
+          : 'soft_prerequisite',
+        reason: prereq.reason || 'AI önerisi',
+        status: 'pending',
+      });
+    }
+  }
+  if (rows.length) await db.from('curriculum_ordering_suggestions').insert(rows);
+  void createdIds;
 }

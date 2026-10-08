@@ -1,7 +1,7 @@
 import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { generateStructured, generationMeta } from "../_shared/aiRouter.ts";
 import {
   QUESTION_BANK_SCHEMA,
-  QUESTION_GEN_MODEL,
   QUESTION_GEN_PROMPT,
   poolTarget,
   validateGenerated,
@@ -10,31 +10,56 @@ import {
 
 type Mode = "lesson_sync" | "topic_pool" | "exam_specific" | "missing_coverage";
 
-async function chatQuestions(apiKey: string, user: string, count: number) {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+async function chatQuestions(user: string, count: number, metaOut: { model: string; extra: Record<string, unknown> }) {
+  const messages = [
+    {
+      role: "system" as const,
+      content: `ÖSYM soru yazarısın. Yalnızca verilen ders içeriği ve kazanımları test et. Müfredat dışı bilgi yok. ${count} soru üret. Zorluk muhakeme ve çeldirici kalitesinden gelsin, önemsiz ayrıntı olmasın. Birden fazla strateji kullan. Tanım sorusu yığını üretme.`,
     },
-    body: JSON.stringify({
-      model: QUESTION_GEN_MODEL,
-      temperature: 0.4,
-      max_tokens: 5000,
-      response_format: { type: "json_schema", json_schema: QUESTION_BANK_SCHEMA },
-      messages: [
-        {
-          role: "system",
-          content: `ÖSYM soru yazarısın. Yalnızca verilen ders içeriği ve kazanımları test et. Müfredat dışı bilgi yok. ${count} soru üret. Zorluk muhakeme ve çeldirici kalitesinden gelsin, önemsiz ayrıntı olmasın. Birden fazla strateji kullan. Tanım sorusu yığını üretme.`,
-        },
-        { role: "user", content: user },
-      ],
-    }),
+    { role: "user" as const, content: user },
+  ];
+  let generated = await generateStructured("question_generation", messages, QUESTION_BANK_SCHEMA, {
+    promptVersion: QUESTION_GEN_PROMPT,
+    cache: true,
   });
-  if (!response.ok) throw new Error("AI_PROVIDER");
-  const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
-  const parsed = JSON.parse(payload.choices?.[0]?.message?.content ?? "{}") as { questions?: GeneratedQuestion[] };
-  return Array.isArray(parsed.questions) ? parsed.questions : [];
+  let questions = Array.isArray((generated.parsed as { questions?: GeneratedQuestion[] })?.questions)
+    ? (generated.parsed as { questions: GeneratedQuestion[] }).questions
+    : [];
+  const localFail = questions.filter((q) => !validateGenerated(q).ok);
+  let retryCount = 0;
+  if (questions.length) {
+    try {
+      const validation = await generateStructured("question_validation", [
+        { role: "system", content: "Soru kalite denetçisisin. JSON: {ok:boolean,issues:string[]}" },
+        { role: "user", content: JSON.stringify(questions.slice(0, 12)) },
+      ], {
+        name: "question_validation",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["ok", "issues"],
+          properties: { ok: { type: "boolean" }, issues: { type: "array", items: { type: "string" } } },
+        },
+      }, { promptVersion: QUESTION_GEN_PROMPT, cache: false });
+      const ok = (validation.parsed as { ok?: boolean })?.ok !== false;
+      if (!ok || localFail.length) {
+        retryCount = 1;
+        generated = await generateStructured("question_generation", [
+          ...messages,
+          { role: "user", content: `Doğrulama sorunları: ${JSON.stringify(validation.parsed)}. Tekrar üret, aynı hataları tekrarlama.` },
+        ], QUESTION_BANK_SCHEMA, { promptVersion: QUESTION_GEN_PROMPT, cache: false, forcePremium: true });
+        questions = Array.isArray((generated.parsed as { questions?: GeneratedQuestion[] })?.questions)
+          ? (generated.parsed as { questions: GeneratedQuestion[] }).questions
+          : questions;
+      }
+    } catch (error) {
+      console.error("question validation skipped", error instanceof Error ? error.message : error);
+    }
+  }
+  metaOut.model = generated.model;
+  metaOut.extra = generationMeta(generated, { prompt_version: QUESTION_GEN_PROMPT, retry_count: retryCount });
+  return questions;
 }
 
 async function ensureSet(
@@ -88,13 +113,11 @@ Deno.serve(async (req) => {
       return json({ inserted: 0, skipped: 0, published: false, reason: "target_met" });
     }
 
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!apiKey) return json({ error: { code: "AI_NOT_CONFIGURED", message: "OPENAI_API_KEY sırrı yok." } }, 503);
-
     const ctx = await buildContext(admin, canonicalTopicId, lessonId, versionId, examCatalogId);
     const setType = mode === "exam_specific" ? "exam_specific" : mode === "missing_coverage" ? "topic_pool" : "topic_pool";
     const setId = await ensureSet(admin, canonicalTopicId, setType, versionId, examCatalogId, null);
-    const batch = await chatQuestions(apiKey, ctx.prompt, Math.min(target, 12));
+    const genMeta = { model: "", extra: {} as Record<string, unknown> };
+    const batch = await chatQuestions(ctx.prompt, Math.min(target, 12), genMeta);
     const result = await insertBatch(admin, batch, {
       canonicalTopicId,
       setId,
@@ -105,11 +128,13 @@ Deno.serve(async (req) => {
       objectives: ctx.objectives,
       canonicalUnitId: ctx.unitId,
       canonicalSubjectId: ctx.subjectId,
+      generationModel: genMeta.model,
+      generationMetadata: genMeta.extra,
     });
     return json({ ...result, published: false, set_type: setType });
   } catch (error) {
-    if (error instanceof Error && error.message === "AI_PROVIDER") {
-      return json({ error: { code: "PROVIDER_ERROR", message: "Soru üretimi yanıt vermedi." } }, 502);
+    if (error instanceof Error && ["AI_PROVIDER", "AI_RETRYABLE", "AI_TIMEOUT"].includes(error.message)) {
+      return json({ error: { code: "PROVIDER_ERROR", message: "Soru üretimi tamamlanamadı." } }, 502);
     }
     console.error("question-generate", error);
     return mapHttpError(error);
@@ -231,6 +256,8 @@ async function insertBatch(
     objectives: { id: string; title: string }[];
     canonicalUnitId: string | null;
     canonicalSubjectId: string | null;
+    generationModel?: string;
+    generationMetadata?: Record<string, unknown>;
   },
 ) {
   let inserted = 0;
@@ -280,9 +307,10 @@ async function insertBatch(
         curriculum_question_set_id: ctx.setId,
         learning_objective_id: objectiveId,
         needs_image: q.requires_image,
-        generation_model: QUESTION_GEN_MODEL,
+        generation_model: ctx.generationModel ?? null,
         generated_at: new Date().toISOString(),
         prompt_version: QUESTION_GEN_PROMPT,
+        generation_metadata: ctx.generationMetadata ?? {},
       })
       .select("id")
       .single();

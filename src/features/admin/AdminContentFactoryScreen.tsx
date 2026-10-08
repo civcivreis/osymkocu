@@ -13,6 +13,7 @@ import {
   useBreakdownSuggestions,
   useCanonicalTopics,
   useCanonicalUnits,
+  useFactoryExamCoverage,
   useFactoryJobs,
   useFactoryMutations,
   useFactorySettings,
@@ -61,6 +62,7 @@ export function AdminContentFactoryScreen() {
   const subjects = useSubjectCatalog(examId);
   const units = useUnitCatalog(subjectId);
   const stats = useFactoryStats();
+  const coverage = useFactoryExamCoverage();
   const settings = useFactorySettings();
   const jobs = useFactoryJobs();
   const topics = useCanonicalTopics();
@@ -140,6 +142,28 @@ export function AdminContentFactoryScreen() {
     void mutations.preview.mutateAsync({ ...scope, enqueue: false }).then(setEstimate).catch(fail);
   };
 
+  const startMotor = (confirm: boolean) => {
+    void mutations.startMotor
+      .mutateAsync(confirm)
+      .then((result) => {
+        if (result.needs_confirm) {
+          const lines = (result.exams ?? [])
+            .map((row) => `${row.exam}: ${row.generate} üretilecek`)
+            .join('\n');
+          askConfirm({
+            title: 'Motoru başlat?',
+            subtitle: `İçerik motoru tüm aktif sınavların eksik içeriklerini üretmeye başlayacak.\n${result.generate} ders üretilecek · ${result.reused} yeniden kullanılacak · ${result.skipped} atlanacak.${lines ? `\n${lines}` : ''}`,
+            confirmLabel: 'Motoru Başlat',
+            onConfirm: () => startMotor(true),
+          });
+          return;
+        }
+        toastSuccess(`${result.queued ?? 0} iş kuyrukta. Yayın otomatik değil.`);
+        void mutations.tick.mutateAsync().catch(() => undefined);
+      })
+      .catch(fail);
+  };
+
   const enqueueMissing = (confirm: boolean) => {
     const go = () => {
       void mutations.queue
@@ -182,36 +206,44 @@ export function AdminContentFactoryScreen() {
     <View style={{ gap: 16 }}>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' }}>
         <View style={{ gap: 4 }}>
-          <AppText variant="title">İçerik Üretimi</AppText>
-          <AppText tone="muted">Kuyruk motoru · otomatik yayın yok · üretim duraklatılmış başlar</AppText>
+          <AppText variant="title">ÖSYM Koçu İçerik Motoru</AppText>
+          <AppText tone="muted">İzle · incele · geçersiz kıl. Yayın otomatik değil.</AppText>
         </View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          <Pressable
-            onPress={() =>
-              void mutations.setProduction
-                .mutateAsync({ enabled: true })
-                .then(() => {
-                  toastSuccess('Üretim açık. Yeni işler başlayabilir.');
-                  void mutations.tick.mutateAsync().catch(() => undefined);
-                })
-                .catch(fail)
-            }
-            style={adminBtn}>
-            <AppText tone="inverse">Üretimi Başlat</AppText>
+          <Pressable onPress={() => startMotor(false)} style={adminBtn}>
+            <AppText tone="inverse">MOTORU BAŞLAT</AppText>
           </Pressable>
           <Pressable
             onPress={() =>
-              void mutations.setProduction.mutateAsync({ enabled: false }).then(() => toastSuccess('Yeni iş başlamaz. Çalışanlar bitsin.')).catch(fail)
+              void mutations.setProduction.mutateAsync({ enabled: false }).then(() => toastSuccess('Motor duraklatıldı. Çalışanlar bitsin.')).catch(fail)
             }
             style={adminGhost}>
-            <AppText>Üretimi Duraklat</AppText>
+            <AppText>MOTORU DURAKLAT</AppText>
           </Pressable>
         </View>
       </View>
 
       <AppText variant="caption" tone={enabled ? 'accent' : 'muted'}>
-        {enabled ? 'Üretim açık' : 'Üretim kapalı'} · eşzamanlı {settings.data?.max_concurrency ?? 2} · havuz hedefi {settings.data?.question_pool_target ?? 20}
+        {enabled ? '● Çalışıyor' : '○ Duraklatıldı'} · eşzamanlı {settings.data?.max_concurrency ?? 2} · havuz {settings.data?.question_pool_target ?? 20} · metin {settings.data?.text_workers ?? 2} · görsel {settings.data?.image_workers ?? 1} · TTS {settings.data?.tts_workers ?? 1}
       </AppText>
+
+      <View style={adminCard}>
+        <AppText variant="label">Sınav kapsamı</AppText>
+        {(coverage.data ?? []).map((row) => (
+          <View key={row.id} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', paddingVertical: 6 }}>
+            <Pressable
+              onPress={() => void mutations.setExamEnabled.mutateAsync({ examId: row.id, enabled: !row.is_enabled }).catch(fail)}
+              style={[adminChip, row.is_enabled && adminChipOn]}>
+              <AppText>
+                {row.is_enabled ? '✓' : '○'} {row.name}
+              </AppText>
+            </Pressable>
+            <AppText variant="caption" tone="muted">
+              {row.lessons_ready}/{row.topics} konu hazır · {row.questions_ready} soru · {row.pending_review} inceleme · {row.failed} hata
+            </AppText>
+          </View>
+        ))}
+      </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         <AppText variant="caption">Question Pool Target</AppText>
         <TextInput value={poolTarget} onChangeText={setPoolTarget} keyboardType="number-pad" style={[adminField, { minWidth: 80 }]} />
@@ -229,11 +261,11 @@ export function AdminContentFactoryScreen() {
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
         {[
-          ['Total Topics', stats.data?.total_topics ?? '—'],
-          ['Ready', stats.data?.ready ?? '—'],
-          ['Queued', stats.data?.queued ?? '—'],
-          ['Generating', stats.data?.generating ?? '—'],
-          ['Pending Validation', stats.data?.pending_validation ?? '—'],
+          ['Curriculum Topics', stats.data?.total_topics ?? '—'],
+          ['Lessons Ready', stats.data?.ready ?? '—'],
+          ['Videos Ready', stats.data?.ready ?? '—'],
+          ['Questions Ready', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.questions_ready ?? 0), 0) || '—'],
+          ['Pending Review', stats.data?.pending_validation ?? '—'],
           ['Failed', stats.data?.failed ?? '—'],
         ].map(([label, value]) => (
           <View key={String(label)} style={[adminCard, { minWidth: compact ? '46%' : 140, flexGrow: 1 }]}>
@@ -246,7 +278,7 @@ export function AdminContentFactoryScreen() {
       </View>
 
       <View style={adminCard}>
-        <AppText variant="label">Sınav</AppText>
+        <AppText variant="label">Kuyruk filtresi</AppText>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           {(exams.data ?? [])
             .filter((row) => row.is_active)
@@ -340,7 +372,7 @@ export function AdminContentFactoryScreen() {
         <View key={job.id} style={adminCard}>
           <AppText variant="subtitle">{topicName(job.canonical_topic_id)}</AppText>
           <AppText variant="caption" tone="muted">
-            {jobLabel(job.status)} · deneme {job.attempt_count}/{job.max_attempts} · {String(job.updated_at).slice(0, 16).replace('T', ' ')}
+            {(coverage.data ?? []).find((row) => row.id === job.exam_id)?.name ?? 'Sınav'} · {job.factory_stage ?? jobLabel(job.status)} · deneme {job.attempt_count}/{job.max_attempts} · {String(job.updated_at).slice(0, 16).replace('T', ' ')}
           </AppText>
           <StageLine job={job} />
           {questionStats[job.canonical_topic_id] ? (

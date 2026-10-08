@@ -8,7 +8,7 @@ import { AppText } from '@/src/components/ui/AppText';
 import { Card } from '@/src/components/ui/Card';
 import { CommentsSheet } from '@/src/features/social/CommentsSheet';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
-import { EditPostSheet, ReportSheet } from '@/src/features/social/ReportSheet';
+import { EditPostSheet, ReportSheet, StudyInviteSheet } from '@/src/features/social/ReportSheet';
 import { postedAt, subjectGlyph, taggedName } from '@/src/features/social/identity';
 import {
   postAuthor,
@@ -20,7 +20,9 @@ import {
   type PostComment,
   type SocialPost,
 } from '@/src/features/social/useSocial';
+import { useStudySubjects, useSubjectTopics } from '@/src/features/study/usePractice';
 import { useJoinExamLobby, useRequestStudy } from '@/src/features/study/useStudyTogether';
+import { useAuthStore } from '@/src/stores/authStore';
 import { moderateContent } from '@/src/lib/moderation/profanity';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 import { toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
@@ -35,6 +37,7 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [togetherOpen, setTogetherOpen] = useState(false);
   const [menuKind, setMenuKind] = useState<'own' | 'other' | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const author = postAuthor(post);
@@ -66,13 +69,13 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
   if (post.kind === 'exam_lobby' && post.session_id) {
     return (
       <View>
-        <Card>
+        <Card style={{ width: '100%', alignSelf: 'stretch' }}>
           <View style={{ gap: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Pressable onPress={goProfile} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
                 <LetterAvatar id={post.user_id} name={author?.display_name} size={40} />
                 <View style={{ flex: 1, gap: 2 }}>
-                  <NameLine name={name} bot={post.is_bot} />
+                  <NameLine name={name} />
                   <AppText variant="caption" tone="muted">
                     Açık oda · {postedAt(post.created_at)}
                   </AppText>
@@ -133,20 +136,35 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
   }
 
   return (
-    <Card>
+    <Card style={{ width: '100%', alignSelf: 'stretch' }}>
       <View style={{ gap: 12 }}>
         <Pressable onPress={goProfile} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <LetterAvatar id={post.user_id} name={author?.display_name} size={42} />
           <View style={{ flex: 1, gap: 2 }}>
-            <NameLine name={name} bot={post.is_bot} />
+            <NameLine name={name} />
             <AppText variant="caption" tone="muted">
-              {[postedAt(post.created_at), post.subject_name ? `${subjectGlyph(post.subject_name)} ${post.subject_name}` : null, post.goal_label]
-                .filter(Boolean)
-                .join(' · ')}
+              {[postedAt(post.created_at), post.goal_label].filter(Boolean).join(' · ')}
             </AppText>
           </View>
           {menu}
         </Pressable>
+        {post.subject_name || post.canonical_topic_name || post.topic_name ? (
+          <View style={{ gap: 2 }}>
+            {post.subject_name ? (
+              <AppText variant="caption" tone="accent">
+                {subjectGlyph(post.subject_name)} {post.subject_name}
+              </AppText>
+            ) : null}
+            {post.unit_name ? (
+              <AppText variant="caption" tone="muted">
+                {post.unit_name}
+              </AppText>
+            ) : null}
+            {post.canonical_topic_name || post.topic_name ? (
+              <AppText variant="caption">{post.canonical_topic_name ?? post.topic_name}</AppText>
+            ) : null}
+          </View>
+        ) : null}
         <AppText style={{ lineHeight: 24 }}>{post.body}</AppText>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <IconAction
@@ -160,19 +178,30 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
             count={post.comment_count ?? 0}
             onPress={() => setCommentsOpen(true)}
           />
-          {post.user_id !== me && post.subject_id ? (
+          {post.user_id !== me ? (
             <Pressable
-              onPress={() =>
-                void study
-                  .mutateAsync({ otherId: post.user_id, subjectId: post.subject_id!, postId: post.id })
-                  .then(
-                    () => toastSuccess('İstek gitti. Kabul ederse aynı derse geçersiniz.'),
-                    (error: unknown) => toastError(error),
-                  )
-              }
+              onPress={() => {
+                if (post.subject_id) {
+                  void study
+                    .mutateAsync({
+                      otherId: post.user_id,
+                      subjectId: post.subject_id,
+                      postId: post.id,
+                      topicId: post.topic_id,
+                    })
+                    .then(
+                      () => toastSuccess('İstek gitti. Kabul ederse aynı derse geçersiniz.'),
+                      (error: unknown) => toastError(error),
+                    );
+                  return;
+                }
+                setTogetherOpen(true);
+              }}
               hitSlop={8}
-              style={{ minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="people-outline" size={18} color={post.kind === 'ask' ? colors.accent : colors.textMuted} />
+              style={{ minHeight: 44, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center' }}>
+              <AppText variant="caption" tone="accent" style={{ fontWeight: '700' }}>
+                Birlikte Çalış
+              </AppText>
             </Pressable>
           ) : null}
         </View>
@@ -192,6 +221,7 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
         ) : null}
       </View>
       <CommentsSheet post={post} visible={commentsOpen} onClose={() => setCommentsOpen(false)} />
+      <PostTogetherSheet visible={togetherOpen} post={post} onClose={() => setTogetherOpen(false)} />
       <PostOverlays
         post={post}
         reportOpen={reportOpen}
@@ -329,16 +359,50 @@ function PostOverlays({
   );
 }
 
-function NameLine({ name, bot }: { name: string; bot?: boolean }) {
+function NameLine({ name }: { name: string }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
       <AppText variant="subtitle">{name}</AppText>
-      {bot ? (
-        <AppText variant="caption" tone="muted">
-          otomatik
-        </AppText>
-      ) : null}
     </View>
+  );
+}
+
+function PostTogetherSheet({ visible, post, onClose }: { visible: boolean; post: SocialPost; onClose: () => void }) {
+  const examId = useAuthStore((s) => s.profile?.exam_id);
+  const subjects = useStudySubjects(examId ?? null);
+  const [pickedSubject, setPickedSubject] = useState(post.subject_id);
+  const [pickedTopic, setPickedTopic] = useState(post.topic_id ?? null);
+  const topics = useSubjectTopics(pickedSubject);
+  const study = useRequestStudy();
+  return (
+    <StudyInviteSheet
+      visible={visible}
+      title="Birlikte çalış"
+      subtitle="Konu seçip mevcut daveti gönder."
+      subjects={(subjects.data ?? []).map((row) => ({ id: row.id, name: row.name }))}
+      topics={(topics.data ?? []).map((row) => ({ id: row.id, name: row.name }))}
+      pickedSubject={pickedSubject}
+      pickedTopic={pickedTopic}
+      onPickSubject={(id) => {
+        setPickedSubject(id);
+        setPickedTopic(null);
+      }}
+      onPickTopic={setPickedTopic}
+      sending={study.isPending}
+      onClose={onClose}
+      onSend={() => {
+        if (!pickedSubject) return;
+        void study
+          .mutateAsync({ otherId: post.user_id, subjectId: pickedSubject, postId: post.id, topicId: pickedTopic })
+          .then(
+            () => {
+              toastSuccess('İstek gitti.');
+              onClose();
+            },
+            (error: unknown) => toastError(error),
+          );
+      }}
+    />
   );
 }
 

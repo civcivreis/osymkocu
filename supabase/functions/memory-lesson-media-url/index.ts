@@ -1,4 +1,4 @@
-import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, requireUser, serviceClient } from "../_shared/lessonHttp.ts";
 import { createLessonSignedUrl } from "../_shared/lessonR2.ts";
 
 const TTL = 600;
@@ -8,19 +8,25 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: { code: "METHOD", message: "POST gerekli." } }, 405);
 
   try {
-    await requireLessonAdmin(req);
+    const user = await requireUser(req);
     const body = await req.json().catch(() => ({})) as { lesson_id?: string };
     const lessonId = String(body.lesson_id ?? "").trim();
     if (!lessonId) return json({ error: { code: "INVALID", message: "lesson_id gerekli." } }, 400);
 
     const admin = serviceClient();
+    const { data: profile } = await admin.from("profiles").select("app_role").eq("id", user.id).maybeSingle();
+    const isAdmin = profile?.app_role === "admin" || profile?.app_role === "super_admin";
+
     const { data: lesson, error: lessonError } = await admin
       .from("memory_lessons")
-      .select("id, narration_key, thumbnail_key")
+      .select("id, narration_key, thumbnail_key, status")
       .eq("id", lessonId)
       .maybeSingle();
     if (lessonError) throw lessonError;
     if (!lesson) return json({ error: { code: "NOT_FOUND", message: "Ders bulunamadı." } }, 404);
+    if (lesson.status !== "published" && !isAdmin) {
+      return json({ error: { code: "NOT_FOUND", message: "Ders bulunamadı." } }, 404);
+    }
 
     const { data: scenes, error: scenesError } = await admin
       .from("memory_lesson_scenes")

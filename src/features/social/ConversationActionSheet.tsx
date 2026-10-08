@@ -23,6 +23,7 @@ export function ConversationActionSheet({
   onPin,
   onMute,
   onMarkRead,
+  onHide,
   onLeave,
   onBlock,
   onDelete,
@@ -32,6 +33,7 @@ export function ConversationActionSheet({
   onPin: () => void;
   onMute: () => void;
   onMarkRead: () => void;
+  onHide: () => void;
   onLeave: () => void;
   onBlock: () => void;
   onDelete: () => void;
@@ -63,13 +65,20 @@ export function ConversationActionSheet({
               },
             ]
           : []),
+        {
+          key: 'hide',
+          icon: 'eye-off-outline' as ActionSheetItem['icon'],
+          label: 'Gizle',
+          hint: 'Sadece senin listenizden kalkar',
+          onPress: onHide,
+        },
         ...(target.kind === 'group'
           ? [
               {
                 key: 'leave',
                 icon: 'exit-outline' as const,
                 label: 'Gruptan ayrıl',
-                hint: 'Bu odayı listenizden kaldır',
+                hint: 'Üyeliğin kalkar, mesajlar silinmez',
                 danger: true,
                 onPress: onLeave,
               },

@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+import { getAiModelConfig } from "../_shared/aiRouter.ts";
 import { moderateImageBytes } from "../_shared/imageModeration.ts";
 import { r2Delete, r2Put, r2SignedGet } from "../_shared/r2.ts";
 
@@ -17,6 +18,15 @@ function json(payload: unknown, status = 200) {
     status,
     headers: { ...cors, "Content-Type": "application/json" },
   });
+}
+
+async function moderationProviderLabel() {
+  try {
+    const cfg = await getAiModelConfig("content_moderation_image");
+    return `${cfg.provider}:${cfg.primaryModel}`;
+  } catch {
+    return "openai";
+  }
 }
 
 function sniffMime(bytes: Uint8Array, claimed: string) {
@@ -215,7 +225,8 @@ Deno.serve(async (req) => {
     }
   }
 
-  const key = `pending/${user.id}/${crypto.randomUUID()}.${extFor(mime)}`;
+  // Roles never skip moderation. Admin/super_admin follow the same sexual-content gate.
+  const key = `chat-temp/${user.id}/${crypto.randomUUID()}.${extFor(mime)}`;
   try {
     await r2Put(key, parsed.bytes, mime);
   } catch (error) {
@@ -242,18 +253,39 @@ Deno.serve(async (req) => {
   }
 
   const mediaId = insert.data.id as string;
+  await admin.from("media_moderation").insert({
+    uploader_user_id: user.id,
+    asset_key: key,
+    conversation_id: conversationId,
+    media_id: mediaId,
+    status: "pending",
+    moderation_provider: await moderationProviderLabel(),
+  });
   const openai = Deno.env.get("OPENAI_API_KEY") ?? "";
 
-  async function dropPending() {
+  async function dropPending(status: "rejected" | "error", extra?: Record<string, unknown>) {
     await r2Delete(key);
     await admin.from("media").update({
       moderation_status: "rejected",
       deleted_at: new Date().toISOString(),
     }).eq("id", mediaId);
+    await admin.from("media_moderation").update({
+      status,
+      categories: extra?.categories ?? {},
+      moderated_at: new Date().toISOString(),
+    }).eq("media_id", mediaId);
+    if (status === "rejected") {
+      await admin.from("user_safety_events").insert({
+        user_id: user.id,
+        event_type: extra?.highRisk ? "sexual_media_rejected" : "sexual_media_rejected",
+        source: parsed.purpose,
+        metadata: { media_id: mediaId, category: extra?.category ?? "sexual" },
+      });
+    }
   }
 
   if (!openai) {
-    await dropPending();
+    await dropPending("error");
     return json({
       error: {
         code: "IMAGE_MODERATION_UNAVAILABLE",
@@ -272,7 +304,11 @@ Deno.serve(async (req) => {
     }
     const verdict = await moderateImageBytes(openai, parsed.bytes, mime, { mediaId, signedUrl });
     if (verdict.reject) {
-      await dropPending();
+      await dropPending("rejected", {
+        category: verdict.category,
+        highRisk: verdict.highRisk,
+        categories: { sexual: verdict.sexual, flagged: verdict.flagged },
+      });
       await admin.from("image_moderation_violations").insert({
         user_id: user.id,
         category: verdict.category ?? "sexual",
@@ -299,7 +335,26 @@ Deno.serve(async (req) => {
     }
   } catch (error) {
     console.error("[media-moderation]", { mediaId, event: "failed", error: String(error) });
-    await dropPending();
+    await dropPending("error");
+    return json({
+      error: {
+        code: "IMAGE_MODERATION_UNAVAILABLE",
+        reason: "moderation_unavailable",
+        message: "Görsel şu anda kontrol edilemedi. Lütfen tekrar dene.",
+      },
+    });
+  }
+
+  const dest =
+    parsed.purpose === "chat_image"
+      ? `chat-media/${conversationId ?? groupSlug ?? user.id}/${mediaId}.${extFor(mime)}`
+      : `media/${parsed.purpose}/${user.id}/${mediaId}.${extFor(mime)}`;
+  try {
+    await r2Put(dest, parsed.bytes, mime);
+    await r2Delete(key);
+  } catch (error) {
+    console.error("r2 promote", error);
+    await dropPending("error");
     return json({
       error: {
         code: "IMAGE_MODERATION_UNAVAILABLE",
@@ -311,13 +366,14 @@ Deno.serve(async (req) => {
 
   const approved = await admin
     .from("media")
-    .update({ moderation_status: "approved" })
+    .update({ moderation_status: "approved", storage_key: dest })
     .eq("id", mediaId)
     .eq("moderation_status", "pending")
     .select("id")
     .maybeSingle();
   if (approved.error || !approved.data) {
-    await dropPending();
+    await r2Delete(dest);
+    await dropPending("error");
     return json({
       error: {
         code: "IMAGE_MODERATION_UNAVAILABLE",
@@ -326,6 +382,13 @@ Deno.serve(async (req) => {
       },
     });
   }
+
+  await admin.from("media_moderation").update({
+    status: "approved",
+    asset_key: dest,
+    moderated_at: new Date().toISOString(),
+    categories: { safe: true },
+  }).eq("media_id", mediaId);
 
   return json({
     data: {

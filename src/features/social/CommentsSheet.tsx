@@ -246,11 +246,6 @@ function CommentRow({
           <AppText variant="caption" style={{ fontWeight: '700' }}>
             {taggedName(item.display_name, item.display_tag)}
           </AppText>
-          {item.is_bot ? (
-            <AppText variant="caption" tone="muted">
-              otomatik
-            </AppText>
-          ) : null}
           <AppText variant="caption" tone="subtle">
             {postedAt(item.created_at)}
           </AppText>

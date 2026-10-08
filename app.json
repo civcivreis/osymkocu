@@ -43,7 +43,9 @@
       [
         "expo-font",
         {
-          "fonts": ["./assets/fonts/Ionicons.ttf"]
+          "fonts": [
+            "./assets/fonts/Ionicons.ttf"
+          ]
         }
       ],
       [
@@ -60,6 +62,14 @@
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
           "backgroundColor": "#0E1520"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
         }
       ]
     ],

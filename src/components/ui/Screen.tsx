@@ -16,24 +16,27 @@ type Props = {
   children: ReactNode;
   scroll?: boolean;
   center?: boolean;
+  wide?: boolean;
   style?: ViewStyle;
   safeEdges?: Edge[];
 };
 
-export function Screen({ children, scroll, center, style, safeEdges }: Props) {
+export function Screen({ children, scroll, center, wide, style, safeEdges }: Props) {
   const { colors } = useAppTheme();
   const { showSidebar, showTopBar, contentMaxWidth, contentPad } = useBreakpoint();
   const edges: Edge[] = safeEdges ?? (showSidebar ? [] : ['top']);
+  const maxWidth = wide ? 1360 : contentMaxWidth;
 
   const innerStyle: ViewStyle[] = [
-    scroll ? styles.scroll : { flex: 1 },
+    scroll ? styles.scroll : { flex: 1, minWidth: 0 },
     {
       paddingHorizontal: contentPad,
       paddingTop: showTopBar ? 20 : contentPad,
       paddingBottom: 32,
       width: '100%',
-      maxWidth: contentMaxWidth,
+      maxWidth,
       alignSelf: 'center',
+      alignItems: 'stretch',
       justifyContent: center ? 'center' : undefined,
     },
     style ?? {},

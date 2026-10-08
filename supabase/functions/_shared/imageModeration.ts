@@ -1,3 +1,5 @@
+import { getAiModelConfig } from "./aiRouter.ts";
+
 export type ModerationVerdict = {
   reject: boolean;
   highRisk: boolean;
@@ -53,9 +55,18 @@ export function decideImage(result: ModerationResult | undefined): ModerationVer
   const violence = flag(categories, "violence");
   const graphic = flag(categories, "violence/graphic");
   const selfHarm = flag(categories, "self-harm") || flag(categories, "self-harm/intent");
+  const sexualScore = score("sexual");
+  const minorsScore = score("sexual/minors");
 
   const reject =
-    result.flagged === true || sexual || minors || violence || graphic || selfHarm;
+    result.flagged === true ||
+    sexual ||
+    minors ||
+    sexualScore >= 0.18 ||
+    minorsScore >= 0.05 ||
+    violence ||
+    graphic ||
+    selfHarm;
 
   const category = minors
     ? "sexual/minors"
@@ -83,6 +94,14 @@ export function decideImage(result: ModerationResult | undefined): ModerationVer
 }
 
 async function postModeration(apiKey: string, imageUrl: string) {
+  let model = Deno.env.get("AI_MODEL_CONTENT_MODERATION_IMAGE")?.trim() || "";
+  if (!model) {
+    try {
+      model = (await getAiModelConfig("content_moderation_image")).primaryModel;
+    } catch {
+      model = "omni-moderation-latest";
+    }
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
   try {
@@ -94,7 +113,7 @@ async function postModeration(apiKey: string, imageUrl: string) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "omni-moderation-latest",
+        model,
         input: [
           {
             type: "image_url",

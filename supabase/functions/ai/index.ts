@@ -1,6 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+import {
+  friendlyAiError,
+  generateImage,
+  generateStructured,
+  generateText,
+  type ChatMessage,
+} from "../_shared/aiRouter.ts";
 import { moderateImageBytes } from "../_shared/imageModeration.ts";
 
 const cors = {
@@ -68,28 +75,28 @@ export default {
       }
 
       const providerKey = Deno.env.get("OPENAI_API_KEY") ?? Deno.env.get("GEMINI_API_KEY");
-      if (!providerKey) {
+      if (!providerKey && action === "moderateChatImage") {
         console.error("missing OPENAI_API_KEY");
         return json({
           error: {
             code: "AI_NOT_CONFIGURED",
-            message: "OPENAI_API_KEY sırrı yok. Edge Functions Secrets’a ekle.",
+            message: "AI yapılandırması eksik.",
           },
         });
       }
 
       if (action === "pulseBotStory") {
-        const story = await pulseBotStory(providerKey);
+        const story = await pulseBotStory();
         return json({ data: story });
       }
 
       if (action === "moderateChatImage") {
-        const moderated = await moderateChatImage(providerKey, user.id, payload);
+        const moderated = await moderateChatImage(providerKey ?? "", user.id, payload);
         if ("error" in moderated) return json({ error: moderated.error });
         return json({ data: moderated.data });
       }
 
-      const result = await callOpenAI(providerKey, action, payload);
+      const result = await callOpenAI(action, payload);
       if ("error" in result) {
         console.error("openai error", result.error);
         return json({ error: result.error });
@@ -107,17 +114,18 @@ export default {
       return json({ data: result.data });
     } catch (error) {
       console.error("ai crash", error);
+      const friendly = friendlyAiError(error, "generic");
       return json({
         error: {
-          code: "PROVIDER_ERROR",
-          message: error instanceof Error ? error.message : "Bilinmeyen hata",
+          code: friendly.code,
+          message: friendly.text,
         },
       });
     }
   },
 };
 
-async function callOpenAI(apiKey: string, action: string, payload: Record<string, unknown>) {
+async function callOpenAI(action: string, payload: Record<string, unknown>) {
   const mode = String(payload.mode ?? "simple");
   const question = String(payload.question ?? "");
   const imageBase64 = typeof payload.imageBase64 === "string" ? payload.imageBase64 : "";
@@ -126,6 +134,15 @@ async function callOpenAI(apiKey: string, action: string, payload: Record<string
   const history = Array.isArray(payload.history) ? payload.history : [];
   const appContext = sanitizeAppContext(payload.appContext);
   const short = mode !== "detailed";
+  const hasImage = Boolean(imageBase64 || imageUrl || imagePath);
+  const academic =
+    hasImage ||
+    action === "solveImageQuestion" ||
+    action === "generateExplanation" ||
+    action === "analyzeAnswer" ||
+    action === "generateQuestion" ||
+    action === "generateRevisionQuestions";
+  const taskType = academic ? "lesson_generation" : "bot_conversation";
   const system = `Sen Koçum uygulamasının eğitim koçusun. Adın Koç. TYT, AYT ve KPSS öğretmenisin.
 Cevabı yalnızca JSON ver: kind, reply, answer.
 kind=chat: selam/sohbet/hatırlama. reply doğal. answer boş string.
@@ -162,60 +179,40 @@ Anlatım: ${short ? "kısa, net" : "adım adım, sade"}.`;
     })
     .filter(Boolean);
 
-  const messages: Array<Record<string, unknown>> = [{ role: "system", content: system }];
+  const messages: ChatMessage[] = [{ role: "system", content: system }];
   if (appContext) {
     messages.push({
       role: "system",
       content: `APP CONTEXT (yalnızca eğitim ekranı; kişisel veri yok):\n${JSON.stringify(appContext)}`,
     });
   }
-  messages.push(...historyMessages);
+  messages.push(...(historyMessages as ChatMessage[]));
   messages.push({
     role: "user",
     content: userContent.length ? userContent : question || "Devam et.",
   });
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      temperature: 0.4,
-      max_tokens: short ? 350 : 700,
-      response_format: { type: "json_object" },
-      messages,
-    }),
-  });
-
-  if (!response.ok) {
-    const raw = await response.text();
-    console.error("openai http", response.status, raw.slice(0, 300));
-    return { error: mapOpenAiError(response.status, raw) };
-  }
-
-  const jsonBody = await response.json();
-  const content = jsonBody.choices?.[0]?.message?.content ?? "{}";
   let parsed: Record<string, unknown> = {};
+  let tokens = 0;
   try {
-    parsed = JSON.parse(content) as Record<string, unknown>;
-  } catch {
-    parsed = { solution: content };
+    const result = await generateStructured(taskType, messages, null, {
+      cache: false,
+      profileId: undefined,
+    });
+    parsed = (result.parsed ?? {}) as Record<string, unknown>;
+    tokens = Number(result.inputTokens ?? 0) + Number(result.outputTokens ?? 0);
+  } catch (error) {
+    console.error("openai http", error);
+    const friendly = friendlyAiError(error, academic ? "lesson" : "generic");
+    return { error: { code: friendly.code, message: friendly.text } };
   }
 
-  const hasImage = Boolean(
-    (payload as { imageBase64?: string; imageUrl?: string; imagePath?: string }).imageBase64 ||
-      (payload as { imageUrl?: string }).imageUrl ||
-      (payload as { imagePath?: string }).imagePath,
-  );
   const kind = hasImage || parsed.kind === "lesson" ? "lesson" : "chat";
   const reply = String(parsed.reply ?? parsed.solution ?? "");
   const answer = kind === "chat" ? "" : String(parsed.answer ?? "");
 
   return {
-    tokens: jsonBody.usage?.total_tokens ?? 0,
+    tokens,
     data: {
       kind,
       reply: reply || (kind === "chat" ? String(parsed.answer ?? "") : reply),
@@ -261,32 +258,6 @@ function sanitizeAppContext(raw: unknown) {
     out[key] = value;
   }
   return Object.keys(out).length ? out : null;
-}
-
-function mapOpenAiError(status: number, raw: string) {
-  let code = "";
-  let message = "";
-  try {
-    const parsed = JSON.parse(raw) as { error?: { code?: string; type?: string; message?: string } };
-    code = String(parsed.error?.code ?? parsed.error?.type ?? "");
-    message = String(parsed.error?.message ?? "");
-  } catch {
-    message = raw.slice(0, 180);
-  }
-
-  if (status === 401 || code === "invalid_api_key") {
-    return {
-      code: "AI_NOT_CONFIGURED",
-      message: "OpenAI anahtarı geçersiz. Secrets’taki OPENAI_API_KEY’i yenile.",
-    };
-  }
-  if (status === 429 || code === "insufficient_quota" || code === "rate_limit_exceeded") {
-    return {
-      code: "PROVIDER_ERROR",
-      message: "OpenAI kotası veya kredisi yok. platform.openai.com → Billing.",
-    };
-  }
-  return { code: "PROVIDER_ERROR", message: message || `OpenAI ${status} hatası` };
 }
 
 function adminClient() {
@@ -370,7 +341,7 @@ async function moderateChatImage(
   return { data: { approved: true } };
 }
 
-async function pulseBotStory(apiKey: string) {
+async function pulseBotStory() {
   const url = Deno.env.get("SUPABASE_URL") ?? "";
   const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   if (!service) return { skipped: true };
@@ -429,60 +400,35 @@ async function pulseBotStory(apiKey: string) {
   let caption = picked.caption;
   const persona = `${bot.display_name ?? "Öğrenci"}${bot.bio ? ` · ${bot.bio}` : ""}`;
   try {
-    const chat = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.9,
-        max_tokens: 40,
-        messages: [
-          {
-            role: "system",
-            content: "ÖSYM öğrencisi story yazıyorsun. Tek kısa Türkçe cümle, en fazla 8 kelime. Hashtag yok, tırnak yok.",
-          },
-          {
-            role: "user",
-            content: `Persona: ${persona}. Kategori: ${picked.key}. Doğal bir story metni yaz.`,
-          },
-        ],
-      }),
-    });
-    if (chat.ok) {
-      const body = await chat.json();
-      const text = String(body?.choices?.[0]?.message?.content ?? "").replace(/["']/g, "").trim();
-      if (text.length >= 4 && text.length <= 80) caption = text;
-    }
+    const chat = await generateText(
+      "social_post_generation",
+      [
+        {
+          role: "system",
+          content: "ÖSYM öğrencisi story yazıyorsun. Tek kısa Türkçe cümle, en fazla 8 kelime. Hashtag yok, tırnak yok.",
+        },
+        {
+          role: "user",
+          content: `Persona: ${persona}. Kategori: ${picked.key}. Doğal bir story metni yaz.`,
+        },
+      ],
+      { cache: false },
+    );
+    const text = String(chat.text ?? "").replace(/["']/g, "").trim();
+    if (text.length >= 4 && text.length <= 80) caption = text;
   } catch {
     // caption fallback
   }
 
-  const img = await fetch("https://api.openai.com/v1/images/generations", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "dall-e-2",
-      prompt: picked.prompt,
-      n: 1,
-      size: "256x256",
-      response_format: "b64_json",
-    }),
-  });
-  if (!img.ok) {
-    console.error("story image", img.status, (await img.text()).slice(0, 200));
+  let bytes: Uint8Array;
+  try {
+    const img = await generateImage("image_generation", picked.prompt, { size: "256x256", cache: false });
+    bytes = img.bytes;
+  } catch (error) {
+    console.error("story image", error);
     return { skipped: true };
   }
-  const jsonBody = await img.json();
-  const b64 = String(jsonBody?.data?.[0]?.b64_json ?? "");
-  if (!b64) return { skipped: true };
-
-  const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
+  if (!bytes?.length) return { skipped: true };
   const path = `${bot.id}/${crypto.randomUUID()}.png`;
   const upload = await admin.storage.from("stories").upload(path, bytes, {
     contentType: "image/png",

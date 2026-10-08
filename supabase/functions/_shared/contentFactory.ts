@@ -23,6 +23,9 @@ export type FactoryJob = {
   events: unknown;
   lesson_scope: string;
   coverage_mode: string;
+  generation_hash?: string | null;
+  factory_stage?: string | null;
+  locked_until?: string | null;
 };
 
 const ACTIVE = new Set([
@@ -95,12 +98,13 @@ type LessonRow = {
   media_generation_status: string | null;
   narration_key: string | null;
   canonical_topic_id: string | null;
+  lesson_generation_hash?: string | null;
 };
 
 export async function loadLesson(admin: SupabaseClient, id: string | null) {
   if (!id) return null;
   const { data } = await admin.from("memory_lessons").select(
-    "id, status, narration, generation_status, pedagogy_score, media_generation_status, narration_key, canonical_topic_id",
+    "id, status, narration, generation_status, pedagogy_score, media_generation_status, narration_key, canonical_topic_id, lesson_generation_hash",
   ).eq("id", id).maybeSingle();
   return (data as LessonRow | null) ?? null;
 }
