@@ -14,7 +14,7 @@ function parseSuggestions(raw: string): Suggestion[] {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return preflight(req);
-  if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405);
+  if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405, req);
 
   try {
     const user = await requireLessonAdmin(req);

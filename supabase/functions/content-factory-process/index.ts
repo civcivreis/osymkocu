@@ -45,7 +45,7 @@ async function gatePending(admin: ReturnType<typeof serviceClient>, job: Factory
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return preflight(req);
-  if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405);
+  if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405, req);
 
   try {
     await requireFactoryCaller(req);

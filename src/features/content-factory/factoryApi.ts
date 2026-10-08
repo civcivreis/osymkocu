@@ -160,12 +160,20 @@ export async function getFactoryStateAudit(): Promise<MotorPreview> {
 }
 
 export async function wakeFactoryOrchestrator() {
+  const { data, error } = await getSupabase().rpc('admin_factory_orchestrate');
+  if (!error && data) {
+    return data as { engine_state?: string; planned?: unknown };
+  }
   const invoked = await getSupabase().functions.invoke('content-factory-orchestrator', { body: { source: 'admin' } });
   if (invoked.error) throw invokeError(invoked.data, invoked.error.message);
   return invoked.data as { engine_state?: string; planned?: unknown };
 }
 
 export async function tickFactoryProcess() {
+  const { data, error } = await getSupabase().rpc('admin_factory_orchestrate');
+  if (!error && data) {
+    return data as { paused?: boolean; processed?: unknown[]; concurrency?: number; engine_state?: string };
+  }
   const invoked = await getSupabase().functions.invoke('content-factory-process', { body: {} });
   if (invoked.error) throw invokeError(invoked.data, invoked.error.message);
   return invoked.data as { paused?: boolean; processed?: unknown[]; concurrency?: number };

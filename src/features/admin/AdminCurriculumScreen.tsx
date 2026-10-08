@@ -21,7 +21,7 @@ import {
   useUnitCatalog,
 } from '@/src/features/curriculum/useCurriculum';
 import { useFactoryExamCoverage } from '@/src/features/content-factory/useContentFactory';
-import { curriculumDiff } from '@/src/features/curriculum/curriculumApi';
+import { curriculumDiff, formatCurriculumProposalLine, formatCurriculumSyncToast } from '@/src/features/curriculum/curriculumApi';
 
 const field = {
   minHeight: 44,
@@ -194,7 +194,7 @@ export function AdminCurriculumScreen() {
                 onPress={() =>
                   void mutations.syncCurriculum
                     .mutateAsync({ examId: row.id })
-                    .then((result) => toastSuccess(`Senkron: ${result.unchanged} değişmedi · ${result.proposals} öneri. Uzak tarama yok.`))
+                    .then((result) => toastSuccess(formatCurriculumSyncToast(result)))
                     .catch(fail)
                 }
                 style={adminGhost}>
@@ -216,7 +216,7 @@ export function AdminCurriculumScreen() {
           onPress={() =>
             void mutations.syncCurriculum
               .mutateAsync({})
-              .then((result) => toastSuccess(`Tüm sınavlar: ${result.unchanged} değişmedi · ${result.proposals} öneri`))
+              .then((result) => toastSuccess(formatCurriculumSyncToast(result)))
               .catch(fail)
           }
           style={adminBtn}>
@@ -225,7 +225,7 @@ export function AdminCurriculumScreen() {
         {(proposals.data ?? []).length ? <AppText variant="label">Değişiklik önerileri</AppText> : null}
         {(proposals.data ?? []).slice(0, 8).map((row) => (
           <AppText key={row.id} variant="caption">
-            {row.exam_name} · {row.status} · {String(row.diff?.result ?? row.diff?.hash ?? '')}
+            {formatCurriculumProposalLine(row)}
           </AppText>
         ))}
         {examId && active.data?.id ? (

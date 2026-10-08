@@ -25,22 +25,34 @@ function allowOrigin(req?: Request) {
   return "";
 }
 
+const DEFAULT_ALLOW_HEADERS = [
+  "authorization",
+  "x-client-info",
+  "apikey",
+  "content-type",
+  "x-supabase-api-version",
+  "prefer",
+  "x-region",
+  "x-factory-wake",
+  "traceparent",
+  "tracestate",
+  "baggage",
+  "accept",
+  "accept-language",
+];
+
 export function corsHeaders(req?: Request) {
   const origin = allowOrigin(req);
+  const requested = (req?.headers.get("Access-Control-Request-Headers") ?? "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  const allowHeaders = [...new Set([...DEFAULT_ALLOW_HEADERS, ...requested])].join(", ");
   const headers: Record<string, string> = {
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": [
-      "authorization",
-      "x-client-info",
-      "apikey",
-      "content-type",
-      "x-supabase-api-version",
-      "prefer",
-      "x-region",
-      "x-factory-wake",
-    ].join(", "),
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, PATCH, DELETE",
+    "Access-Control-Allow-Headers": allowHeaders,
     "Access-Control-Max-Age": "86400",
-    Vary: "Origin",
+    Vary: "Origin, Access-Control-Request-Headers",
   };
   if (origin) headers["Access-Control-Allow-Origin"] = origin;
   else headers["Access-Control-Allow-Origin"] = "https://admin.osymkocu.com";

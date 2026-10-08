@@ -138,7 +138,90 @@ export async function syncCurriculum(examId?: string | null, force = false) {
     p_force: force,
   });
   if (error) throw error;
-  return data as { unchanged: number; proposals: number; ai_called: boolean; fetched_remote: boolean };
+  return data as {
+    unchanged: number;
+    proposals: number;
+    baselines_accepted?: number;
+    needs_review?: number;
+    ai_called: boolean;
+    fetched_remote: boolean;
+  };
+}
+
+export type CurriculumProposalRow = {
+  id: string;
+  exam_id: string;
+  exam_name: string;
+  status: string;
+  diff: Record<string, unknown>;
+  created_at: string;
+};
+
+const REVIEW_REASONS: Record<string, string> = {
+  exam_unidentified: 'Sınav tanımlanamadı',
+  source_unknown: 'Kaynak bilinmiyor',
+  source_untrusted: 'Kaynak güvenilir değil',
+  source_conflict: 'Kaynak çelişkisi',
+  duplicate_subjects: 'Çakışan dersler',
+  ambiguous_canonical: 'Belirsiz konu eşlemesi',
+  empty_structure: 'Boş veya geçersiz müfredat yapısı',
+  structural_update: 'Yapısal müfredat değişikliği',
+};
+
+function changeTypeOf(diff: Record<string, unknown> | null | undefined): string {
+  return String(diff?.change_type ?? diff?.result ?? '');
+}
+
+export function formatCurriculumSyncToast(result: {
+  unchanged: number;
+  proposals: number;
+  baselines_accepted?: number;
+  needs_review?: number;
+}): string {
+  const baseline = result.baselines_accepted ?? 0;
+  const review = result.needs_review ?? 0;
+  const parts = [
+    baseline ? `${baseline} ilk müfredat oluşturuldu` : null,
+    `${result.unchanged} değişmedi`,
+    review ? `${review} inceleme bekliyor` : null,
+    !baseline && !review && result.proposals ? `${result.proposals} öneri` : null,
+  ].filter(Boolean);
+  return `Senkron: ${parts.join(' · ')}`;
+}
+
+export function formatCurriculumProposalLine(row: CurriculumProposalRow): string {
+  const change = changeTypeOf(row.diff);
+  const reasonKey = String(row.diff?.reason ?? '');
+  const reason = REVIEW_REASONS[reasonKey] ?? (reasonKey || null);
+  const isFirst = change === 'INITIAL_BASELINE' || change === 'NEW_OR_FIRST_SNAPSHOT';
+
+  if (isFirst && (row.status === 'applied' || row.diff?.auto_accepted === true)) {
+    return `${row.exam_name} · İlk müfredat oluşturuldu`;
+  }
+  if (isFirst && row.status !== 'needs_review' && row.status !== 'rejected') {
+    return `${row.exam_name} · İlk müfredat hazırlanıyor`;
+  }
+  if (row.status === 'needs_review' || row.status === 'draft') {
+    const kind =
+      change === 'SOURCE_CONFLICT'
+        ? 'Kaynak çelişkisi'
+        : change === 'REMOVED'
+          ? 'Kaldırılan konular'
+          : change === 'AMBIGUOUS'
+            ? 'Belirsiz eşleme'
+            : change === 'UPDATED'
+              ? 'Yapısal güncelleme'
+              : change === 'ADDED'
+                ? 'Yeni konular'
+                : isFirst
+                  ? 'İlk müfredat incelemesi'
+                  : change || row.status;
+    return reason ? `${row.exam_name} · İnceleme: ${reason}` : `${row.exam_name} · İnceleme: ${kind}`;
+  }
+  if (change === 'UNCHANGED') {
+    return `${row.exam_name} · Değişiklik yok`;
+  }
+  return `${row.exam_name} · ${row.status}${change ? ` · ${change}` : ''}`;
 }
 
 export async function listCurriculumProposals(examId?: string | null) {
@@ -146,14 +229,7 @@ export async function listCurriculumProposals(examId?: string | null) {
     p_exam_id: examId ?? null,
   });
   if (error) throw error;
-  return (Array.isArray(data) ? data : []) as {
-    id: string;
-    exam_id: string;
-    exam_name: string;
-    status: string;
-    diff: Record<string, unknown>;
-    created_at: string;
-  }[];
+  return (Array.isArray(data) ? data : []) as CurriculumProposalRow[];
 }
 
 export async function curriculumDiff(fromId: string, toId: string) {
