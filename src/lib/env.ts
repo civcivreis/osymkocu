@@ -1,4 +1,4 @@
-import { APP_DOMAIN } from '@/src/lib/brand';
+import { APP_DOMAIN, APP_URL } from '@/src/lib/brand';
 
 export const env = {
   supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() ?? '',
@@ -12,5 +12,5 @@ export function isSupabaseConfigured(): boolean {
 }
 
 export function emailConfirmedUrl(): string {
-  return `${env.supabaseUrl.replace(/\/$/, '')}/functions/v1/email-confirmed`;
+  return `${APP_URL.replace(/\/$/, '')}/auth/callback`;
 }

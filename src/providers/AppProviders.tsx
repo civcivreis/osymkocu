@@ -3,6 +3,7 @@ import { type Session } from '@supabase/supabase-js';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, type ReactNode } from 'react';
+import { Platform } from 'react-native';
 
 import { fetchAuthExtras } from '@/src/features/auth/useAuth';
 import { FeedbackHost } from '@/src/components/ui/FeedbackHost';
@@ -11,6 +12,7 @@ import { useNotificationRealtime } from '@/src/features/study/useNotificationRea
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
 import {
   consumeAuthLinkError,
+  hasAuthRedirectPayload,
   isUserEmailVerified,
   stripAuthHashFromUrl,
 } from '@/src/lib/auth/emailVerification';
@@ -42,6 +44,13 @@ function AuthBootstrap({ children }: { children: ReactNode }) {
     }
 
     const supabase = getSupabase();
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && hasAuthRedirectPayload()) {
+      const path = window.location.pathname;
+      if (!path.startsWith('/auth/callback')) {
+        window.location.replace(`/auth/callback${window.location.search}${window.location.hash}`);
+        return;
+      }
+    }
     consumeAuthLinkError();
     let dropping = false;
 

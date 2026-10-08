@@ -11,6 +11,7 @@ import { SegmentedTabs } from '@/src/components/ui/SegmentedTabs';
 import { useTodayPlan } from '@/src/features/dashboard/useDashboard';
 import { PriorityTopics, TopicAccuracyRow } from '@/src/features/progress/PriorityTopics';
 import { useProgressInsights } from '@/src/features/progress/useProgressInsights';
+import { CurriculumPracticePicker } from '@/src/features/study/CurriculumPracticePicker';
 import { useStudyHub, useWrongAnswers } from '@/src/features/study/usePractice';
 import { useCoachStore } from '@/src/features/teacher/coachStore';
 import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
@@ -112,6 +113,22 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
 
         {tab === 'lesson' ? (
           <>
+            <Pressable
+              onPress={() => router.push('/dersler/hafiza' as never)}
+              style={{
+                backgroundColor: colors.surface,
+                borderRadius: 20,
+                padding: 14,
+                gap: 4,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}>
+              <AppText variant="subtitle">Hafıza Dersleri</AppText>
+              <AppText variant="caption" tone="muted">
+                Görsel anlatım ve hafıza teknikleriyle öğren.
+              </AppText>
+            </Pressable>
+
             {today && today.questions > 0 ? (
               <View style={{ gap: 8 }}>
                 <AppText variant="label" tone="accent">
@@ -347,6 +364,8 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
                 </View>
               ))}
             </View>
+
+            <CurriculumPracticePicker />
 
             {wrongCount > 0 ? (
               <View style={{ gap: 8 }}>

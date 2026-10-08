@@ -273,7 +273,7 @@ function Grid({ items }: { items: [string, string][] }) {
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
       {items.map(([label, value]) => (
-        <View key={label} style={{ width: 180, backgroundColor: '#F7F8FA', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#D9DEE7' }}>
+        <View key={label} style={{ width: 180, backgroundColor: '#FFFCF7', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#E4DDD0' }}>
           <AppText variant="caption" tone="muted">{label}</AppText>
           <AppText variant="title">{value}</AppText>
         </View>

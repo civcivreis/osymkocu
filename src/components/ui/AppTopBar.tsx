@@ -14,7 +14,7 @@ import { AppText } from './AppText';
 
 const TITLES: { test: (path: string) => boolean; title: string }[] = [
   { test: (p) => p === '/home' || p === '/' || p === '/index', title: 'Ana Sayfa' },
-  { test: (p) => p === '/study' || p === '/lesson', title: 'Dersler' },
+  { test: (p) => p === '/study' || p === '/lesson' || p.startsWith('/dersler'), title: 'Dersler' },
   { test: (p) => p === '/test-merkezi' || p === '/practice' || p === '/notebook', title: 'Test Merkezi' },
   { test: (p) => p.startsWith('/system-exam') || p === '/sistem-sinavlari', title: 'Sistem Sınavları' },
   { test: (p) => p === '/social' || p === '/study-room', title: 'Sosyal Çalışma' },

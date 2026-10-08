@@ -130,7 +130,7 @@ export function VerifyEmailScreen() {
           </AppText>
           {expired ? (
             <AppText tone="muted" style={{ textAlign: 'center' }}>
-              Bu doğrulama bağlantısının süresi dolmuş veya geçersiz.
+              Doğrulama bağlantısının süresi dolmuş veya geçersiz.
             </AppText>
           ) : (
             <AppText tone="muted" style={{ textAlign: 'center' }}>
@@ -180,7 +180,7 @@ export function VerifyEmailScreen() {
           <Button
             label={
               expired
-                ? 'Yeni doğrulama maili gönder'
+                ? 'Yeni doğrulama e-postası gönder'
                 : remainingSec > 0
                   ? `Maili tekrar gönder (${remainingSec}s)`
                   : 'Maili tekrar gönder'

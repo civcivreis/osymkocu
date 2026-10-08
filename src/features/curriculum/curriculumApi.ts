@@ -1,0 +1,242 @@
+import { getSupabase } from '@/src/lib/supabase/client';
+
+import type {
+  CurriculumImportSummary,
+  CurriculumVersion,
+  ExamCatalog,
+  ExamTopicMap,
+  ReusableLesson,
+  StudentCurriculumRow,
+  SubjectCatalog,
+  TopicCatalog,
+  UnitCatalog,
+} from './types';
+
+function asList<T>(data: unknown): T[] {
+  return Array.isArray(data) ? (data as T[]) : [];
+}
+
+export async function listExamCatalog(): Promise<ExamCatalog[]> {
+  const { data, error } = await getSupabase()
+    .from('exam_catalog')
+    .select('id, code, name, is_active, sort_order')
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  return asList<ExamCatalog>(data);
+}
+
+export async function listSubjectCatalog(examId: string): Promise<SubjectCatalog[]> {
+  const { data, error } = await getSupabase()
+    .from('subject_catalog')
+    .select('id, exam_id, code, name, is_active, sort_order')
+    .eq('exam_id', examId)
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  return asList<SubjectCatalog>(data);
+}
+
+export async function listUnitCatalog(subjectId: string): Promise<UnitCatalog[]> {
+  const { data, error } = await getSupabase()
+    .from('unit_catalog')
+    .select('id, subject_id, code, name, is_active, sort_order, canonical_unit_id')
+    .eq('subject_id', subjectId)
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  return asList<UnitCatalog>(data);
+}
+
+export async function listTopicCatalog(unitId: string): Promise<TopicCatalog[]> {
+  const { data, error } = await getSupabase()
+    .from('topic_catalog')
+    .select('id, unit_id, code, name, description, is_active, content_status, sort_order, canonical_topic_id')
+    .eq('unit_id', unitId)
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  return asList<TopicCatalog>(data);
+}
+
+export async function createExamCatalog(input: { code: string; name: string }) {
+  const { data, error } = await getSupabase()
+    .from('exam_catalog')
+    .insert({
+      code: input.code.trim().toUpperCase().replace(/\s+/g, '_'),
+      name: input.name.trim().replace(/\s+/g, ' '),
+    })
+    .select('id, code, name, is_active, sort_order')
+    .single();
+  if (error) throw error;
+  return data as ExamCatalog;
+}
+
+export async function createSubjectCatalog(input: { exam_id: string; name: string; code?: string }) {
+  const name = input.name.trim().replace(/\s+/g, ' ');
+  let code = input.code?.trim().toUpperCase().replace(/\s+/g, '_');
+  if (!code) {
+    const generated = await getSupabase().rpc('catalog_code_from_name', { p_name: name });
+    code = String(generated.data ?? 'DERS');
+  }
+  const { data, error } = await getSupabase()
+    .from('subject_catalog')
+    .insert({
+      exam_id: input.exam_id,
+      name,
+      code,
+    })
+    .select('id, exam_id, code, name, is_active, sort_order')
+    .single();
+  if (error) throw error;
+  return data as SubjectCatalog;
+}
+
+export async function createUnitCatalog(input: { subject_id: string; name: string }) {
+  const { data, error } = await getSupabase()
+    .from('unit_catalog')
+    .insert({
+      subject_id: input.subject_id,
+      name: input.name.trim().replace(/\s+/g, ' '),
+    })
+    .select('id, subject_id, code, name, is_active, sort_order')
+    .single();
+  if (error) throw error;
+  return data as UnitCatalog;
+}
+
+export async function createTopicCatalog(input: { unit_id: string; name: string }) {
+  const { data, error } = await getSupabase()
+    .from('topic_catalog')
+    .insert({
+      unit_id: input.unit_id,
+      name: input.name.trim().replace(/\s+/g, ' '),
+      content_status: 'empty',
+    })
+    .select('id, unit_id, code, name, description, is_active, content_status, sort_order')
+    .single();
+  if (error) throw error;
+  return data as TopicCatalog;
+}
+
+export async function updateCatalogName(table: 'exam_catalog' | 'subject_catalog' | 'unit_catalog' | 'topic_catalog', id: string, name: string) {
+  const { error } = await getSupabase()
+    .from(table)
+    .update({ name: name.trim().replace(/\s+/g, ' ') })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function setCatalogActive(
+  table: 'exam_catalog' | 'subject_catalog' | 'unit_catalog' | 'topic_catalog',
+  id: string,
+  isActive: boolean,
+) {
+  const { error } = await getSupabase().from(table).update({ is_active: isActive }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function importCurriculum(items: unknown): Promise<CurriculumImportSummary> {
+  const { data, error } = await getSupabase().rpc('admin_import_curriculum', { p_items: items });
+  if (error) throw error;
+  return data as CurriculumImportSummary;
+}
+
+export async function listActiveExamCatalog(): Promise<ExamCatalog[]> {
+  const { data, error } = await getSupabase()
+    .from('exam_catalog')
+    .select('id, code, name, is_active, sort_order')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  return asList<ExamCatalog>(data);
+}
+
+export async function getActiveCurriculumVersion(examId: string): Promise<CurriculumVersion | null> {
+  const { data, error } = await getSupabase().rpc('get_active_curriculum_version', { p_exam_id: examId });
+  if (error) throw error;
+  if (!data) return null;
+  if (Array.isArray(data)) return (data[0] as CurriculumVersion | undefined) ?? null;
+  return data as CurriculumVersion;
+}
+
+export async function getStudentCurriculum(examId: string): Promise<StudentCurriculumRow[]> {
+  const { data, error } = await getSupabase().rpc('get_student_curriculum', { p_exam_id: examId });
+  if (error) throw error;
+  return asList<StudentCurriculumRow>(data);
+}
+
+export async function listCurriculumVersions(examId: string): Promise<CurriculumVersion[]> {
+  const { data, error } = await getSupabase()
+    .from('curriculum_versions')
+    .select('*')
+    .eq('exam_id', examId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return asList<CurriculumVersion>(data);
+}
+
+export async function listExamTopicMap(versionId: string): Promise<ExamTopicMap[]> {
+  const { data, error } = await getSupabase()
+    .from('exam_topic_map')
+    .select('*')
+    .eq('curriculum_version_id', versionId)
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  return asList<ExamTopicMap>(data);
+}
+
+export async function createCurriculumVersion(input: { exam_id: string; code: string; name: string; revision_label?: string }) {
+  const { data, error } = await getSupabase().rpc('admin_create_curriculum_version', {
+    p_exam_id: input.exam_id,
+    p_code: input.code,
+    p_name: input.name,
+    p_revision_label: input.revision_label ?? null,
+  });
+  if (error) throw error;
+  return data as CurriculumVersion;
+}
+
+export async function activateCurriculumVersion(id: string) {
+  const { data, error } = await getSupabase().rpc('admin_set_active_curriculum_version', { p_id: id });
+  if (error) throw error;
+  return data as CurriculumVersion;
+}
+
+export async function scheduleCurriculumVersion(id: string, from: string | null, until: string | null) {
+  const { data, error } = await getSupabase().rpc('admin_schedule_curriculum_version', {
+    p_id: id,
+    p_from: from,
+    p_until: until,
+  });
+  if (error) throw error;
+  return data as CurriculumVersion;
+}
+
+export async function archiveCurriculumVersion(id: string) {
+  const { data, error } = await getSupabase().rpc('admin_archive_curriculum_version', { p_id: id });
+  if (error) throw error;
+  return data as CurriculumVersion;
+}
+
+export async function duplicateCurriculumVersion(id: string) {
+  const { data, error } = await getSupabase().rpc('admin_duplicate_curriculum_version', {
+    p_id: id,
+    p_code: null,
+    p_name: null,
+  });
+  if (error) throw error;
+  return data as CurriculumVersion;
+}
+
+export async function findReusableLessons(topicId: string): Promise<ReusableLesson[]> {
+  const { data, error } = await getSupabase().rpc('admin_find_reusable_lessons', { p_topic_id: topicId });
+  if (error) throw error;
+  return asList<ReusableLesson>(data);
+}
+
+export async function attachMemoryLesson(lessonId: string, examId: string, usageMode = 'core') {
+  const { data, error } = await getSupabase().rpc('admin_attach_memory_lesson', {
+    p_lesson_id: lessonId,
+    p_exam_id: examId,
+    p_usage_mode: usageMode,
+  });
+  if (error) throw error;
+  return data;
+}

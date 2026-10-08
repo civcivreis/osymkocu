@@ -18,8 +18,13 @@ npx expo start
 2. Authentication > Providers > Email açık olsun.
 3. SQL Editor’da dosya **içeriklerini** (yolu değil) sırayla çalıştır: `0001_init.sql`, `0002_onboarding.sql`, `0003_practice.sql`, `0004_plan_sync.sql`, `0005_social.sql`, `0006_exam_sessions_auto.sql`, `0007_study_together.sql`, `0008_auto_match.sql`.
 4. Authentication > URL Configuration:
-   - Site URL: `https://qvmhtzpaoxdychyjhqyj.supabase.co/functions/v1/email-confirmed`
-   - Redirect URLs: aynı adres + `kocum://`
+   - Site URL: `https://osymkocu.com`
+   - Redirect URLs:
+     - `https://osymkocu.com/auth/callback`
+     - `https://osymkocu.com/**`
+     - `kocum://auth/callback`
+     - `kocum://**`
+   - Do not use `localhost` as Site URL in production.
 5. Authentication > Email Templates > Confirm signup: `supabase/templates/confirm-signup.html` gövdesini yapıştır (konu: `Koçum — e-postanı onayla`).
 
 AI Öğretmen ve onay sayfası:

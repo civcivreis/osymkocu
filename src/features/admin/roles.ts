@@ -23,7 +23,7 @@ export function isSuperAdmin(role?: string | null) {
 export function mapAdminError(message: string) {
   const raw = message.toLowerCase();
   if (raw.includes('schema cache') || raw.includes('could not find the function') || raw.includes('pgrst202')) {
-    return 'Sunucu şeması eksik. 0038 SQL’ini Supabase SQL Editor’da çalıştır.';
+    return 'Sunucu şeması eksik. 0038–0046 migration’larını kontrol et.';
   }
   if (raw.includes('column') && (raw.includes('does not exist') || raw.includes('undefined'))) {
     return 'Veritabanı sütunu eksik. 0036–0038 migration’larını kontrol et.';
@@ -36,5 +36,14 @@ export function mapAdminError(message: string) {
   if (raw.includes('exam_hour')) return 'Yayın saati Europe/Istanbul 20:00–22:00 slotlarında olmalı.';
   if (raw.includes('exam_locked')) return 'Bu sınava katılım başladı; soru seti kilitli.';
   if (raw.includes('unauthorized')) return 'Oturum gerekli.';
+  if (raw.includes('duplicate key') || raw.includes('unique constraint')) return 'Bu kayıt zaten var.';
+  if (raw.includes('not_approved')) return 'Yayın için önce onay gerekir.';
+  if (raw.includes('not_ready')) return 'Önce içeriği üretip doğrulamaya al.';
+  if (raw.includes('pedagogy_incomplete')) return 'Hafıza pedagojisi eksik';
+  if (raw.includes('no_curriculum')) return 'Güncel müfredat henüz tanımlanmadı.';
+  if (raw.includes('no_canonical')) return 'Bu konu henüz kanonik hiyerarşiye bağlanmadı.';
+  if (raw.includes('ai_not_configured') || raw.includes('openai')) return 'AI yapılandırması eksik.';
+  if (raw.includes('queue_confirm_required')) return 'Toplu kuyruk için onay gerekli.';
+  if (raw.includes('factory_paused') || raw.includes('production')) return 'Üretim duraklatıldı.';
   return message;
 }

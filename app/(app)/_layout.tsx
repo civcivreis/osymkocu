@@ -39,6 +39,7 @@ export default function AppGroupLayout() {
       <Stack.Screen name="practice" />
       <Stack.Screen name="notebook" />
       <Stack.Screen name="lesson" />
+      <Stack.Screen name="dersler" />
       <Stack.Screen name="chat" />
       <Stack.Screen name="group-chat" />
       <Stack.Screen name="user" />

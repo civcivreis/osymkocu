@@ -493,3 +493,39 @@ export function useStudyHub(examId: string | null) {
 
   return { subjectsQuery, hubQuery };
 }
+
+export function useCurriculumPracticeQuestions(input: {
+  examCatalogId?: string;
+  canonicalTopicId?: string;
+  setType?: string;
+  limit?: number;
+  memoryLessonId?: string;
+}) {
+  return useQuery({
+    queryKey: ['curriculum-practice', input],
+    enabled: Boolean(input.examCatalogId && (input.canonicalTopicId || input.memoryLessonId || input.setType === 'mixed')),
+    queryFn: async () => {
+      const { getCurriculumPracticeQuestions } = await import('@/src/features/questions/questionBankApi');
+      const rows = await getCurriculumPracticeQuestions({
+        examCatalogId: input.examCatalogId!,
+        canonicalTopicId: input.canonicalTopicId,
+        setType: input.setType,
+        limit: input.limit,
+        memoryLessonId: input.memoryLessonId,
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        exam_id: '',
+        subject_id: '',
+        topic_id: null,
+        stem: row.stem,
+        choices: row.choices ?? {},
+        difficulty: row.difficulty as Question['difficulty'],
+        topic_name: row.topic_name,
+        image_url: row.image_url,
+        learning_objective_id: row.learning_objective_id,
+        objective_title: row.objective_title,
+      })) as Question[];
+    },
+  });
+}

@@ -14,3 +14,30 @@ verify_jwt = false
 
 [functions.media-url]
 verify_jwt = false
+
+[functions.lesson-storage-test]
+verify_jwt = false
+
+[functions.memory-lesson-create]
+verify_jwt = false
+
+[functions.memory-lesson-generate]
+verify_jwt = false
+
+[functions.memory-lesson-generate-media]
+verify_jwt = false
+
+[functions.memory-lesson-media-url]
+verify_jwt = false
+
+[functions.content-factory-process]
+verify_jwt = false
+
+[functions.content-factory-breakdown]
+verify_jwt = false
+
+[functions.curriculum-decompose]
+verify_jwt = false
+
+[functions.question-generate]
+verify_jwt = false

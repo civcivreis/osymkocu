@@ -1,3 +1,4 @@
+import * as Linking from 'expo-linking';
 import type { Session, User } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
@@ -5,6 +6,7 @@ import { APP_URL } from '@/src/lib/brand';
 import { useAuthStore } from '@/src/stores/authStore';
 
 const PENDING_EMAIL_KEY = 'osymkocu.pendingVerifyEmail';
+const CALLBACK_PATH = '/auth/callback';
 
 export function isEmailVerified(session: Session | null | undefined): boolean {
   return isUserEmailVerified(session?.user);
@@ -16,12 +18,20 @@ export function isUserEmailVerified(user: User | null | undefined): boolean {
   return Boolean(confirmedAt);
 }
 
-/** Confirmation emails land on the public website so the hash session can be parsed. Native scheme is unchanged. */
+function productionWebOrigin() {
+  return APP_URL.replace(/\/$/, '') || 'https://osymkocu.com';
+}
+
+/** Web confirmation always lands on /auth/callback. Native uses the app scheme, never a web localhost URL. */
 export function emailRedirectTo(): string {
-  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
-    return window.location.origin;
+  if (Platform.OS === 'web') {
+    const origin =
+      typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin
+        : productionWebOrigin();
+    return `${origin}${CALLBACK_PATH}`;
   }
-  return APP_URL;
+  return Linking.createURL('auth/callback');
 }
 
 export function persistPendingVerifyEmail(email: string) {
@@ -63,12 +73,12 @@ export function clearPendingVerifyEmail() {
 export function hasAuthRedirectPayload(): boolean {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return false;
   const blob = `${window.location.hash}${window.location.search}`;
-  return /access_token|refresh_token|error_description|error_code|type=signup|type=email|otp_expired/i.test(
+  return /access_token|refresh_token|error_description|error_code|type=signup|type=email|otp_expired|[?&]code=/.test(
     blob,
   );
 }
 
-function paramsFromLocation(): URLSearchParams {
+export function paramsFromLocation(): URLSearchParams {
   const params = new URLSearchParams();
   if (typeof window === 'undefined') return params;
   const hash = window.location.hash.replace(/^#/, '');
@@ -102,7 +112,7 @@ export function stripAuthHashFromUrl() {
   if (!hash && !/error|access_token|code=/.test(window.location.search)) return;
   const url = new URL(window.location.href);
   url.hash = '';
-  ['error', 'error_code', 'error_description', 'code'].forEach((key) => url.searchParams.delete(key));
+  ['error', 'error_code', 'error_description', 'code', 'type'].forEach((key) => url.searchParams.delete(key));
   window.history.replaceState(null, '', `${url.pathname}${url.search}`);
 }
 

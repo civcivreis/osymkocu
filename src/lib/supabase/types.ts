@@ -101,6 +101,8 @@ export type Question = {
   topic_name?: string;
   exam_slug?: string;
   image_url?: string | null;
+  learning_objective_id?: string | null;
+  objective_title?: string | null;
 };
 
 export type AttemptResult = {

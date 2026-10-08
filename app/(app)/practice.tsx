@@ -11,7 +11,7 @@ import { Screen } from '@/src/components/ui/Screen';
 import { ChatImageViewer } from '@/src/features/social/ChatImage';
 import { usePairChatStore } from '@/src/features/study/pairChatStore';
 import { QuestionPalette } from '@/src/features/study/QuestionPalette';
-import { sortedChoices, useCompletePracticeSet, usePracticeQuestions, useSubmitAttempt } from '@/src/features/study/usePractice';
+import { sortedChoices, useCompletePracticeSet, useCurriculumPracticeQuestions, usePracticeQuestions, useSubmitAttempt } from '@/src/features/study/usePractice';
 import { useStudyPresence } from '@/src/features/study/useStudyPresence';
 import { useCoachStore } from '@/src/features/teacher/coachStore';
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
@@ -24,11 +24,28 @@ export default function PracticeScreen() {
   const { colors, spacing, radius } = useAppTheme();
   const { isDesktop } = useBreakpoint();
   const pairOpen = usePairChatStore((s) => Boolean(s.session?.expanded));
-  const params = useLocalSearchParams<{ subjectId?: string; mode?: string }>();
+  const params = useLocalSearchParams<{
+    subjectId?: string;
+    mode?: string;
+    examCatalogId?: string;
+    canonicalTopicId?: string;
+    setType?: string;
+    count?: string;
+    lessonId?: string;
+  }>();
   const review = params.mode === 'review';
   const mixed = params.mode === 'mixed';
+  const curriculumMode = Boolean(params.examCatalogId);
   const autoMatch = useAuthStore((s) => s.profile?.auto_match) !== false;
-  const questionsQuery = usePracticeQuestions({ subjectId: params.subjectId, review, mixed });
+  const legacyQuery = usePracticeQuestions({ subjectId: params.subjectId, review, mixed });
+  const curriculumQuery = useCurriculumPracticeQuestions({
+    examCatalogId: params.examCatalogId,
+    canonicalTopicId: params.canonicalTopicId,
+    setType: params.setType ?? (params.lessonId ? 'lesson_final' : mixed ? 'mixed' : 'topic_pool'),
+    limit: Number(params.count ?? (params.lessonId ? 10 : 10)) || 10,
+    memoryLessonId: params.lessonId,
+  });
+  const questionsQuery = curriculumMode ? curriculumQuery : legacyQuery;
   const submit = useSubmitAttempt();
   const completeSet = useCompletePracticeSet();
   const questions = questionsQuery.data ?? [];
@@ -41,6 +58,7 @@ export default function PracticeScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   const [result, setResult] = useState<AttemptResult | null>(null);
   const [correctCount, setCorrectCount] = useState(0);
+  const [wrongObjectives, setWrongObjectives] = useState<string[]>([]);
   const [startedAt, setStartedAt] = useState(Date.now());
   const [finished, setFinished] = useState(false);
   const [marked, setMarked] = useState<Record<string, boolean>>({});
@@ -93,6 +111,7 @@ export default function PracticeScreen() {
     setSelected(null);
     setResult(null);
     setCorrectCount(0);
+    setWrongObjectives([]);
     setFinished(false);
     setStartedAt(Date.now());
     setId.current = crypto.randomUUID();
@@ -120,6 +139,9 @@ export default function PracticeScreen() {
       setResult(next);
       setAnswered((current) => ({ ...current, [question.id]: true }));
       if (next.is_correct) setCorrectCount((value) => value + 1);
+      else if (question.objective_title) {
+        setWrongObjectives((current) => (current.includes(question.objective_title!) ? current : [...current, question.objective_title!]));
+      }
     } catch (error) {
       setResult({
         is_correct: false,
@@ -271,11 +293,13 @@ export default function PracticeScreen() {
           <Card>
             <AppText variant="subtitle">Soru yok</AppText>
             <AppText tone="muted">
-              {review
-                ? 'Yanlış defterin boş. Önce pratik yap.'
-                : mixed
-                  ? 'Karışık test için henüz yeterli soru yok.'
-                  : 'Bu derse henüz soru eklenmemiş. 0003 SQL’ini çalıştırman gerekebilir.'}
+              {curriculumMode
+                ? 'Bu müfredatta henüz yayınlanmış soru yok.'
+                : review
+                  ? 'Yanlış defterin boş. Önce pratik yap.'
+                  : mixed
+                    ? 'Karışık test için henüz yeterli soru yok.'
+                    : 'Bu derse henüz soru eklenmemiş. 0003 SQL’ini çalıştırman gerekebilir.'}
             </AppText>
           </Card>
         ) : finished ? (
@@ -285,6 +309,18 @@ export default function PracticeScreen() {
               <AppText>
                 {correctCount} / {questions.length} doğru
               </AppText>
+              {params.lessonId || params.setType === 'lesson_final' ? (
+                <>
+                  {wrongObjectives.length > 0 ? (
+                    <AppText tone="muted">Zayıf kazanımlar: {wrongObjectives.join(', ')}</AppText>
+                  ) : (
+                    <AppText tone="muted">Kazanımlar bu sette sağlam görünüyor.</AppText>
+                  )}
+                  <AppText variant="caption" tone="muted">
+                    Yanlışlar tekrar defterine düşer; 1/3/7 günlük tekrar setleri sonra bağlanacak.
+                  </AppText>
+                </>
+              ) : null}
               <Button label="Çalışmaya dön" onPress={() => router.back()} />
             </View>
           </Card>

@@ -58,6 +58,7 @@ function RootNavigator() {
         initialRouteName={startupGroup(hasSession, verified, onboarded)}
         screenOptions={{ headerShown: false, animation: 'fade' }}>
         <Stack.Screen name="index" />
+        <Stack.Screen name="auth" />
         <Stack.Protected guard={!hasSession || !verified}>
           <Stack.Screen name="(auth)" />
         </Stack.Protected>

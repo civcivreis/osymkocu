@@ -35,7 +35,9 @@ export function isAppNavActive(pathname: string, href: string) {
   if (href === '/test-merkezi') {
     return pathname === '/test-merkezi' || pathname === '/practice' || pathname === '/notebook';
   }
-  if (href === '/study') return pathname === '/study' || pathname === '/lesson';
+  if (href === '/study') {
+    return pathname === '/study' || pathname === '/lesson' || pathname.startsWith('/dersler');
+  }
   if (href === '/messages') return pathname === '/messages' || pathname === '/chat' || pathname === '/group-chat';
   if (href === '/profile') return pathname === '/profile' || pathname === '/user' || pathname === '/edit-profile';
   return pathname === href || pathname.startsWith(`${href}/`);
