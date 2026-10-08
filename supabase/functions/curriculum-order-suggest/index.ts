@@ -1,4 +1,4 @@
-import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, preflight, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
 import { generateStructured, generationMeta } from "../_shared/aiRouter.ts";
 
 const SCHEMA = {
@@ -42,7 +42,7 @@ function fold(value: string) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return json({ ok: true });
+  if (req.method === "OPTIONS") return preflight(req);
   if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405);
   try {
     const user = await requireLessonAdmin(req);
@@ -91,6 +91,6 @@ Deno.serve(async (req) => {
     return json({ created: rows.length, applied: false, meta: generationMeta(generated, { prompt_version: "curriculum-order-suggest-v1" }) });
   } catch (error) {
     console.error("curriculum-order-suggest", error);
-    return mapHttpError(error);
+    return mapHttpError(error, req);
   }
 });

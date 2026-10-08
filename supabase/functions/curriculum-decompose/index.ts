@@ -1,4 +1,4 @@
-import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, preflight, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
 import { generateStructured, generationMeta } from "../_shared/aiRouter.ts";
 import {
   DECOMPOSE_PROMPT_VERSION,
@@ -35,7 +35,7 @@ function matchExisting(title: string, existing: ExistingTopic[]) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return json({ ok: true });
+  if (req.method === "OPTIONS") return preflight(req);
   if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405);
 
   try {
@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
       return json({ error: { code: "PROVIDER_ERROR", message: "Analiz servisi yanıt vermedi." } }, 502);
     }
     console.error("curriculum-decompose", error);
-    return mapHttpError(error);
+    return mapHttpError(error, req);
   }
 });
 

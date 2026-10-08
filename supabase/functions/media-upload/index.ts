@@ -3,20 +3,15 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getAiModelConfig } from "../_shared/aiRouter.ts";
 import { moderateImageBytes } from "../_shared/imageModeration.ts";
 import { r2Delete, r2Put, r2SignedGet } from "../_shared/r2.ts";
-
-const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders, preflight } from "../_shared/cors.ts";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const PURPOSES = new Set(["chat_image", "avatar", "story", "status_image", "question_image"]);
 
-function json(payload: unknown, status = 200) {
+function json(payload: unknown, status = 200, req?: Request) {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { ...cors, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(req), "Content-Type": "application/json" },
   });
 }
 
@@ -114,7 +109,7 @@ async function readPayload(req: Request) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return json({ ok: true });
+  if (req.method === "OPTIONS") return preflight(req);
   if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } });
 
   const authHeader = req.headers.get("Authorization") ?? "";

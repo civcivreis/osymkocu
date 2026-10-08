@@ -1,15 +1,15 @@
 import { createClient, type User } from "https://esm.sh/@supabase/supabase-js@2";
 
-export const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders, preflight } from "./cors.ts";
 
-export function json(payload: unknown, status = 200) {
+export { corsHeaders, preflight };
+
+export const cors = corsHeaders();
+
+export function json(payload: unknown, status = 200, req?: Request) {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { ...cors, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(req), "Content-Type": "application/json" },
   });
 }
 
@@ -60,41 +60,52 @@ export async function requireLessonAdmin(req: Request): Promise<User> {
   return user;
 }
 
-export function mapHttpError(error: unknown) {
+export async function requireFactoryCaller(req: Request) {
+  const wake = req.headers.get("x-factory-wake") ?? "";
+  if (wake) {
+    const admin = serviceClient();
+    const { data } = await admin.from("content_factory_settings").select("wake_secret").eq("id", 1).maybeSingle();
+    if (data?.wake_secret && wake === data.wake_secret) return { kind: "wake" as const, user: null };
+  }
+  const user = await requireLessonAdmin(req);
+  return { kind: "admin" as const, user };
+}
+
+export function mapHttpError(error: unknown, req?: Request) {
   const message = error instanceof Error ? error.message : "UNKNOWN";
   if (message === "UNAUTHORIZED") {
-    return json({ error: { code: "UNAUTHORIZED", message: "Oturum gerekli." } }, 401);
+    return json({ error: { code: "UNAUTHORIZED", message: "Oturum gerekli." } }, 401, req);
   }
   if (message === "ADMIN_ONLY") {
-    return json({ error: { code: "ADMIN_ONLY", message: "Bu işlem yalnızca admin." } }, 403);
+    return json({ error: { code: "ADMIN_ONLY", message: "Bu işlem yalnızca admin." } }, 403, req);
   }
   if (message === "LESSON_R2_NOT_CONFIGURED" || message === "SERVICE_NOT_CONFIGURED") {
-    return json({ error: { code: "NOT_CONFIGURED", message: "Ders depolama henüz yapılandırılmamış." } }, 503);
+    return json({ error: { code: "NOT_CONFIGURED", message: "Ders depolama henüz yapılandırılmamış." } }, 503, req);
   }
   if (message.startsWith("LESSON_R2_")) {
-    return json({ error: { code: "STORAGE_ERROR", message: "Depolama isteği başarısız." } }, 502);
+    return json({ error: { code: "STORAGE_ERROR", message: "Depolama isteği başarısız." } }, 502, req);
   }
   if (message === "AI_NOT_CONFIGURED") {
-    return json({ error: { code: "AI_NOT_CONFIGURED", message: "AI yapılandırması eksik." } }, 503);
+    return json({ error: { code: "AI_NOT_CONFIGURED", message: "AI yapılandırması eksik." } }, 503, req);
   }
   if (message === "AI_DAILY_CAP") {
-    return json({ error: { code: "AI_DAILY_CAP", message: "Günlük AI kotası doldu." } }, 429);
+    return json({ error: { code: "AI_DAILY_CAP", message: "Günlük AI kotası doldu." } }, 429, req);
   }
   if (message === "AI_TASK_DISABLED") {
-    return json({ error: { code: "AI_TASK_DISABLED", message: "Bu AI görevi kapalı." } }, 503);
+    return json({ error: { code: "AI_TASK_DISABLED", message: "Bu AI görevi kapalı." } }, 503, req);
   }
   if (message === "IMAGE_FAILED") {
-    return json({ error: { code: "PROVIDER_ERROR", message: "Görsel oluşturulamadı." } }, 502);
+    return json({ error: { code: "PROVIDER_ERROR", message: "Görsel oluşturulamadı." } }, 502, req);
   }
   if (message === "TTS_FAILED") {
-    return json({ error: { code: "PROVIDER_ERROR", message: "Seslendirme oluşturulamadı." } }, 502);
+    return json({ error: { code: "PROVIDER_ERROR", message: "Seslendirme oluşturulamadı." } }, 502, req);
   }
   if (
     message === "AI_PROVIDER" ||
     message === "AI_TIMEOUT" ||
     message.startsWith("AI_RETRYABLE")
   ) {
-    return json({ error: { code: "PROVIDER_ERROR", message: "İşlem tamamlanamadı." } }, 502);
+    return json({ error: { code: "PROVIDER_ERROR", message: "İşlem tamamlanamadı." } }, 502, req);
   }
-  return json({ error: { code: "PROVIDER_ERROR", message: "İşlem tamamlanamadı." } }, 500);
+  return json({ error: { code: "PROVIDER_ERROR", message: "İşlem tamamlanamadı." } }, 500, req);
 }

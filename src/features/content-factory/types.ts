@@ -13,6 +13,9 @@ export type FactoryJobStatus =
 
 export type FactorySettings = {
   production_enabled: boolean;
+  engine_state?: 'paused' | 'running' | 'stopping' | 'error' | string;
+  last_idle_reason?: string | null;
+  last_orchestrated_at?: string | null;
   max_concurrency: number;
   question_pool_target?: number;
   curriculum_workers?: number;
@@ -47,7 +50,23 @@ export type MotorPreview = {
   queued?: number;
   needs_confirm?: boolean;
   production_enabled?: boolean;
-  exams?: { exam: string; code?: string; generate: number; reused: number; skipped: number; note?: string }[];
+  engine_state?: string;
+  skips?: { exam?: string; reason?: string }[];
+  exams?: {
+    exam: string;
+    code?: string;
+    exam_id?: string;
+    generate: number;
+    reused?: number;
+    skipped?: number;
+    note?: string;
+    curriculum_state?: string;
+    next_stage?: string;
+    topics?: number;
+    lessons_ready?: number;
+    lessons_unknown?: boolean;
+    lesson_estimate?: string;
+  }[];
 };
 
 export type FactoryStats = {

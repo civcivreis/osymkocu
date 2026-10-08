@@ -1,22 +1,17 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { r2SignedGet } from "../_shared/r2.ts";
+import { corsHeaders, preflight } from "../_shared/cors.ts";
 
-const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-function json(payload: unknown, status = 200) {
+function json(payload: unknown, status = 200, req?: Request) {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { ...cors, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(req), "Content-Type": "application/json" },
   });
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return json({ ok: true });
+  if (req.method === "OPTIONS") return preflight(req);
   if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405);
 
   const authHeader = req.headers.get("Authorization") ?? "";

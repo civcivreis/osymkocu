@@ -36,6 +36,9 @@ verify_jwt = false
 [functions.content-factory-process]
 verify_jwt = false
 
+[functions.content-factory-orchestrator]
+verify_jwt = false
+
 [functions.content-factory-breakdown]
 verify_jwt = false
 

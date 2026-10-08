@@ -1,4 +1,4 @@
-import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, preflight, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
 
 const EXAMS = new Set(["tyt", "ayt", "kpss"]);
 
@@ -47,7 +47,7 @@ async function uniqueSlug(admin: ReturnType<typeof serviceClient>, title: string
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return json({ ok: true });
+  if (req.method === "OPTIONS") return preflight(req);
   if (req.method !== "POST") {
     return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405);
   }
@@ -166,6 +166,6 @@ Deno.serve(async (req) => {
 
     return json({ lesson: data });
   } catch (error) {
-    return mapHttpError(error);
+    return mapHttpError(error, req);
   }
 });

@@ -1,4 +1,4 @@
-import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, preflight, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
 import { generateImage, generateSpeech, generationMeta } from "../_shared/aiRouter.ts";
 import { lessonAssetPrefix, putLessonObject } from "../_shared/lessonR2.ts";
 import { estimateSpeechMs, mp3DurationMs } from "../_shared/mp3Duration.ts";
@@ -159,7 +159,7 @@ function imagePrompt(lesson: LessonRow, scene: SceneRow) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return json({ ok: true });
+  if (req.method === "OPTIONS") return preflight(req);
   if (req.method !== "POST") return json({ error: { code: "METHOD", message: "POST gerekli." } }, 405);
 
   let failLessonId = "";
@@ -378,6 +378,6 @@ Deno.serve(async (req) => {
         // status best-effort
       }
     }
-    return mapHttpError(error);
+    return mapHttpError(error, req);
   }
 });

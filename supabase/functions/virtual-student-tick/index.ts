@@ -1,8 +1,8 @@
-import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, preflight, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
 import { r2Delete } from "../_shared/r2.ts";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return json({ ok: true });
+  if (req.method === "OPTIONS") return preflight(req);
   if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405);
 
   try {
@@ -16,6 +16,6 @@ Deno.serve(async (req) => {
     }
     return json({ ok: true, data });
   } catch (error) {
-    return mapHttpError(error);
+    return mapHttpError(error, req);
   }
 });

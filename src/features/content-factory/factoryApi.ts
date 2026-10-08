@@ -147,6 +147,24 @@ export async function startContentMotor(confirm: boolean): Promise<MotorPreview>
   return data as MotorPreview;
 }
 
+export async function pauseContentMotor() {
+  const { data, error } = await getSupabase().rpc('admin_factory_pause_motor');
+  if (error) throw error;
+  return data as { engine_state?: string; production_enabled?: boolean; active_jobs?: number };
+}
+
+export async function getFactoryStateAudit(): Promise<MotorPreview> {
+  const { data, error } = await getSupabase().rpc('admin_factory_state_audit');
+  if (error) throw error;
+  return data as MotorPreview;
+}
+
+export async function wakeFactoryOrchestrator() {
+  const invoked = await getSupabase().functions.invoke('content-factory-orchestrator', { body: { source: 'admin' } });
+  if (invoked.error) throw invokeError(invoked.data, invoked.error.message);
+  return invoked.data as { engine_state?: string; planned?: unknown };
+}
+
 export async function tickFactoryProcess() {
   const invoked = await getSupabase().functions.invoke('content-factory-process', { body: {} });
   if (invoked.error) throw invokeError(invoked.data, invoked.error.message);

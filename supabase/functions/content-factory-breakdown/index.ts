@@ -1,4 +1,4 @@
-import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, preflight, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
 import { generateStructured } from "../_shared/aiRouter.ts";
 
 type Suggestion = { name: string; note?: string };
@@ -13,7 +13,7 @@ function parseSuggestions(raw: string): Suggestion[] {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return json({ ok: true });
+  if (req.method === "OPTIONS") return preflight(req);
   if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405);
 
   try {
@@ -93,6 +93,6 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error("content-factory-breakdown", error);
-    return mapHttpError(error);
+    return mapHttpError(error, req);
   }
 });

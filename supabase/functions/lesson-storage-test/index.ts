@@ -1,11 +1,11 @@
-import { json, mapHttpError, requireLessonAdmin } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, preflight, requireLessonAdmin } from "../_shared/lessonHttp.ts";
 import { deleteLessonObject, lessonR2Bucket, putLessonObject } from "../_shared/lessonR2.ts";
 
 const TEST_KEY = "lessons/_test/connection-test.txt";
 const TEST_BODY = "ÖSYM Koçu lesson storage working";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return json({ ok: true });
+  if (req.method === "OPTIONS") return preflight(req);
   if (req.method !== "POST") {
     return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405);
   }
@@ -27,6 +27,6 @@ Deno.serve(async (req) => {
       cleaned,
     });
   } catch (error) {
-    return mapHttpError(error);
+    return mapHttpError(error, req);
   }
 });

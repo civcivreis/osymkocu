@@ -170,7 +170,20 @@ export function AdminCurriculumScreen() {
       </AppText>
 
       <View style={{ backgroundColor: '#FFFcf7', borderRadius: 16, padding: 16, gap: 10 }}>
-        {(coverage.data ?? []).map((row) => (
+        {(coverage.data?.length ? coverage.data : (exams.data ?? []).map((row) => ({
+          id: row.id,
+          code: row.code,
+          name: row.name,
+          sort_order: row.sort_order,
+          is_enabled: true,
+          curriculum_name: null,
+          curriculum_status: null,
+          topics: 0,
+          lessons_ready: 0,
+          questions_ready: 0,
+          failed: 0,
+          pending_review: 0,
+        }))).map((row) => (
           <View key={row.id} style={{ gap: 6, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EDE6D8' }}>
             <AppText variant="subtitle">{row.name}</AppText>
             <AppText variant="caption" tone="muted">

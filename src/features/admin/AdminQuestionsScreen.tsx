@@ -208,7 +208,7 @@ export function AdminQuestionsScreen() {
       <View style={adminCard}>
         <AppText variant="label">Sınav</AppText>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {(exams.data ?? []).filter((row) => row.is_active).map((row) => (
+          {(exams.data ?? []).map((row) => (
             <Pressable
               key={row.id}
               onPress={() => {
@@ -222,6 +222,7 @@ export function AdminQuestionsScreen() {
             </Pressable>
           ))}
         </View>
+        {!examId ? <AppText variant="caption" tone="muted">Sınav seç. Soru yoksa 0 görünür; sınav gizlenmez.</AppText> : null}
         {examId ? (
           <>
             <AppText variant="label">Ders</AppText>

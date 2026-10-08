@@ -10,9 +10,11 @@ import {
   getFactoryExamCoverage,
   getFactorySettings,
   getFactoryStats,
+  pauseContentMotor,
   previewMotorAll,
   setFactoryExamEnabled,
   startContentMotor,
+  wakeFactoryOrchestrator,
   listBreakdownSessions,
   listBreakdownSuggestions,
   listCanonicalTopics,
@@ -114,6 +116,14 @@ export function useFactoryMutations() {
     previewMotor: useMutation({ mutationFn: previewMotorAll }),
     startMotor: useMutation({
       mutationFn: startContentMotor,
+      onSuccess: invalidate,
+    }),
+    pauseMotor: useMutation({
+      mutationFn: pauseContentMotor,
+      onSuccess: invalidate,
+    }),
+    wake: useMutation({
+      mutationFn: wakeFactoryOrchestrator,
       onSuccess: invalidate,
     }),
     setProduction: useMutation({

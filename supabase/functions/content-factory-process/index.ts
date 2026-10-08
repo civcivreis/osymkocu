@@ -1,16 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { json, mapHttpError, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
-
-function authedClient(req: Request) {
-  return createClient(
-    Deno.env.get("SUPABASE_URL") ?? "",
-    Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "",
-    {
-      global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
-      auth: { persistSession: false, autoRefreshToken: false },
-    },
-  );
-}
+import { json, mapHttpError, preflight, requireFactoryCaller, serviceClient } from "../_shared/lessonHttp.ts";
 import {
   ACTIVE,
   appendEvent,
@@ -56,14 +44,15 @@ async function gatePending(admin: ReturnType<typeof serviceClient>, job: Factory
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return json({ ok: true });
+  if (req.method === "OPTIONS") return preflight(req);
   if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405);
 
   try {
-    await requireLessonAdmin(req);
+    await requireFactoryCaller(req);
     const admin = serviceClient();
+    await admin.rpc("factory_orchestrate_internal");
     const { data: settings } = await admin.from("content_factory_settings").select("*").eq("id", 1).maybeSingle();
-    const enabled = Boolean(settings?.production_enabled);
+    const enabled = Boolean(settings?.production_enabled) || settings?.engine_state === "running" || settings?.engine_state === "stopping";
     const concurrency = envConcurrency(Number(settings?.max_concurrency ?? 2));
 
     const { data: running } = await admin
@@ -74,8 +63,8 @@ Deno.serve(async (req) => {
       .limit(concurrency);
 
     const jobs: FactoryJob[] = (running ?? []) as FactoryJob[];
-    if (enabled && jobs.length < concurrency) {
-      const { data: claimed } = await authedClient(req).rpc("admin_factory_claim_jobs", { p_limit: concurrency - jobs.length });
+    if (settings?.engine_state === "running" && jobs.length < concurrency) {
+      const { data: claimed } = await admin.rpc("factory_claim_jobs_internal", { p_limit: concurrency - jobs.length });
       const extra = Array.isArray(claimed) ? claimed as FactoryJob[] : claimed ? [claimed as FactoryJob] : [];
       for (const job of extra) {
         if (!jobs.some((row) => row.id === job.id)) jobs.push(job);
@@ -90,14 +79,15 @@ Deno.serve(async (req) => {
     }
 
     return json({
-      paused: !enabled,
+      paused: settings?.engine_state === "paused" || !settings?.production_enabled,
+      engine_state: settings?.engine_state ?? "paused",
       concurrency,
       running: jobs.length,
       processed,
-    });
+    }, 200, req);
   } catch (error) {
     console.error("content-factory-process", error);
-    return mapHttpError(error);
+    return mapHttpError(error, req);
   }
 });
 

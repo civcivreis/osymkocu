@@ -1,10 +1,10 @@
-import { json, mapHttpError, requireUser, serviceClient } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, preflight, requireUser, serviceClient } from "../_shared/lessonHttp.ts";
 import { createLessonSignedUrl } from "../_shared/lessonR2.ts";
 
 const TTL = 600;
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return json({ ok: true });
+  if (req.method === "OPTIONS") return preflight(req);
   if (req.method !== "POST") return json({ error: { code: "METHOD", message: "POST gerekli." } }, 405);
 
   try {
@@ -49,6 +49,6 @@ Deno.serve(async (req) => {
     return json({ urls, expires_in: TTL });
   } catch (error) {
     console.error("memory-lesson-media-url", error);
-    return mapHttpError(error);
+    return mapHttpError(error, req);
   }
 });

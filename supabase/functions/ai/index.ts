@@ -9,12 +9,7 @@ import {
   type ChatMessage,
 } from "../_shared/aiRouter.ts";
 import { moderateImageBytes } from "../_shared/imageModeration.ts";
-
-const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders, preflight } from "../_shared/cors.ts";
 
 const ALLOWED_ACTIONS = new Set([
   "generateExplanation",
@@ -28,17 +23,17 @@ const ALLOWED_ACTIONS = new Set([
   "moderateChatImage",
 ]);
 
-function json(payload: unknown) {
+function json(payload: unknown, status = 200, req?: Request) {
   return new Response(JSON.stringify(payload), {
-    status: 200,
-    headers: { ...cors, "Content-Type": "application/json" },
+    status,
+    headers: { ...corsHeaders(req), "Content-Type": "application/json" },
   });
 }
 
 export default {
   async fetch(req: Request) {
     console.log("ai hit", req.method);
-    if (req.method === "OPTIONS") return json({ ok: true });
+    if (req.method === "OPTIONS") return preflight(req);
 
     try {
       const authHeader = req.headers.get("Authorization") ?? "";
