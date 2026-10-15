@@ -12,6 +12,7 @@ import {
   useCanonicalTopics,
   useCanonicalUnits,
   useFactoryExamCoverage,
+  useFactoryHealth,
   useFactoryJobs,
   useFactoryMutations,
   useFactorySettings,
@@ -33,12 +34,34 @@ function jobLabel(status: string) {
   return status;
 }
 
-function engineLabel(state?: string, enabled?: boolean) {
+function engineLabel(state?: string, enabled?: boolean, stalled?: boolean) {
+  if (stalled) return 'TAKILDI';
   if (state === 'running' || enabled) return 'Çalışıyor';
   if (state === 'stopping') return 'Duruyor';
   if (state === 'error') return 'Hata';
   if (state === 'paused' || !enabled) return 'Duraklatıldı';
   return state || 'Duraklatıldı';
+}
+
+function blockedLabel(code?: string | null) {
+  if (!code) return null;
+  const map: Record<string, string> = {
+    NO_ELIGIBLE_SEGMENTS: 'Üretime hazır segment yok',
+    CURRICULUM_NOT_READY: 'Müfredat hazır değil',
+    DECOMPOSITION_PENDING: 'Ayrıştırma bekleniyor',
+    OBJECTIVES_MISSING: 'Öğrenme hedefi eksik',
+    ORDERING_PENDING: 'Sıra/önkoşul bekleniyor',
+    REVIEW_REQUIRED: 'İnceleme gerekli',
+    WORKER_UNAVAILABLE: 'İşçi iş alamıyor',
+    SCHEDULER_NOT_RUNNING: 'Zamanlayıcı çalışmıyor',
+    LOCK_STUCK: 'Kilit takılı',
+    AI_CONFIG_MISSING: 'AI ayarı eksik',
+    SOURCE_CONFIG_MISSING: 'Kaynak ayarı eksik',
+    R2_CONFIG_MISSING: 'Depolama ayarı eksik',
+    RATE_LIMITED: 'Hız limiti',
+    UNKNOWN: 'Bilinmeyen engel',
+  };
+  return map[code] ?? code;
 }
 
 function StageLine({ job }: { job: FactoryJob }) {
@@ -68,7 +91,9 @@ export function AdminContentFactoryScreen() {
   const units = useUnitCatalog(subjectId);
   const stats = useFactoryStats();
   const coverage = useFactoryExamCoverage();
+  const health = useFactoryHealth();
   const settings = useFactorySettings();
+  const [openExam, setOpenExam] = useState<string | null>(null);
   const jobs = useFactoryJobs();
   const topics = useCanonicalTopics();
   const unitsCanonical = useCanonicalUnits();
@@ -96,6 +121,7 @@ export function AdminContentFactoryScreen() {
     questions_ready: 0,
     failed: 0,
     pending_review: 0,
+    by_subject: [] as { name: string; master: number; segs: number; ready: number; lessons: number }[],
   }));
 
   useEffect(() => {
@@ -137,7 +163,7 @@ export function AdminContentFactoryScreen() {
           const skip = (result.skips ?? []).map((row) => `${row.exam}: ${row.reason}`).join('\n');
           askConfirm({
             title: 'Motoru başlat?',
-            subtitle: `İçerik motoru tüm aktif sınavların eksik aşamalarını tamamlamaya başlayacak.\n${lines || 'Sınav denetimi hazır.'}${skip ? `\nAtlandı:\n${skip}` : ''}`,
+            subtitle: `Kapsam: ${result.scope_mode ?? 'single_topic'} · ${result.scope_exam_code ?? 'TYT'} / ${result.scope_subject_name ?? 'Türkçe'} · tavan ${result.factory_run_job_cap ?? 1} iş.\nTam kapsam kapalı.\n${lines || 'Sınav denetimi hazır.'}${skip ? `\nAtlandı:\n${skip}` : ''}`,
             confirmLabel: 'Motoru Başlat',
             onConfirm: () => startMotor(true),
           });
@@ -181,27 +207,66 @@ export function AdminContentFactoryScreen() {
         </View>
       </View>
 
-      <AppText variant="caption" tone={enabled ? 'accent' : 'muted'}>
-        {engineLabel(settings.data?.engine_state, enabled)}
-        {settings.data?.last_idle_reason === 'idle' ? ' — Tamamlandı, yeni/değişen içerik bekleniyor' : ''}
-        {' · '}eşzamanlı {settings.data?.max_concurrency ?? 2} · havuz {settings.data?.question_pool_target ?? 20} · metin{' '}
+      <AppText variant="caption" tone={health.data?.stalled ? 'muted' : enabled ? 'accent' : 'muted'}>
+        {engineLabel(settings.data?.engine_state, enabled, health.data?.stalled)}
+        {' · '}tavan {settings.data?.factory_run_job_cap ?? 1} iş · {settings.data?.scope_mode ?? 'single_topic'} · {settings.data?.scope_exam_code ?? 'TYT'}/{settings.data?.scope_subject_name ?? 'Türkçe'} · eşzamanlı {settings.data?.max_concurrency ?? 1} · havuz {settings.data?.question_pool_target ?? 20} · metin{' '}
         {settings.data?.text_workers ?? 2} · görsel {settings.data?.image_workers ?? 1} · TTS {settings.data?.tts_workers ?? 1}
       </AppText>
 
+      <View style={adminCard}>
+        <AppText variant="label">Motor Sağlığı</AppText>
+        <AppText>
+          Engine: {engineLabel(settings.data?.engine_state, enabled, health.data?.stalled)}
+        </AppText>
+        <AppText variant="caption">
+          Zamanlayıcı: {health.data?.scheduler === 'healthy' ? 'Sağlıklı' : health.data?.scheduler === 'idle' ? 'Boşta' : 'Hata / bilinmiyor'}
+        </AppText>
+        <AppText variant="caption">
+          Workers: {health.data?.active_jobs ?? 0} / {health.data?.max_concurrency ?? settings.data?.max_concurrency ?? 2} ·
+          Kuyruk: {health.data?.queued_jobs ?? 0} · Pipeline: {health.data?.pipeline ?? 0}
+        </AppText>
+        <AppText variant="caption">
+          Son orkestrasyon: {settings.data?.last_orchestrated_at ? new Date(settings.data.last_orchestrated_at).toLocaleString('tr-TR') : 'yok'}
+        </AppText>
+        <AppText variant="caption">
+          Son AI: {health.data?.last_ai_call_at ? new Date(health.data.last_ai_call_at).toLocaleString('tr-TR') : 'yok'}
+        </AppText>
+        {health.data?.stalled ? (
+          <AppText>Motor çalışıyor görünüyor ancak ilerleme yok.</AppText>
+        ) : null}
+        {blockedLabel(health.data?.blocked_reason ?? settings.data?.factory_blocked_reason) ? (
+          <AppText>
+            Engel: {blockedLabel(health.data?.blocked_reason ?? settings.data?.factory_blocked_reason)}
+            {health.data?.blocked_detail ? ` — ${health.data.blocked_detail}` : ''}
+          </AppText>
+        ) : null}
+      </View>
+
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
         {[
-          ['Dersler', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.subjects ?? 0), 0)],
-          ['Master konular', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.topics ?? 0), 0)],
-          ['Segmentler', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.segments ?? 0), 0)],
-          ['Hafıza dersleri', stats.data?.ready ?? 0],
-          ['Sorular', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.questions_ready ?? 0), 0)],
-          ['Kontrol', stats.data?.pending_validation ?? 0],
+          ['Ders Alanları', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.subjects ?? 0), 0)],
+          ['Master Konular', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.topics ?? 0), 0)],
+          ['Öğrenme Segmentleri', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.segments ?? 0), 0)],
+          ['Hafıza Dersleri', stats.data?.ready ?? 0],
+          ['Soru Havuzu', (coverage.data ?? []).reduce((sum, row) => sum + Number(row.questions_ready ?? 0), 0)],
+          ['Kontrol Bekleyen', stats.data?.pending_validation ?? 0],
         ].map(([label, value]) => (
           <View key={String(label)} style={[adminCard, { minWidth: compact ? '46%' : 140, flexGrow: 1 }]}>
             <AppText variant="caption" tone="muted">
               {label}
             </AppText>
             <AppText variant="title">{statNum(value as number)}</AppText>
+            <AppText variant="caption" tone="muted">
+              {label === 'Master Konular'
+                ? 'Geniş müfredat başlığı'
+                : label === 'Öğrenme Segmentleri'
+                  ? '5–10 dk öğretilebilir blok'
+                  : label === 'Hafıza Dersleri'
+                    ? 'Öğrenciye giden üretilmiş ders'
+                    : label === 'Ders Alanları'
+                      ? 'Sınavdaki dersler (Türkçe, Tarih…)'
+                      : ''}
+            </AppText>
           </View>
         ))}
       </View>
@@ -220,9 +285,22 @@ export function AdminContentFactoryScreen() {
               </Pressable>
             </View>
             <AppText variant="caption" tone="muted">
-              {row.subjects ?? 0} ders · {row.topics ?? 0} master konu · {row.segments ?? 0} segment · {row.lessons_ready ?? 0}{' '}
-              hafıza dersi · {row.questions_ready ?? 0} soru
+              {row.subjects ?? 0} ders alanı · {row.topics ?? 0} master konu · {row.segments ?? 0} öğrenme segmenti ·{' '}
+              {row.lessons_ready ?? 0} hafıza dersi · {row.questions_ready ?? 0} soru
+              {String(row.code ?? '').startsWith('KPSS')
+                ? ' · KPSS kademeleri aynı kanonik içeriği eşler (üç kopya üretilmez).'
+                : ''}
             </AppText>
+            <Pressable onPress={() => setOpenExam((cur) => (cur === row.id ? null : row.id))}>
+              <AppText tone="accent">{openExam === row.id ? 'Dersleri gizle' : 'Dersleri aç'}</AppText>
+            </Pressable>
+            {openExam === row.id
+              ? (row.by_subject ?? []).map((sub: { name: string; master: number; segs: number; ready: number; lessons: number }) => (
+                  <AppText key={sub.name} variant="caption">
+                    {sub.name}: master {sub.master} · segment {sub.segs} · hazır {sub.ready} · ders {sub.lessons}
+                  </AppText>
+                ))
+              : null}
           </View>
         ))}
       </View>
@@ -239,7 +317,11 @@ export function AdminContentFactoryScreen() {
             <StageLine job={current} />
           </>
         ) : (
-          <AppText tone="muted">{enabled ? 'Sıradaki iş bekleniyor.' : 'Motor duraklatıldı.'}</AppText>
+          <AppText>
+            {health.data?.activity ||
+              settings.data?.current_activity ||
+              (enabled ? 'Motor durdu: kuyruk boş, neden sağlık kartında.' : 'Motor duraklatıldı.')}
+          </AppText>
         )}
       </View>
 

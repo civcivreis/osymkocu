@@ -61,6 +61,27 @@ export function lessonAssetPrefix(input: {
   return `lessons/${slugSegment(input.examType)}/${slugSegment(input.subject)}/${slugSegment(input.lessonSlug)}/v${input.version}`;
 }
 
+export async function headLessonObject(key: string) {
+  const client = lessonR2Client();
+  const url = objectUrl(client.endpoint, client.bucket, key);
+  const res = await client.aws.fetch(url, { method: "HEAD" });
+  if (res.status === 404) return { exists: false, bytes: 0, mime: null as string | null };
+  if (!res.ok) throw new Error(`LESSON_R2_HEAD_${res.status}`);
+  return {
+    exists: true,
+    bytes: Number(res.headers.get("content-length") ?? 0) || 0,
+    mime: res.headers.get("content-type"),
+  };
+}
+
+export async function getLessonObject(key: string) {
+  const client = lessonR2Client();
+  const url = objectUrl(client.endpoint, client.bucket, key);
+  const res = await client.aws.fetch(url, { method: "GET" });
+  if (!res.ok) throw new Error(`LESSON_R2_GET_${res.status}`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
 export async function putLessonObject(
   key: string,
   body: string | Uint8Array | ArrayBuffer,

@@ -31,7 +31,11 @@ export function useAdminStats() {
     queryFn: async () => {
       const { data, error } = await getSupabase().rpc('admin_dashboard_stats');
       if (error) throw new Error(mapAdminError(error.message));
-      return data as Record<string, unknown>;
+      const coach = await getSupabase().rpc('admin_coach_stats');
+      return {
+        ...(data as Record<string, unknown>),
+        coach: coach.error ? null : coach.data,
+      } as Record<string, unknown>;
     },
   });
 }

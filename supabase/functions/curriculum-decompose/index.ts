@@ -1,4 +1,4 @@
-import { json, mapHttpError, preflight, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, preflight, requireFactoryCaller, serviceClient } from "../_shared/lessonHttp.ts";
 import { generateStructured, generationMeta } from "../_shared/aiRouter.ts";
 import {
   DECOMPOSE_PROMPT_VERSION,
@@ -39,17 +39,18 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405);
 
   try {
-    const user = await requireLessonAdmin(req);
+    const caller = await requireFactoryCaller(req);
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
     const mode = String(body?.mode ?? "");
     if (mode !== "unit" && mode !== "topic") {
       return json({ error: { code: "INVALID_INPUT", message: "mode unit veya topic olmalı." } }, 400);
     }
     const admin = serviceClient();
+    const actorId = caller.user?.id ?? "00000000-0000-0000-0000-000000000000";
     if (mode === "unit") {
-      return await decomposeUnit(admin, user.id, body ?? {});
+      return await decomposeUnit(admin, actorId, body ?? {});
     }
-    return await decomposeTopic(admin, user.id, body ?? {});
+    return await decomposeTopic(admin, actorId, body ?? {});
   } catch (error) {
     if (error instanceof Error && ["AI_PROVIDER", "AI_RETRYABLE", "AI_TIMEOUT"].includes(error.message)) {
       return json({ error: { code: "PROVIDER_ERROR", message: "Analiz servisi yanıt vermedi." } }, 502);

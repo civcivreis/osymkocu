@@ -1,4 +1,4 @@
-import { json, mapHttpError, preflight, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, preflight, requireFactoryCaller, serviceClient } from "../_shared/lessonHttp.ts";
 import { generateStructured, generationMeta, friendlyAiError } from "../_shared/aiRouter.ts";
 import {
   MEMORY_LESSON_JSON_SCHEMA,
@@ -89,33 +89,142 @@ function asStrategy(value: unknown) {
   return STRATEGY_SET.has(key) ? key : "direct_recall";
 }
 
+class PackageError extends Error {
+  code: string;
+  details: string[];
+  constructor(code: string, details: string[] = []) {
+    super(code);
+    this.name = "PackageError";
+    this.code = code;
+    this.details = details;
+  }
+}
+
+function asCleanArray(value: unknown) {
+  if (value == null) return [];
+  if (!Array.isArray(value)) return null;
+  return value;
+}
+
+function asBool(value: unknown) {
+  if (value === true || value === "true" || value === 1) return true;
+  if (value === false || value === "false" || value === 0) return false;
+  return value;
+}
+
+function wordCount(text: string) {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
 function parsePackage(raw: string): Package {
-  const parsed = JSON.parse(raw) as Package;
-  if (!parsed || typeof parsed !== "object") throw new Error("INVALID_PACKAGE");
-  if (!Array.isArray(parsed.scenes) || parsed.scenes.length < 4) throw new Error("INVALID_PACKAGE");
-  if (!Array.isArray(parsed.final_questions) || parsed.final_questions.length !== 10) {
-    throw new Error("INVALID_PACKAGE");
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    throw new PackageError("SCHEMA_PARSE_FAILED", [`raw_length=${raw.length}`]);
   }
-  if (!Array.isArray(parsed.checkpoint_questions) || parsed.checkpoint_questions.length < 2 || parsed.checkpoint_questions.length > 4) {
-    throw new Error("INVALID_PACKAGE");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new PackageError("SCHEMA_PARSE_FAILED", ["root_not_object"]);
   }
-  if (!Array.isArray(parsed.core_facts) || parsed.core_facts.length < 5 || parsed.core_facts.length > 12) {
-    throw new Error("INVALID_PACKAGE");
+
+  const learning = asCleanArray(parsed.learning_objectives);
+  const hooks = asCleanArray(parsed.memory_hooks);
+  const techniques = asCleanArray(parsed.memory_techniques);
+  const facts = asCleanArray(parsed.core_facts);
+  const scenes = asCleanArray(parsed.scenes);
+  const checkpoints = asCleanArray(parsed.checkpoint_questions);
+  const finals = asCleanArray(parsed.final_questions);
+  if (learning === null) throw new PackageError("INVALID_ENUM", ["learning_objectives_not_array"]);
+  if (hooks === null) throw new PackageError("INVALID_ENUM", ["memory_hooks_not_array"]);
+  if (techniques === null) throw new PackageError("INVALID_ENUM", ["memory_techniques_not_array"]);
+  if (facts === null) throw new PackageError("INVALID_ENUM", ["core_facts_not_array"]);
+  if (scenes === null) throw new PackageError("NO_SCENES", ["scenes_not_array"]);
+  if (checkpoints === null) throw new PackageError("INVALID_CHECKPOINT_COUNT", ["checkpoint_questions_not_array"]);
+  if (finals === null) throw new PackageError("INVALID_QUESTION_PATTERN", ["final_questions_not_array"]);
+
+  parsed.learning_objectives = learning.map((item) => String(item ?? "").trim()).filter(Boolean);
+  parsed.memory_hooks = hooks.map((item) => String(item ?? "").trim()).filter(Boolean);
+  parsed.memory_techniques = techniques.map((item) => String(item ?? "").trim()).filter(Boolean);
+  parsed.title = String(parsed.title ?? "").trim();
+  parsed.summary = String(parsed.summary ?? "").trim();
+  parsed.narration = String(parsed.narration ?? "").trim();
+  parsed.minimum_theory = String(parsed.minimum_theory ?? "").trim();
+  parsed.fast_rule = String(parsed.fast_rule ?? "").trim();
+  parsed.memory_journey_title = String(parsed.memory_journey_title ?? "").trim();
+  parsed.memory_journey_summary = String(parsed.memory_journey_summary ?? "").trim();
+
+  const technique = (parsed.exam_technique ?? {}) as Record<string, unknown>;
+  if (technique && typeof technique === "object") {
+    technique.aaa_bu_suydu = asBool(technique.aaa_bu_suydu);
+    const signals = asCleanArray(technique.stem_signals);
+    technique.stem_signals = signals === null ? [] : signals.map((item) => String(item ?? "").trim()).filter(Boolean);
+    parsed.exam_technique = technique;
   }
-  if (!Array.isArray(parsed.memory_techniques) || parsed.memory_techniques.length < 1) {
-    throw new Error("INVALID_PACKAGE");
+
+  if (!parsed.title) throw new PackageError("MISSING_TITLE");
+  if (!parsed.narration || wordCount(parsed.narration) < 80) {
+    throw new PackageError("EMPTY_NARRATION", [`words=${wordCount(String(parsed.narration ?? ""))}`]);
   }
-  if (!parsed.exam_technique?.recognition_trigger || !parsed.fast_rule?.trim() || !parsed.minimum_theory?.trim()) {
-    throw new Error("INVALID_PACKAGE");
+  if ((parsed.learning_objectives as string[]).length < 1) throw new PackageError("NO_LEARNING_OBJECTIVES");
+  if (scenes.length < 6) throw new PackageError("NO_SCENES", [`count=${scenes.length}`]);
+  if (scenes.length > 10) throw new PackageError("INVALID_SCENE_TIMING", [`count=${scenes.length}`]);
+  for (const scene of scenes) {
+    const row = scene as Record<string, unknown>;
+    const duration = Number(row.estimated_duration_sec);
+    if (!Number.isFinite(duration) || duration < 5 || duration > 90) {
+      throw new PackageError("INVALID_SCENE_TIMING", [`duration=${row.estimated_duration_sec}`]);
+    }
+    row.estimated_duration_sec = Math.round(duration);
+    row.narration_text = String(row.narration_text ?? "").trim();
+    if (!row.narration_text) throw new PackageError("EMPTY_NARRATION", ["scene_narration_empty"]);
   }
-  if (parsed.exam_technique.aaa_bu_suydu !== true) throw new Error("INVALID_PACKAGE");
-  const strategies = new Set(parsed.final_questions.map((item) => asStrategy(item.question_strategy)));
-  if (strategies.size < 3) throw new Error("INVALID_PACKAGE");
-  const techMoves = parsed.checkpoint_questions.filter((item) =>
-    ["first_move", "pattern_recognition", "elimination"].includes(asStrategy(item.question_strategy))
+  if (finals.length !== 10) throw new PackageError("INVALID_QUESTION_PATTERN", [`finals=${finals.length}`]);
+  if (checkpoints.length < 2 || checkpoints.length > 4) {
+    throw new PackageError("INVALID_CHECKPOINT_COUNT", [`count=${checkpoints.length}`]);
+  }
+  if (facts.length < 5 || facts.length > 12) {
+    throw new PackageError("INVALID_QUESTION_PATTERN", [`core_facts=${facts.length}`]);
+  }
+  if ((parsed.memory_techniques as string[]).length < 1) throw new PackageError("INVALID_ENUM", ["memory_techniques_empty"]);
+  const exam = parsed.exam_technique as ExamTechnique | undefined;
+  if (!exam?.recognition_trigger || !parsed.fast_rule || !parsed.minimum_theory) {
+    throw new PackageError("INVALID_QUESTION_PATTERN", ["missing_exam_technique_or_fast_rule_or_minimum_theory"]);
+  }
+  if (exam.aaa_bu_suydu !== true) throw new PackageError("INVALID_ENUM", ["aaa_bu_suydu_not_true"]);
+
+  const rawStrategies = finals.map((item) => String((item as GenQuestion).question_strategy ?? "").trim());
+  const unknown = rawStrategies.filter((key) => !STRATEGY_SET.has(key));
+  if (unknown.length) throw new PackageError("INVALID_ENUM", [`question_strategy=${unknown.slice(0, 4).join(",")}`]);
+  if (new Set(rawStrategies).size < 3) {
+    throw new PackageError("INVALID_QUESTION_PATTERN", ["final_strategy_diversity<3"]);
+  }
+  const techMoves = checkpoints.filter((item) =>
+    ["first_move", "pattern_recognition", "elimination"].includes(String((item as GenQuestion).question_strategy ?? ""))
   );
-  if (techMoves.length < 1) throw new Error("INVALID_PACKAGE");
-  return parsed;
+  if (techMoves.length < 1) {
+    throw new PackageError("INVALID_QUESTION_PATTERN", ["checkpoint_missing_first_move_or_pattern_or_elimination"]);
+  }
+  return parsed as unknown as Package;
+}
+
+type StructuredGen = Awaited<ReturnType<typeof generateStructured>>;
+
+function packageFeedback(error: PackageError) {
+  return `The previous package is invalid because ${error.code}${error.details.length ? `: ${error.details.join("; ")}` : ""}. scenes must be 6-10, checkpoint_questions 2-4, final_questions exactly 10, core_facts 5-12, learning_objectives nonempty, narration long enough, exam_technique.aaa_bu_suydu true, at least 3 distinct final question_strategy values, and one checkpoint using first_move or pattern_recognition or elimination. Do not omit required arrays.`;
+}
+
+async function tryGenerate(
+  messages: { role: "system" | "user" | "assistant"; content: string }[],
+  lessonId: string,
+  forcePremium: boolean,
+): Promise<{ pkg: Package; generated: StructuredGen }> {
+  const generated = await generateStructured("lesson_generation", messages, MEMORY_LESSON_JSON_SCHEMA, {
+    promptVersion: MEMORY_LESSON_PROMPT_VERSION,
+    lessonId,
+    cache: false,
+    forcePremium,
+  });
+  return { pkg: parsePackage(generated.text), generated };
 }
 
 async function generatePackage(ctx: {
@@ -127,17 +236,37 @@ async function generatePackage(ctx: {
   patterns?: string;
 }, lessonId: string) {
   const messages = buildMemoryLessonMessages(ctx);
-  const generated = await generateStructured("lesson_generation", messages, MEMORY_LESSON_JSON_SCHEMA, {
-    promptVersion: MEMORY_LESSON_PROMPT_VERSION,
-    lessonId,
-    cache: true,
-  });
-  let pkg: Package;
+  let generated: StructuredGen | undefined;
+  let pkg: Package | undefined;
+  let retryCount = 0;
+  const run = async (feedback?: PackageError, premium = false) => {
+    const payload = feedback
+      ? [...messages, { role: "user" as const, content: packageFeedback(feedback) }]
+      : messages;
+    const result = await tryGenerate(payload, lessonId, premium);
+    generated = result.generated;
+    pkg = result.pkg;
+  };
   try {
-    pkg = parsePackage(generated.text);
-  } catch {
-    throw new Error("INVALID_PACKAGE");
+    await run();
+  } catch (error) {
+    if (!(error instanceof PackageError) && error instanceof Error && error.message !== "SCHEMA_PARSE_FAILED") {
+      throw error;
+    }
+    let fail = error instanceof PackageError ? error : new PackageError(error instanceof Error ? error.message : "SCHEMA_PARSE_FAILED");
+    retryCount = 1;
+    try {
+      await run(fail, false);
+    } catch (second) {
+      if (!(second instanceof PackageError) && second instanceof Error && second.message !== "SCHEMA_PARSE_FAILED") {
+        throw second;
+      }
+      fail = second instanceof PackageError ? second : new PackageError(second instanceof Error ? second.message : "SCHEMA_PARSE_FAILED");
+      retryCount = 2;
+      await run(fail, true);
+    }
   }
+  if (!generated || !pkg) throw new PackageError("SCHEMA_PARSE_FAILED");
   try {
     await generateStructured("exam_technique_validation", [
       {
@@ -191,12 +320,31 @@ async function generatePackage(ctx: {
         { role: "user", content: `Önceki paket reddedildi. Düzelt: ${JSON.stringify(quality.parsed)}` },
       ], MEMORY_LESSON_JSON_SCHEMA, { promptVersion: MEMORY_LESSON_PROMPT_VERSION, lessonId, cache: false });
       pkg = parsePackage(retry.text);
-      return { pkg, meta: generationMeta(retry, { prompt_version: MEMORY_LESSON_PROMPT_VERSION, retry_count: 1, input_hash: null }) };
+      retryCount += 1;
+      return {
+        pkg,
+        meta: generationMeta(retry, {
+          prompt_version: MEMORY_LESSON_PROMPT_VERSION,
+          retry_count: retryCount,
+          response_format: retry.responseFormat,
+          raw_response_length: retry.rawResponseLength,
+          generation_stage: "lesson_text",
+        }),
+      };
     }
   } catch (error) {
     console.error("lesson quality skipped", error instanceof Error ? error.message : error);
   }
-  return { pkg, meta: generationMeta(generated, { prompt_version: MEMORY_LESSON_PROMPT_VERSION, retry_count: 0 }) };
+  return {
+    pkg,
+    meta: generationMeta(generated, {
+      prompt_version: MEMORY_LESSON_PROMPT_VERSION,
+      retry_count: retryCount,
+      response_format: generated.responseFormat,
+      raw_response_length: generated.rawResponseLength,
+      generation_stage: "lesson_text",
+    }),
+  };
 }
 
 Deno.serve(async (req) => {
@@ -208,9 +356,13 @@ Deno.serve(async (req) => {
   const admin = serviceClient();
   let lessonId = "";
   let previousStatus = "draft";
+  const failMeta: Record<string, unknown> = {
+    generation_stage: "lesson_text",
+    prompt_version: MEMORY_LESSON_PROMPT_VERSION,
+  };
 
   try {
-    await requireLessonAdmin(req);
+    await requireFactoryCaller(req);
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
     const payload = (body?.payload ?? body ?? {}) as Record<string, unknown>;
     lessonId = String(payload.lesson_id ?? "").trim();
@@ -394,27 +546,45 @@ Deno.serve(async (req) => {
 
     return json({ lesson: scored ?? updated });
   } catch (error) {
+    const code = error instanceof PackageError
+      ? error.code
+      : error instanceof Error
+        ? error.message.split(":")[0].slice(0, 48)
+        : "UNKNOWN";
+    const details = error instanceof PackageError ? error.details : [];
+    console.error("memory-lesson-generate", code, details, error);
     if (lessonId) {
-      const mapped = error instanceof Error && error.message === "INVALID_PACKAGE"
-        ? { text: "Üretilen paket eksik. Tekrar dene." }
+      const mapped = error instanceof PackageError
+        ? { text: "Üretilen paket şema kontrolünden geçmedi." }
         : friendlyAiError(error, "lesson");
-      const friendly = mapped.text;
+      const friendly = `${mapped.text} (${code})`;
       await admin.from("memory_lessons").update({
         status: previousStatus === "generating" ? "draft" : previousStatus,
         generation_status: "failed",
         generation_error: friendly,
+        generation_metadata: {
+          ...failMeta,
+          failure_code: code,
+          schema_validation_errors: details,
+          model: failMeta.model ?? null,
+        },
       }).eq("id", lessonId).then(() => undefined, () => undefined);
     }
     if (error instanceof Error && error.message === "AI_NOT_CONFIGURED") {
       return json({ error: { code: "AI_NOT_CONFIGURED", message: "AI yapılandırması eksik." } }, 503);
     }
-    if (error instanceof Error && error.message === "INVALID_PACKAGE") {
-      return json({ error: { code: "INVALID_PACKAGE", message: "Üretilen paket eksik. Tekrar dene." } }, 502);
+    if (error instanceof PackageError || code === "SCHEMA_PARSE_FAILED") {
+      return json({
+        error: {
+          code,
+          message: "Üretilen paket şema kontrolünden geçmedi.",
+          details,
+        },
+      }, 502);
     }
-    if (error instanceof Error && ["AI_PROVIDER", "AI_RETRYABLE", "AI_TIMEOUT"].includes(error.message)) {
+    if (error instanceof Error && (error.message.startsWith("AI_PROVIDER") || ["AI_RETRYABLE", "AI_TIMEOUT"].includes(error.message))) {
       return json({ error: { code: "PROVIDER_ERROR", message: "Ders içeriği üretilemedi." } }, 502);
     }
-    console.error("memory-lesson-generate", error);
     return mapHttpError(error, req);
   }
 });

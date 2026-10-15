@@ -52,6 +52,7 @@ export default function AppGroupLayout() {
       <Stack.Screen name="study-room" />
       <Stack.Screen name="system-exams" />
       <Stack.Screen name="sistem-sinavlari" />
+      <Stack.Screen name="koc" />
       <Stack.Screen name="test-merkezi" />
       <Stack.Screen name="siralama" />
       <Stack.Screen name="system-exam" />

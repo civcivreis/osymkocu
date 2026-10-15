@@ -17,6 +17,7 @@ import type { Profile, ThemePreference } from '@/src/lib/supabase/types';
 import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 import { disableWebPush, enableWebPush, isWebPushSupported } from '@/src/lib/webPush';
+import { saveStudyPrefs } from '@/src/features/guided-study/api';
 import { useAuthStore } from '@/src/stores/authStore';
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
@@ -76,6 +77,7 @@ const SETTING_NAVS = [
   { id: 'appearance', label: 'Görünüm' },
   { id: 'notifications', label: 'Bildirimler' },
   { id: 'matching', label: 'Çalışma Eşleşmesi' },
+  { id: 'coach', label: 'Koç' },
   { id: 'exam', label: 'Sınav Tercihleri' },
   { id: 'privacy', label: 'Gizlilik ve Güvenlik' },
 ] as const;
@@ -263,6 +265,39 @@ export function SettingsScreen() {
                 );
               })}
             </View>
+          </Card>
+        </Section>
+        ) : null}
+
+        {!isDesktop || nav === 'coach' ? (
+        <Section title="KOÇ">
+          <Card>
+            <AppText variant="subtitle">Çalışma koçu</AppText>
+            <AppText variant="caption" tone="muted">
+              Anlatım yapay zekâ sesi kullanır. Rozet dersin içinde gösterilmez.
+            </AppText>
+            <Row
+              label="Molalar: 3 derste bir"
+              onPress={() => void saveStudyPrefs({ break_frequency_lessons: 3 }).then(() => toastSuccess('Mola tercihi kaydedildi'))}
+            />
+            <Row
+              label="Oturum 40 dk"
+              onPress={() => void saveStudyPrefs({ preferred_session_minutes: 40 }).then(() => toastSuccess('Süre kaydedildi'))}
+            />
+            <Row
+              label="Otomatik sıradaki ders"
+              onPress={() => void saveStudyPrefs({ auto_next_lesson: true }).then(() => toastSuccess('Kaydedildi'))}
+            />
+            <Row
+              label="Altyazı kapalı (varsayılan)"
+              onPress={() => void saveStudyPrefs({ captions_enabled: false }).then(() => toastSuccess('Kaydedildi'))}
+            />
+            <AppText variant="caption" tone="muted">
+              Koç sesi (marin / cedar) süper admin AI ayarlarından seçilir. Anlatım yapay zekâ sesidir; ders içinde rozet yok. Mevcut ders sesleri otomatik yenilenmez.
+            </AppText>
+            <AppText variant="caption">
+              Dersler 3–7 dk. Kartlara cevap ver. Yanlışlar sinyaldir; aynı mantık doğru olana kadar döner. Günlük test yeni + eski karışımıdır. Molalar planlıdır.
+            </AppText>
           </Card>
         </Section>
         ) : null}

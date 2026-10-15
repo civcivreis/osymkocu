@@ -22,6 +22,10 @@ export function AdminDashboardScreen() {
         <AppText tone="danger">{stats.error instanceof Error ? stats.error.message : 'İstatistik alınamadı.'}</AppText>
       ) : null}
       <Grid items={[
+        ['Koç oturumu (insan)', String((row.coach as { human_sessions?: number } | undefined)?.human_sessions ?? '—')],
+        ['Koç oturumu (sanal)', String((row.coach as { virtual_sessions?: number } | undefined)?.virtual_sessions ?? '—')],
+        ['Yanlış toparlama', String((row.coach as { recovery_rate?: number } | undefined)?.recovery_rate ?? '—')],
+        ['Ort. oturum dk', String((row.coach as { avg_session_minutes?: number } | undefined)?.avg_session_minutes ?? '—')],
         ['Toplam kullanıcı', String(row.users ?? '—')],
         ['Bugün aktif', String(row.today_active_users ?? '—')],
         ['Bugün çözülen soru', String(row.questions_today ?? '—')],

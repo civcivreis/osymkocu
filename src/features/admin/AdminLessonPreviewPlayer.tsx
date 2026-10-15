@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
-import type { MemoryLesson, MemoryLessonScene } from '@/src/features/memory-lessons/types';
+import { CheckpointCard } from '@/src/features/memory-lessons/CheckpointCard';
+import { SceneCanvas } from '@/src/features/memory-lessons/SceneCanvas';
+import { checkpointTriggers, formatMs } from '@/src/features/memory-lessons/playerUtils';
+import type { MemoryLesson, MemoryLessonQuestion, MemoryLessonScene } from '@/src/features/memory-lessons/types';
 
 type HtmlAudio = {
   play: () => Promise<void>;
@@ -14,28 +17,26 @@ type HtmlAudio = {
   removeEventListener: (name: string, fn: () => void) => void;
 };
 
-function formatMs(ms: number) {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
-
 export function AdminLessonPreviewPlayer({
   lesson,
   scenes,
+  questions = [],
   urls,
 }: {
   lesson: MemoryLesson;
   scenes: MemoryLessonScene[];
+  questions?: MemoryLessonQuestion[];
   urls: Record<string, string>;
 }) {
   const narrationUrl = lesson.narration_key ? urls[lesson.narration_key] : undefined;
   const audioRef = useRef<HtmlAudio | null>(null);
   const barWidth = useRef(1);
+  const prevMs = useRef(0);
   const [playing, setPlaying] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
   const [durationMs, setDurationMs] = useState(Math.max((lesson.duration_sec ?? 0) * 1000, 1));
+  const [activeCheckpoint, setActiveCheckpoint] = useState<MemoryLessonQuestion | null>(null);
+  const [answered, setAnswered] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!narrationUrl || typeof Audio === 'undefined') return;
@@ -68,12 +69,33 @@ export function AdminLessonPreviewPlayer({
     );
   }, [positionMs, scenes]);
 
+  const triggers = useMemo(
+    () => checkpointTriggers(scenes, questions, durationMs),
+    [durationMs, questions, scenes],
+  );
+
+  useEffect(() => {
+    const crossed = triggers.find(
+      (row) =>
+        !answered.has(row.question.id) &&
+        !activeCheckpoint &&
+        prevMs.current < row.triggerMs &&
+        positionMs >= row.triggerMs,
+    );
+    prevMs.current = positionMs;
+    if (!crossed) return;
+    audioRef.current?.pause();
+    setPlaying(false);
+    setActiveCheckpoint(crossed.question);
+  }, [activeCheckpoint, answered, positionMs, triggers]);
+
   const imageUrl = current?.asset_key ? urls[current.asset_key] : undefined;
-  const progress = Math.min(1, positionMs / durationMs);
+  const progress = Math.min(1, positionMs / Math.max(durationMs, 1));
+  const nextGate = triggers.find((row) => !answered.has(row.question.id));
 
   const toggle = () => {
     const el = audioRef.current;
-    if (!el) return;
+    if (!el || activeCheckpoint) return;
     if (playing) {
       el.pause();
       setPlaying(false);
@@ -83,9 +105,11 @@ export function AdminLessonPreviewPlayer({
   };
 
   const seek = (ratio: number) => {
+    if (activeCheckpoint) return;
     const el = audioRef.current;
     const next = Math.max(0, Math.min(1, ratio)) * durationMs;
     setPositionMs(next);
+    prevMs.current = next;
     if (el) el.currentTime = next / 1000;
   };
 
@@ -95,17 +119,28 @@ export function AdminLessonPreviewPlayer({
 
   return (
     <View style={{ gap: 12, backgroundColor: '#FFFcf7', borderRadius: 16, padding: 14 }}>
-      <View style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: 12, overflow: 'hidden', backgroundColor: '#E8E3D8' }}>
-        {imageUrl ? (
-          <Image source={{ uri: imageUrl }} resizeMode="cover" style={{ width: '100%', height: '100%' }} />
-        ) : (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-            <AppText tone="muted">Görsel yok</AppText>
-          </View>
-        )}
+      <View style={{ position: 'relative' }}>
+        <SceneCanvas scene={current} imageUrl={imageUrl} positionMs={positionMs} />
+        {activeCheckpoint ? (
+          <CheckpointCard
+            question={activeCheckpoint}
+            reinforcement={current?.reinforcement_note}
+            onSubmit={async (answer) => {
+              const correct = String(activeCheckpoint.correct_answer ?? '').toUpperCase() === String(answer).toUpperCase();
+              return {
+                correct,
+                correct_answer: String(activeCheckpoint.correct_answer ?? 'A'),
+                explanation: activeCheckpoint.explanation,
+              };
+            }}
+            onContinue={() => {
+              setAnswered((prev) => new Set(prev).add(activeCheckpoint.id));
+              setActiveCheckpoint(null);
+              void audioRef.current?.play().then(() => setPlaying(true)).catch(() => undefined);
+            }}
+          />
+        ) : null}
       </View>
-      <AppText variant="subtitle">{current?.caption || lesson.title}</AppText>
-      {current?.memory_hook ? <AppText tone="muted">{current.memory_hook}</AppText> : null}
       <Pressable
         onLayout={(event) => {
           barWidth.current = Math.max(event.nativeEvent.layout.width, 1);
@@ -131,11 +166,14 @@ export function AdminLessonPreviewPlayer({
         }}>
         <AppText tone="inverse">{playing ? 'Duraklat' : 'Oynat'}</AppText>
       </Pressable>
-      {current ? (
-        <AppText variant="caption" tone="muted">
-          Sahne {current.scene_order} · {formatMs(current.start_ms)}–{formatMs(current.end_ms)}
-        </AppText>
-      ) : null}
+      <AppText variant="caption" tone="muted">
+        Sahne {current?.scene_order ?? '—'} · kanca videonun üstünde ·{' '}
+        {nextGate
+          ? `Sonraki soru ${formatMs(nextGate.triggerMs)}`
+          : questions.some((row) => row.question_type === 'checkpoint')
+            ? 'Kontrol soruları geçildi'
+            : 'Bu derste checkpoint yok'}
+      </AppText>
     </View>
   );
 }

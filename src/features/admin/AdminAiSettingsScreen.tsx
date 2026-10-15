@@ -19,6 +19,7 @@ type TaskRow = {
   notes?: string | null;
   economy_model?: string | null;
   premium_model?: string | null;
+  transitional?: boolean;
 };
 
 type Overview = {
@@ -58,6 +59,7 @@ const TASK_LABELS: Record<string, string> = {
   image_generation: 'Görsel',
   premium_image_generation: 'Premium Görsel',
   tts_generation: 'Ses',
+  coach_voice_preview: 'Koç ses önizleme',
   content_moderation_text: 'Metin Moderasyonu',
   content_moderation_image: 'Görsel Moderasyonu',
 };
@@ -65,6 +67,8 @@ const TASK_LABELS: Record<string, string> = {
 export function AdminAiSettingsScreen() {
   const role = useAuthStore((s) => s.profile?.app_role);
   const canEdit = isSuperAdmin(role);
+  const [samples, setSamples] = useState<Record<string, string> | null>(null);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const overview = useQuery({
     queryKey: ['admin-ai-router'],
     enabled: isStaffRole(role),
@@ -132,6 +136,66 @@ export function AdminAiSettingsScreen() {
           Model değişince mevcut ders, soru, görsel ve sesler otomatik yenilenmez. Tekil yeniden üretim mevcut üretim
           butonlarından yapılır.
         </AppText>
+      </View>
+
+      <View style={adminCard}>
+        <AppText variant="subtitle">Koç sesi (marin / cedar)</AppText>
+        <AppText variant="caption" tone="muted">
+          Aynı Türkçe örnek. Kütüphane yenilenmez. Aktif ses: {settings.tts_voice ?? 'marin'}
+        </AppText>
+        {canEdit ? (
+          <Pressable
+            disabled={voiceBusy}
+            onPress={() => {
+              setVoiceBusy(true);
+              void getSupabase()
+                .functions.invoke('coach-voice-test', { body: {} })
+                .then(({ data, error }) => {
+                  if (error) toastError(mapAdminError(error.message));
+                  else setSamples((data as { samples?: Record<string, string> })?.samples ?? null);
+                })
+                .finally(() => setVoiceBusy(false));
+            }}
+            style={adminBtn}>
+            <AppText variant="caption" style={{ color: '#fff' }}>
+              {voiceBusy ? 'Üretiliyor…' : 'Örnekleri üret'}
+            </AppText>
+          </Pressable>
+        ) : null}
+        {samples
+          ? Object.entries(samples).map(([voice, uri]) => (
+              <View key={voice} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                  <AppText variant="caption">{voice === 'marin' ? 'Marin' : voice === 'cedar' ? 'Cedar' : voice}</AppText>
+                  <Pressable
+                    onPress={() => {
+                      if (typeof Audio !== 'undefined') {
+                        const clip = new Audio(uri);
+                        void clip.play();
+                      }
+                    }}
+                    style={adminGhost}>
+                    <AppText variant="caption">{voice === 'marin' ? 'Marin ▶' : voice === 'cedar' ? 'Cedar ▶' : 'Dinle'}</AppText>
+                  </Pressable>
+                {canEdit ? (
+                  <Pressable
+                    onPress={() => {
+                      void getSupabase()
+                        .functions.invoke('coach-voice-test', { body: { choose: voice } })
+                        .then(({ error }) => {
+                          if (error) toastError(mapAdminError(error.message));
+                          else {
+                            toastSuccess(`${voice} varsayılan oldu`);
+                            void overview.refetch();
+                          }
+                        });
+                    }}
+                    style={adminGhost}>
+                    <AppText variant="caption">Varsayılan yap</AppText>
+                  </Pressable>
+                ) : null}
+              </View>
+            ))
+          : null}
       </View>
 
       <View style={adminCard}>
@@ -206,6 +270,7 @@ function TaskCard({
       <AppText variant="subtitle">{TASK_LABELS[task.task_type] ?? task.task_type}</AppText>
       <AppText variant="caption" tone="muted">
         {task.task_type} · min {task.minimum_quality_tier ?? 'economy'}
+        {task.transitional ? ' · transitional HTTP /v1/audio/speech' : ''}
         {task.notes ? ` · ${task.notes}` : ''}
       </AppText>
       {canEdit ? (

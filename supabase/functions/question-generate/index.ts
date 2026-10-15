@@ -1,4 +1,4 @@
-import { json, mapHttpError, preflight, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, preflight, requireFactoryCaller, serviceClient } from "../_shared/lessonHttp.ts";
 import { generateStructured, generationMeta } from "../_shared/aiRouter.ts";
 import {
   QUESTION_BANK_SCHEMA,
@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: { code: "INVALID_INPUT", message: "POST gerekli." } }, 405);
 
   try {
-    await requireLessonAdmin(req);
+    await requireFactoryCaller(req);
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
     const mode = String(body?.mode ?? "topic_pool") as Mode;
     const admin = serviceClient();

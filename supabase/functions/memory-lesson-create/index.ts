@@ -1,4 +1,4 @@
-import { json, mapHttpError, preflight, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
+import { json, mapHttpError, preflight, requireFactoryCaller, serviceClient } from "../_shared/lessonHttp.ts";
 
 const EXAMS = new Set(["tyt", "ayt", "kpss"]);
 
@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    await requireLessonAdmin(req);
+    await requireFactoryCaller(req);
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
     const payload = (body?.payload ?? body ?? {}) as Record<string, unknown>;
     const admin = serviceClient();

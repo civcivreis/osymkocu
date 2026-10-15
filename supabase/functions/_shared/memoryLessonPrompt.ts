@@ -1,6 +1,6 @@
 import { buildExamTechniqueSystem, EXAM_TECHNIQUE_PROMPT_VERSION, HEURISTIC_KINDS, TECHNIQUE_QUESTION_STRATEGIES } from "./examTechnique.ts";
 
-export const MEMORY_LESSON_PROMPT_VERSION = EXAM_TECHNIQUE_PROMPT_VERSION;
+export const MEMORY_LESSON_PROMPT_VERSION = "exam-technique-overlay-v3";
 export const MEMORY_PEDAGOGY_VERSION = "exam-technique-v1";
 
 export const MEMORY_TECHNIQUES = [
@@ -83,16 +83,18 @@ export const MEMORY_LESSON_JSON_SCHEMA = {
     properties: {
       title: { type: "string" },
       summary: { type: "string" },
-      learning_objectives: { type: "array", items: { type: "string" } },
+      learning_objectives: { type: "array", items: { type: "string" }, minItems: 3, maxItems: 8 },
       narration: { type: "string" },
-      memory_hooks: { type: "array", items: { type: "string" } },
+      memory_hooks: { type: "array", items: { type: "string" }, minItems: 3, maxItems: 10 },
       primary_memory_technique: { type: "string", enum: [...MEMORY_TECHNIQUES] },
-      memory_techniques: { type: "array", items: { type: "string", enum: [...MEMORY_TECHNIQUES] } },
+      memory_techniques: { type: "array", items: { type: "string", enum: [...MEMORY_TECHNIQUES] }, minItems: 1, maxItems: 6 },
       memory_journey_title: { type: "string" },
       memory_journey_summary: { type: "string" },
-      core_facts: { type: "array", items: CORE_FACT_SCHEMA },
+      core_facts: { type: "array", items: CORE_FACT_SCHEMA, minItems: 5, maxItems: 12 },
       scenes: {
         type: "array",
+        minItems: 6,
+        maxItems: 10,
         items: {
           type: "object",
           additionalProperties: false,
@@ -126,8 +128,8 @@ export const MEMORY_LESSON_JSON_SCHEMA = {
           },
         },
       },
-      checkpoint_questions: { type: "array", items: QUESTION_SCHEMA },
-      final_questions: { type: "array", items: QUESTION_SCHEMA },
+      checkpoint_questions: { type: "array", items: QUESTION_SCHEMA, minItems: 2, maxItems: 4 },
+      final_questions: { type: "array", items: QUESTION_SCHEMA, minItems: 10, maxItems: 10 },
       minimum_theory: { type: "string" },
       fast_rule: { type: "string" },
       exam_technique: {
@@ -157,7 +159,7 @@ export const MEMORY_LESSON_JSON_SCHEMA = {
           common_traps: { type: "string" },
           elimination_rules: { type: "string" },
           when_not_to_use: { type: "string" },
-          stem_signals: { type: "array", items: { type: "string" } },
+          stem_signals: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 8 },
           heuristic_kind: { type: "string", enum: [...HEURISTIC_KINDS] },
           aaa_bu_suydu: { type: "boolean" },
         },
@@ -183,13 +185,22 @@ Hafıza kancası (memory_hook) ile sınav tekniği AYRI:
 Anlatım örneği (iyi): "Bu soru gelince önce cümle başlarındaki 'bu / ancak / çünkü'ye bak. Bağlama bağlı olanı ele. Sonra anlamla doğrula. Altın taç = Kut kancası aklında dursun; soru 'kutsal yönetme yetkisi' deyince Kut zincirini aç."
 Kötü: yalnızca tanım paragrafı.
 
+Oyuncu videosu (altyazı yok): her sahnede 3 kısa kart sırayla gelir.
+- memory_hook: en fazla 8 kelime, görsel kanca
+- memory_target: en fazla 8 kelime, "bu neydi?"
+- recall_prompt: en fazla 12 kelime, hızlı kural
+- caption: 6-10 kelime, ekran yazısı; paragraf değil
+
+checkpoint_questions: 2-4 adet. En az biri first_move / pattern_recognition / elimination.
+final_questions: TAM 10, en az 3 farklı question_strategy.
+
 Kurallar:
 - Uydurma yok.
 - Görsel üretme. visual_description sahne tarifi.
-- checkpoint_questions: 2-4. final_questions: TAM 10.
-- scenes: 6-10, HOOK ile başla.
+- scenes: 6-10, HOOK ile başla. Boş dizi yasak.
 - narration: 350-800 kelime, koç tonu, asgari teori.
-- JSON şemasına birebir uy.`;
+- exam_technique.aaa_bu_suydu: true (öğrenci "aaa bu giriş/cümle tekniğiydi" desin).
+- JSON şemasına birebir uy. Eksik dizi veya eksik final_questions kabul edilmez.`;
 
   const user = `Sınav tekniği + hafıza dersi paketi üret.
 Başlık: ${input.title}
@@ -198,6 +209,15 @@ Ders: ${input.subject}
 Ünite: ${input.unit}
 Konu: ${input.topic}
 ${input.patterns ? `Bilinen soru kalıpları:\n${input.patterns}` : ""}
+${/giriş|giris|cümle yerleştir|cumle yerlestir/i.test(`${input.topic} ${input.title}`)
+    ? `Bu dersin soru kalıbı: giriş cümlesi / cümle yerleştirme.
+RECOGNITION: öğrenci bağlam bağımlılığını tanır.
+FIRST MOVE: cümle başı / bağlaç / gönderme ipuçlarına bak.
+FAST METHOD: önceki bağlama bağlı adayları ele.
+TRAP: sezgisel ipuçları mutlak kural değildir.
+VERIFY: son adayı paragraf anlamına karşı kontrol et.
+Öğrenci düşünmeli: "Aaa bu giriş cümlesi tekniğiydi."`
+    : ""}
 Medya üretme. Sadece metin paketi.`;
 
   return [

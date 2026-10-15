@@ -14,6 +14,7 @@ import { QuestionPalette } from '@/src/features/study/QuestionPalette';
 import { useCompleteLessonFinal } from '@/src/features/memory-lessons/useMemoryLessonPlayer';
 import { sortedChoices, useAttemptDiagnosis, useCompletePracticeSet, useCurriculumPracticeQuestions, usePracticeQuestions, useSubmitAttempt } from '@/src/features/study/usePractice';
 import { useStudyPresence } from '@/src/features/study/useStudyPresence';
+import { actGuided, recordGuidedAttempt } from '@/src/features/guided-study/api';
 import { useCoachStore } from '@/src/features/teacher/coachStore';
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
 import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
@@ -34,6 +35,7 @@ export default function PracticeScreen() {
     count?: string;
     lessonId?: string;
     questionIds?: string;
+    sessionId?: string;
   }>();
   const review = params.mode === 'review';
   const mixed = params.mode === 'mixed';
@@ -151,6 +153,12 @@ export default function PracticeScreen() {
         })),
         anchors: Object.values(anchorStats),
       }).catch(() => undefined);
+      if (params.sessionId) {
+        void actGuided(params.sessionId, 'final_done', { lesson_id: params.lessonId }).catch(() => undefined);
+      }
+    }
+    if (params.sessionId && params.setType === 'daily_guided') {
+      void actGuided(params.sessionId, 'daily_test_done', {}).catch(() => undefined);
     }
   }, [anchorStats, completeFinal, completeSet, correctCount, finished, objectiveStats, params.lessonId, params.questionIds, params.setType, questions]);
 
@@ -165,6 +173,18 @@ export default function PracticeScreen() {
       });
       setResult(next);
       setAnswered((current) => ({ ...current, [question.id]: true }));
+      if (params.sessionId) {
+        void recordGuidedAttempt({
+          sessionId: params.sessionId,
+          selected: selected,
+          correctAnswer: next.correct_choice,
+          isCorrect: next.is_correct,
+          questionId: question.id,
+          lessonId: params.lessonId,
+          pattern: question.question_strategy ?? question.learning_objective_id ?? 'practice',
+          ms: Date.now() - startedAt,
+        }).catch(() => undefined);
+      }
       if (next.is_correct) setCorrectCount((value) => value + 1);
       else {
         setWrongIds((current) => (current.includes(question.id) ? current : [...current, question.id]));
@@ -454,7 +474,10 @@ export default function PracticeScreen() {
                   ) : null}
                 </>
               ) : null}
-              <Button label="Çalışmaya dön" onPress={() => router.back()} />
+              <Button
+                label={params.sessionId ? 'Koça dön' : 'Çalışmaya dön'}
+                onPress={() => (params.sessionId ? router.replace('/koc') : router.back())}
+              />
             </View>
           </Card>
         ) : isDesktop && question ? (

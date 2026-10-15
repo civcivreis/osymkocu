@@ -6,6 +6,7 @@ import { useAuthStore } from '@/src/stores/authStore';
 import {
   approveMemoryLesson,
   createMemoryLesson,
+  deleteMemoryLesson,
   generateMemoryLesson,
   generateMemoryLessonMedia,
   getAdminMemoryLesson,
@@ -149,6 +150,18 @@ export function usePublishMemoryLesson() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: publishMemoryLesson,
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['admin-memory-lessons'] });
+      await client.invalidateQueries({ queryKey: ['admin-memory-lesson'] });
+      await client.invalidateQueries({ queryKey: ['memory-lessons', 'published'] });
+    },
+  });
+}
+
+export function useDeleteMemoryLesson() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: deleteMemoryLesson,
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ['admin-memory-lessons'] });
       await client.invalidateQueries({ queryKey: ['admin-memory-lesson'] });

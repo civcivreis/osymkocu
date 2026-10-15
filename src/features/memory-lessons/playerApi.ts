@@ -135,6 +135,7 @@ export async function submitCheckpoint(input: {
   if (error) throw error;
   return data as {
     duplicate?: boolean;
+    retry?: boolean;
     correct: boolean;
     selected_answer: string;
     correct_answer: string;

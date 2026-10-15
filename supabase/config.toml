@@ -56,3 +56,6 @@ verify_jwt = false
 
 [functions.virtual-student-tick]
 verify_jwt = false
+
+[functions.coach-voice-test]
+verify_jwt = false

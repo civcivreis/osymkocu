@@ -1,4 +1,9 @@
 import { serviceClient } from "./lessonHttp.ts";
+import {
+  COACH_SPEECH_INSTRUCTIONS,
+  speechProviderAdapter,
+  speechRouteForModel,
+} from "./speechProviderAdapter.ts";
 
 export type QualityTier = "economy" | "balanced" | "premium";
 export type AiTaskType =
@@ -19,6 +24,7 @@ export type AiTaskType =
   | "image_generation"
   | "premium_image_generation"
   | "tts_generation"
+  | "coach_voice_preview"
   | "content_moderation_text"
   | "content_moderation_image";
 
@@ -57,6 +63,8 @@ export type RunAiOptions = {
   cache?: boolean;
   forcePremium?: boolean;
   timeoutMs?: number;
+  voice?: string;
+  instructions?: string;
 };
 
 type UsageMeta = {
@@ -70,11 +78,13 @@ type UsageMeta = {
   cached?: boolean;
   configVersion: number;
   runtimeMode: QualityTier;
+  adapter?: string;
+  endpointType?: string;
 };
 
 const TIER_RANK: Record<QualityTier, number> = { economy: 0, balanced: 1, premium: 2 };
 
-let configCache: { at: number; tasks: Map<string, AiModelConfig>; mode: QualityTier; ttsVoice: string; caps: { ai: number | null; image: number | null; tts: number | null } } | null = null;
+let configCache: { at: number; tasks: Map<string, AiModelConfig>; mode: QualityTier; ttsVoice: string; ttsInstructions: string; caps: { ai: number | null; image: number | null; tts: number | null } } | null = null;
 
 function openaiKey() {
   const key = Deno.env.get("OPENAI_API_KEY") ?? "";
@@ -84,7 +94,54 @@ function openaiKey() {
 
 function envModelOverride(taskType: string) {
   const key = `AI_MODEL_${taskType.toUpperCase()}`;
-  return (Deno.env.get(key) ?? "").trim() || null;
+  return canonicalizeModel((Deno.env.get(key) ?? "").trim()) || null;
+}
+
+const MODEL_ALIASES: Record<string, string> = {
+  "gpt-6.1-sol": "gpt-5.6-sol",
+  "gpt-6-sol": "gpt-5.6-sol",
+  "gpt-6-luna": "gpt-5.6-luna",
+};
+
+function canonicalizeModel(model: string) {
+  const key = model.trim();
+  if (!key) return "";
+  return MODEL_ALIASES[key] ?? key;
+}
+
+function isSpeechTask(taskType: string) {
+  return taskType === "tts_generation" || taskType === "coach_voice_preview";
+}
+
+function isReasoningChatModel(model: string) {
+  return /^(gpt-5|gpt-6|o[1-9])/.test(model);
+}
+
+function chatCompletionBody(
+  model: string,
+  messages: ChatMessage[],
+  cfg: AiModelConfig,
+  extra: Record<string, unknown> = {},
+) {
+  const body: Record<string, unknown> = { model, messages, ...extra };
+  const max = cfg.maxOutputTokens ?? 4000;
+  if (isReasoningChatModel(model)) {
+    body.max_completion_tokens = max;
+    if (cfg.reasoningEffort) body.reasoning_effort = cfg.reasoningEffort;
+  } else {
+    body.max_tokens = max;
+    body.temperature = cfg.temperature ?? 0.4;
+  }
+  return body;
+}
+
+function providerErrorCode(raw: string) {
+  try {
+    const parsed = JSON.parse(raw) as { error?: { code?: string; message?: string; type?: string } };
+    return String(parsed.error?.code || parsed.error?.type || parsed.error?.message || "").slice(0, 120);
+  } catch {
+    return raw.slice(0, 120);
+  }
 }
 
 function asTier(value: unknown, fallback: QualityTier): QualityTier {
@@ -105,10 +162,10 @@ async function loadRuntime() {
     map.set(taskType, {
       taskType,
       provider: String(row.provider ?? "openai"),
-      primaryModel: String(row.primary_model),
-      fallbackModel: row.fallback_model ? String(row.fallback_model) : null,
-      economyModel: row.economy_model ? String(row.economy_model) : null,
-      premiumModel: row.premium_model ? String(row.premium_model) : null,
+      primaryModel: canonicalizeModel(String(row.primary_model)),
+      fallbackModel: row.fallback_model ? canonicalizeModel(String(row.fallback_model)) : null,
+      economyModel: row.economy_model ? canonicalizeModel(String(row.economy_model)) : null,
+      premiumModel: row.premium_model ? canonicalizeModel(String(row.premium_model)) : null,
       qualityTier: asTier(row.quality_tier, "balanced"),
       minimumQualityTier: asTier(row.minimum_quality_tier, "economy"),
       maxOutputTokens: row.max_output_tokens == null ? null : Number(row.max_output_tokens),
@@ -124,7 +181,8 @@ async function loadRuntime() {
     at: now,
     tasks: map,
     mode: asTier(settings?.mode, "balanced"),
-    ttsVoice: String(settings?.tts_voice ?? "nova"),
+    ttsVoice: String(settings?.tts_voice ?? "marin"),
+    ttsInstructions: String(settings?.tts_instructions ?? COACH_SPEECH_INSTRUCTIONS),
     caps: {
       ai: settings?.max_daily_ai_jobs == null ? null : Number(settings.max_daily_ai_jobs),
       image: settings?.max_daily_image_jobs == null ? null : Number(settings.max_daily_image_jobs),
@@ -144,7 +202,7 @@ export async function getAiModelConfig(taskType: string): Promise<AiModelConfig>
 
 export async function resolveAiRoute(taskType: string, options?: { forcePremium?: boolean }): Promise<ResolvedRoute> {
   const runtime = await loadRuntime();
-  const cfg = await getAiModelConfig(taskType);
+  let cfg = await getAiModelConfig(taskType);
   let desired: QualityTier = runtime.mode;
   if (options?.forcePremium) desired = "premium";
   if (TIER_RANK[desired] < TIER_RANK[cfg.minimumQualityTier]) desired = cfg.minimumQualityTier;
@@ -154,12 +212,80 @@ export async function resolveAiRoute(taskType: string, options?: { forcePremium?
   else if (desired === "economy") model = cfg.economyModel || cfg.primaryModel;
   const env = envModelOverride(taskType);
   if (env) model = env;
+  if (isSpeechTask(taskType)) {
+    const route = speechRouteForModel(model);
+    if (!route.ready) throw new Error("SPEECH_ADAPTER_NOT_READY:realtime_speech");
+    model = route.model;
+  }
   return { ...cfg, model, runtimeMode: runtime.mode, ttsVoice: runtime.ttsVoice };
+}
+
+export class ProviderRateLimitError extends Error {
+  retryAfterMs: number;
+  constructor(retryAfterMs: number) {
+    super(`AI_RETRYABLE:429:${retryAfterMs}`);
+    this.name = "ProviderRateLimitError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+export function parseRetryAfterHeader(headers: Headers, attempt = 0) {
+  const raw = headers.get("retry-after");
+  if (raw) {
+    const asNum = Number(raw);
+    if (Number.isFinite(asNum) && asNum >= 0) return Math.min(Math.max(Math.ceil(asNum * 1000), 1500), 90_000);
+    const when = Date.parse(raw);
+    if (Number.isFinite(when)) return Math.min(Math.max(when - Date.now(), 1500), 90_000);
+  }
+  const exp = Math.min(4000 * (2 ** attempt), 45_000);
+  return exp + Math.floor(Math.random() * 1200);
+}
+
+export function isRateLimitError(error: unknown) {
+  return error instanceof ProviderRateLimitError ||
+    (error instanceof Error && (error.message.startsWith("AI_RETRYABLE:429") || error.message === "AI_RETRYABLE"));
+}
+
+export function retryAfterMsFromError(error: unknown, attempt = 0) {
+  if (error instanceof ProviderRateLimitError) return error.retryAfterMs;
+  if (error instanceof Error) {
+    const match = error.message.match(/AI_RETRYABLE:429:(\d+)/);
+    if (match) return Number(match[1]);
+  }
+  return parseRetryAfterHeader(new Headers(), attempt);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withBoundedBackoff<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await run();
+    } catch (error) {
+      last = error;
+      if (!isRateLimitError(error) || i === attempts - 1) throw error;
+      const wait = Math.min(retryAfterMsFromError(error, i), 20_000);
+      console.error("provider backoff", i + 1, wait);
+      await sleep(wait);
+    }
+  }
+  throw last;
+}
+
+function throwIfProviderFailed(response: Response, raw: string, retryAfterMs: number, fallbackCode: string) {
+  if (response.ok) return;
+  if (response.status === 429) throw new ProviderRateLimitError(retryAfterMs || parseRetryAfterHeader(response.headers, 0));
+  if (isRetryableProvider(response.status, raw)) throw new Error("AI_RETRYABLE");
+  throw new Error(fallbackCode);
 }
 
 function isRetryableProvider(status: number, body: string) {
   if ([408, 409, 429, 500, 502, 503, 529].includes(status)) return true;
   if (status === 404 && /model/i.test(body)) return true;
+  if (status === 400 && /model[_ ]not[_ ]found|does not exist|invalid model/i.test(body)) return true;
   return false;
 }
 
@@ -192,11 +318,11 @@ async function enforceCaps(taskType: string) {
       .gte("created_at", `${dayIso}T00:00:00+03:00`);
     if ((images ?? 0) >= runtime.caps.image) throw new Error("AI_DAILY_CAP");
   }
-  if (taskType === "tts_generation" && runtime.caps.tts != null) {
+  if ((taskType === "tts_generation" || taskType === "coach_voice_preview") && runtime.caps.tts != null) {
     const { count: tts } = await admin
       .from("ai_usage_log")
       .select("id", { count: "exact", head: true })
-      .eq("task_type", "tts_generation")
+      .in("task_type", ["tts_generation", "coach_voice_preview"])
       .gte("created_at", `${dayIso}T00:00:00+03:00`);
     if ((tts ?? 0) >= runtime.caps.tts) throw new Error("AI_DAILY_CAP");
   }
@@ -219,13 +345,15 @@ async function logUsage(meta: UsageMeta & { success: boolean; errorCode?: string
       question_id: meta.options?.questionId ?? null,
       job_id: meta.options?.jobId ?? null,
       error_code: meta.errorCode ?? null,
+      adapter: meta.adapter ?? null,
+      endpoint_type: meta.endpointType ?? null,
     });
   } catch (error) {
     console.error("ai_usage_log", error instanceof Error ? error.message : error);
   }
 }
 
-async function openaiFetch(path: string, body: unknown, timeoutMs = 90_000) {
+async function openaiFetch(path: string, body: unknown, timeoutMs = 180_000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -238,8 +366,9 @@ async function openaiFetch(path: string, body: unknown, timeoutMs = 90_000) {
       },
       body: JSON.stringify(body),
     });
+    const retryAfterMs = parseRetryAfterHeader(response.headers, 0);
     const raw = await response.text();
-    return { response, raw };
+    return { response, raw, retryAfterMs };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw new Error("AI_TIMEOUT");
     throw error;
@@ -269,7 +398,7 @@ export async function runAiTask(
     return generateImage(imageTask, String(payload.prompt ?? ""), { ...options, size: payload.size });
   }
   if (kind === "speech") {
-    return generateSpeech(String(payload.input ?? ""), options);
+    return generateSpeech(taskType || "tts_generation", String(payload.input ?? ""), options?.voice, options?.instructions, options);
   }
   return generateText(taskType, payload.messages ?? [], options);
 }
@@ -278,12 +407,13 @@ async function withFallback<T>(
   taskType: string,
   options: RunAiOptions | undefined,
   run: (model: string) => Promise<T>,
+  attempts = 3,
 ): Promise<{ value: T; meta: UsageMeta }> {
   await enforceCaps(taskType);
   const route = await resolveAiRoute(taskType, { forcePremium: options?.forcePremium });
   const started = Date.now();
   try {
-    const value = await run(route.model);
+    const value = await withBoundedBackoff(() => run(route.model), attempts);
     return {
       value,
       meta: {
@@ -351,54 +481,91 @@ function parseUsage(payload: { usage?: { prompt_tokens?: number; completion_toke
   };
 }
 
+function cloneWithoutArrayBounds(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(cloneWithoutArrayBounds);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      if (key === "minItems" || key === "maxItems") continue;
+      out[key] = cloneWithoutArrayBounds(nested);
+    }
+    return out;
+  }
+  return value;
+}
+
 export type ProviderAdapter = {
   generateText: (model: string, messages: ChatMessage[], cfg: AiModelConfig) => Promise<{ text: string; usage: { inputTokens?: number; outputTokens?: number } }>;
-  generateStructured: (model: string, messages: ChatMessage[], schema: unknown, cfg: AiModelConfig) => Promise<{ text: string; usage: { inputTokens?: number; outputTokens?: number } }>;
+  generateStructured: (model: string, messages: ChatMessage[], schema: unknown, cfg: AiModelConfig) => Promise<{
+    text: string;
+    usage: { inputTokens?: number; outputTokens?: number };
+    responseFormat: string;
+    schemaError?: string;
+  }>;
   generateImage: (model: string, prompt: string, size?: string) => Promise<Uint8Array>;
-  generateSpeech: (model: string, input: string, voice: string) => Promise<Uint8Array>;
+  generateSpeech: (model: string, input: string, voice: string, instructions?: string) => Promise<{
+    bytes: Uint8Array;
+    mimeType: string;
+    durationMs: number | null;
+    speechPath: string;
+    usedModel: string;
+    adapter: string;
+    endpointType: string;
+  }>;
 };
 
 const openaiAdapter: ProviderAdapter = {
   async generateText(model, messages, cfg) {
-    const { response, raw } = await openaiFetch("chat/completions", {
-      model,
-      temperature: cfg.temperature ?? 0.4,
-      max_tokens: cfg.maxOutputTokens ?? 700,
-      messages,
-    });
+    const { response, raw, retryAfterMs } = await openaiFetch("chat/completions", chatCompletionBody(model, messages, cfg));
     if (!response.ok) {
-      if (isRetryableProvider(response.status, raw)) throw new Error("AI_RETRYABLE");
-      console.error("ai text", response.status, raw.slice(0, 240));
-      throw new Error("AI_PROVIDER");
+      throwIfProviderFailed(response, raw, retryAfterMs, `AI_PROVIDER:${providerErrorCode(raw)}`);
     }
     const payload = JSON.parse(raw) as { choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
     return { text: String(payload.choices?.[0]?.message?.content ?? ""), usage: parseUsage(payload) };
   },
   async generateStructured(model, messages, schema, cfg) {
-    const body = {
-      model,
-      temperature: cfg.temperature ?? 0.2,
-      max_tokens: cfg.maxOutputTokens ?? 4000,
-      messages,
-      response_format: schema
-        ? { type: "json_schema", json_schema: schema }
-        : { type: "json_object" },
-    };
-    let { response, raw } = await openaiFetch("chat/completions", body);
+    const base = chatCompletionBody(model, messages, { ...cfg, temperature: cfg.temperature ?? 0.2 });
+    let responseFormat = schema ? "json_schema" : "json_object";
+    let schemaError: string | undefined;
+    let { response, raw } = await openaiFetch("chat/completions", {
+      ...base,
+      response_format: schema ? { type: "json_schema", json_schema: schema } : { type: "json_object" },
+    });
     if (response.status === 400 && schema) {
-      ({ response, raw } = await openaiFetch("chat/completions", { ...body, response_format: { type: "json_object" } }));
+      schemaError = providerErrorCode(raw);
+      console.error("ai json_schema 400", model, schemaError, raw.slice(0, 360));
+      const loose = cloneWithoutArrayBounds(schema);
+      ({ response, raw } = await openaiFetch("chat/completions", {
+        ...base,
+        response_format: { type: "json_schema", json_schema: loose },
+      }));
+      responseFormat = "json_schema_loose";
+    }
+    if (response.status === 400 && schema) {
+      schemaError = `${schemaError ?? ""}|loose:${providerErrorCode(raw)}`.slice(0, 180);
+      console.error("ai json_schema_loose 400", model, providerErrorCode(raw));
+      ({ response, raw } = await openaiFetch("chat/completions", {
+        ...base,
+        response_format: { type: "json_object" },
+      }));
+      responseFormat = "json_object";
     }
     if (!response.ok) {
-      if (isRetryableProvider(response.status, raw)) throw new Error("AI_RETRYABLE");
-      console.error("ai structured", response.status, raw.slice(0, 240));
-      throw new Error("AI_PROVIDER");
+      throwIfProviderFailed(response, raw, 0, `AI_PROVIDER:${providerErrorCode(raw)}`);
     }
-    const payload = JSON.parse(raw) as { choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
-    return { text: String(payload.choices?.[0]?.message?.content ?? "{}"), usage: parseUsage(payload) };
+    const payload = JSON.parse(raw) as {
+      choices?: { message?: { content?: string }; finish_reason?: string }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    const text = String(payload.choices?.[0]?.message?.content ?? "{}");
+    if (payload.choices?.[0]?.finish_reason === "length") {
+      console.error("ai structured truncated", model, text.length);
+    }
+    return { text, usage: parseUsage(payload), responseFormat, schemaError };
   },
   async generateImage(model, prompt, size = "1792x1024") {
     const attempt = async (payload: Record<string, unknown>) => openaiFetch("images/generations", payload);
-    let { response, raw } = await attempt({
+    let { response, raw, retryAfterMs } = await attempt({
       model,
       prompt,
       n: 1,
@@ -406,12 +573,10 @@ const openaiAdapter: ProviderAdapter = {
       response_format: "b64_json",
     });
     if (response.status === 400) {
-      ({ response, raw } = await attempt({ model, prompt, n: 1, size }));
+      ({ response, raw, retryAfterMs } = await attempt({ model, prompt, n: 1, size }));
     }
     if (!response.ok) {
-      if (isRetryableProvider(response.status, raw)) throw new Error("AI_RETRYABLE");
-      console.error("ai image", response.status, raw.slice(0, 240));
-      throw new Error("IMAGE_FAILED");
+      throwIfProviderFailed(response, raw, retryAfterMs, "IMAGE_FAILED");
     }
     const payload = JSON.parse(raw) as { data?: { b64_json?: string; url?: string }[] };
     const b64 = String(payload.data?.[0]?.b64_json ?? "");
@@ -427,32 +592,23 @@ const openaiAdapter: ProviderAdapter = {
     if (!img.ok) throw new Error("IMAGE_FAILED");
     return new Uint8Array(await img.arrayBuffer());
   },
-  async generateSpeech(model, input, voice) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 90_000);
-    try {
-      const response = await fetch("https://api.openai.com/v1/audio/speech", {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          Authorization: `Bearer ${openaiKey()}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ model, voice, input, response_format: "mp3" }),
-      });
-      if (!response.ok) {
-        const raw = await response.text();
-        if (isRetryableProvider(response.status, raw)) throw new Error("AI_RETRYABLE");
-        console.error("ai tts", response.status, raw.slice(0, 240));
-        throw new Error("TTS_FAILED");
-      }
-      return new Uint8Array(await response.arrayBuffer());
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") throw new Error("AI_TIMEOUT");
-      throw error;
-    } finally {
-      clearTimeout(timer);
-    }
+  async generateSpeech(model, input, voice, instructions) {
+    const spoken = await speechProviderAdapter({
+      model,
+      voice,
+      instructions,
+      input,
+      format: "mp3",
+    });
+    return {
+      bytes: spoken.bytes,
+      mimeType: spoken.mimeType,
+      durationMs: spoken.durationMs,
+      speechPath: spoken.speechPath,
+      usedModel: spoken.model,
+      adapter: spoken.adapter,
+      endpointType: spoken.endpointType,
+    };
   },
 };
 
@@ -512,6 +668,8 @@ export async function generateStructured(
       return {
         text: String((cached as { text: string }).text),
         parsed: JSON.parse(String((cached as { text: string }).text)),
+        responseFormat: "cache",
+        rawResponseLength: String((cached as { text: string }).text).length,
         cached: true,
         fallbackUsed: false,
         model: route.model,
@@ -525,9 +683,24 @@ export async function generateStructured(
   }
   const provider = adapterFor(route.provider);
   const { value, meta } = await withFallback(taskType, options, (model) => provider.generateStructured(model, messages, schema, route));
+  let parsed: unknown = {};
+  try {
+    parsed = JSON.parse(value.text || "{}");
+  } catch {
+    await logUsage({ ...meta, ...value.usage, success: false, errorCode: "SCHEMA_PARSE_FAILED", options });
+    throw new Error("SCHEMA_PARSE_FAILED");
+  }
   await logUsage({ ...meta, ...value.usage, success: true, options });
   if (options?.cache !== false) await writeCache(taskType, hash, promptVersion, meta.model, { text: value.text });
-  return { text: value.text, parsed: JSON.parse(value.text || "{}"), ...meta, ...value.usage };
+  return {
+    text: value.text,
+    parsed,
+    responseFormat: value.responseFormat,
+    schemaError: value.schemaError,
+    rawResponseLength: value.text.length,
+    ...meta,
+    ...value.usage,
+  };
 }
 
 export async function generateImage(
@@ -542,12 +715,51 @@ export async function generateImage(
   return { bytes: value, ...meta };
 }
 
-export async function generateSpeech(input: string, options?: RunAiOptions) {
-  const route = await resolveAiRoute("tts_generation");
+export async function generateSpeech(
+  taskType: string,
+  script: string,
+  voice?: string,
+  instructions?: string,
+  options?: RunAiOptions,
+) {
+  let speechTask = isSpeechTask(taskType) ? taskType : "tts_generation";
+  try {
+    await getAiModelConfig(speechTask);
+  } catch {
+    speechTask = "tts_generation";
+  }
+  const route = await resolveAiRoute(speechTask);
+  const runtime = await loadRuntime();
   const provider = adapterFor(route.provider);
-  const { value, meta } = await withFallback("tts_generation", options, (model) => provider.generateSpeech(model, input, route.ttsVoice));
-  await logUsage({ ...meta, success: true, options });
-  return { bytes: value, voice: route.ttsVoice, ...meta };
+  const resolvedVoice = voice || route.ttsVoice;
+  const resolvedInstructions = instructions || runtime.ttsInstructions || COACH_SPEECH_INSTRUCTIONS;
+  const { value, meta } = await withFallback(
+    speechTask,
+    options,
+    (model) => provider.generateSpeech(model, script, resolvedVoice, resolvedInstructions),
+    1,
+  );
+  const actualModel = value.usedModel || meta.model;
+  await logUsage({
+    ...meta,
+    success: true,
+    options,
+    model: actualModel,
+    adapter: value.adapter,
+    endpointType: value.endpointType,
+  });
+  return {
+    bytes: value.bytes,
+    mimeType: value.mimeType,
+    durationMs: value.durationMs,
+    speechPath: value.speechPath,
+    adapter: value.adapter,
+    endpointType: value.endpointType,
+    voice: resolvedVoice,
+    instructionsSupported: Boolean(resolvedInstructions),
+    ...meta,
+    model: actualModel,
+  };
 }
 
 export async function moderateWithRouter(kind: "text" | "image", input: unknown) {

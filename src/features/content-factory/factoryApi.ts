@@ -40,6 +40,28 @@ export async function setFactoryProduction(enabled: boolean, maxConcurrency?: nu
   return data as FactorySettings;
 }
 
+export async function getFactoryHealth() {
+  const { data, error } = await getSupabase().rpc('admin_factory_health');
+  if (error) throw error;
+  return data as {
+    engine_state?: string;
+    stalled?: boolean;
+    blocked_reason?: string | null;
+    blocked_detail?: string | null;
+    activity?: string | null;
+    production_enabled?: boolean;
+    scheduler?: string;
+    ready_without_lesson?: number;
+    active_jobs?: number;
+    queued_jobs?: number;
+    pipeline?: number;
+    last_cron_tick_at?: string | null;
+    last_ai_call_at?: string | null;
+    last_orchestrated_at?: string | null;
+    max_concurrency?: number;
+  };
+}
+
 export async function getFactoryStats(): Promise<FactoryStats> {
   const { data, error } = await getSupabase().rpc('admin_factory_stats');
   if (error) throw error;
@@ -142,7 +164,10 @@ export async function previewMotorAll(): Promise<MotorPreview> {
 }
 
 export async function startContentMotor(confirm: boolean): Promise<MotorPreview> {
-  const { data, error } = await getSupabase().rpc('admin_factory_start_motor', { p_confirm: confirm });
+  const { data, error } = await getSupabase().rpc('admin_factory_start_motor', {
+    p_confirm: confirm,
+    p_scope_mode: 'single_topic',
+  });
   if (error) throw error;
   return data as MotorPreview;
 }

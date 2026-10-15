@@ -206,8 +206,8 @@ export function AdminCurriculumScreen() {
           <View key={row.id} style={{ gap: 6, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EDE6D8' }}>
             <AppText variant="subtitle">{row.name}</AppText>
             <AppText variant="caption" tone="muted">
-              {row.subjects ?? 0} ders · {row.topics} master konu · {row.segments ?? 0} segment · {row.lessons_ready} hafıza
-              dersi
+              {row.subjects ?? 0} ders alanı · {row.topics} master konu · {row.segments ?? 0} öğrenme segmenti ·{' '}
+              {row.lessons_ready} hafıza dersi
             </AppText>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               <Pressable

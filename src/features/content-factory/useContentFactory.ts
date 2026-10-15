@@ -8,6 +8,7 @@ import {
   approveSuggestion,
   cancelFactoryJob,
   getFactoryExamCoverage,
+  getFactoryHealth,
   getFactorySettings,
   getFactoryStats,
   pauseContentMotor,
@@ -48,6 +49,16 @@ export function useFactorySettings() {
     queryKey: ['factory-settings'],
     enabled: canManageExams(role),
     queryFn: wrap(getFactorySettings),
+  });
+}
+
+export function useFactoryHealth() {
+  const role = useAuthStore((s) => s.profile?.app_role);
+  return useQuery({
+    queryKey: ['factory-health'],
+    enabled: canManageExams(role),
+    refetchInterval: 8000,
+    queryFn: wrap(getFactoryHealth),
   });
 }
 

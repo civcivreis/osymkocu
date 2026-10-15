@@ -22,6 +22,7 @@ export type SocialPost = {
   user_id: string;
   body: string;
   kind: string;
+  content_type?: 'post' | 'story';
   created_at: string;
   subject_id: string | null;
   topic_id?: string | null;
@@ -200,6 +201,20 @@ export function useSocialPreview() {
 
 export function useSocialPosts() {
   const userId = useAuthStore((s) => s.session?.user.id);
+  const client = useQueryClient();
+  useEffect(() => {
+    if (!userId) return;
+    const invalidate = () => {
+      void client.invalidateQueries({ queryKey: ['social-posts', userId] });
+      void client.invalidateQueries({ queryKey: ['social-preview', userId] });
+    };
+    return retainChannel(`social-feed:${userId}`, (channel) =>
+      channel
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'social_posts' }, invalidate)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'post_likes' }, invalidate)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'post_comments' }, invalidate),
+    );
+  }, [client, userId]);
   return useQuery({
     queryKey: ['social-posts', userId],
     enabled: Boolean(userId),

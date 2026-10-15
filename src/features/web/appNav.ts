@@ -15,6 +15,7 @@ export type AppNavItem = {
 
 export const APP_NAV: AppNavItem[] = [
   { href: '/home', label: 'Ana Sayfa', icon: 'home-outline', iconOn: 'home', section: 'main' },
+  { href: '/koc', label: 'Koç', short: 'Koç', icon: 'flash-outline', iconOn: 'flash', section: 'main' },
   { href: '/study', label: 'Dersler', short: 'Ders', icon: 'book-outline', iconOn: 'book', section: 'main' },
   { href: '/test-merkezi', label: 'Test Merkezi', icon: 'grid-outline', iconOn: 'grid', section: 'main' },
   { href: '/sistem-sinavlari', label: 'Sistem Sınavları', short: 'Sınav', icon: 'school-outline', iconOn: 'school', section: 'main' },
@@ -35,6 +36,7 @@ export function isAppNavActive(pathname: string, href: string) {
   if (href === '/test-merkezi') {
     return pathname === '/test-merkezi' || pathname === '/practice' || pathname === '/notebook';
   }
+  if (href === '/koc') return pathname === '/koc';
   if (href === '/study') {
     return pathname === '/study' || pathname === '/lesson' || pathname.startsWith('/dersler');
   }
@@ -45,6 +47,7 @@ export function isAppNavActive(pathname: string, href: string) {
 
 export function titleForPath(pathname: string) {
   if (isAppNavActive(pathname, '/')) return 'Ana Sayfa';
+  if (pathname === '/koc') return 'Sınav Koçu';
   if (pathname.startsWith('/dersler/hafiza/')) return 'Hafıza Dersi';
   if (isAppNavActive(pathname, '/study')) return 'Dersler';
   if (isAppNavActive(pathname, '/test-merkezi')) return 'Test Merkezi';

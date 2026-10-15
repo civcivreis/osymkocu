@@ -166,6 +166,20 @@ export function HomeScreen() {
   );
 
   const dueReviews = (reviews.data ?? []).filter((row) => row.status === 'ready' || new Date(row.scheduled_at).getTime() <= Date.now());
+  const coachCta = (
+    <Card>
+      <AppText variant="subtitle">Bugünkü plana devam</AppText>
+      <AppText variant="caption" tone="muted">
+        Koç sıradaki mikro dersi, tekrarları ve molayı senin için seçer.
+      </AppText>
+      <Pressable
+        onPress={() => router.push('/koc')}
+        style={{ alignSelf: 'flex-start', marginTop: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.accent }}>
+        <AppText tone="inverse">Çalışmaya başla</AppText>
+      </Pressable>
+    </Card>
+  );
+
   const reviewCard =
     dueReviews.length > 0 ? (
       <Card header="Bugünkü Tekrarlar">
@@ -424,7 +438,7 @@ export function HomeScreen() {
         {stats}
         {isDesktop ? (
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 24 }}>
-            <View style={{ flex: 2, gap: 16, minWidth: 0 }}>{weeklyCard}{studyPlanCard}{reviewCard}{focusCard}{tasksCard}</View>
+            <View style={{ flex: 2, gap: 16, minWidth: 0 }}>{coachCta}{weeklyCard}{studyPlanCard}{reviewCard}{focusCard}{tasksCard}</View>
             <View style={{ flex: 1, gap: 16, minWidth: 0 }}>
               {examCard}
               <WeeklyXpCard compact />
@@ -436,6 +450,7 @@ export function HomeScreen() {
         ) : (
           <>
             {examCard}
+            {coachCta}
             {weeklyCard}
             <WeeklyXpCard compact />
             {studyPlanCard}

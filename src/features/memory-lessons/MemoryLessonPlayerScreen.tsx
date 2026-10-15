@@ -13,11 +13,14 @@ import { APP_NAME } from '@/src/lib/brand';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 import { useAuthStore } from '@/src/stores/authStore';
 
+import { actGuided, fetchLessonTimeline, recordGuidedAttempt } from '@/src/features/guided-study/api';
+import { CoachEventCard } from '@/src/features/guided-study/CoachEventCard';
+import type { TimelineEvent } from '@/src/features/guided-study/types';
 import { CheckpointCard } from './CheckpointCard';
 import { SceneCanvas } from './SceneCanvas';
 import { checkpointQuestions } from './playerApi';
 import { logLessonStarted } from './playerApi';
-import { checkpointTriggers, formatMs } from './playerUtils';
+import { checkpointTriggers, formatMs, retryTriggerMs } from './playerUtils';
 import {
   useCompleteNarration,
   useCompleteReview,
@@ -35,8 +38,9 @@ const RATES = [0.8, 1, 1.25, 1.5] as const;
 export function MemoryLessonPlayerScreen() {
   const { colors, radius, spacing } = useAppTheme();
   const { isDesktop } = useBreakpoint();
-  const params = useLocalSearchParams<{ lessonId?: string; examCatalogId?: string; mode?: string; queueId?: string }>();
+  const params = useLocalSearchParams<{ lessonId?: string; examCatalogId?: string; mode?: string; queueId?: string; sessionId?: string }>();
   const lessonId = String(params.lessonId ?? '');
+  const sessionId = params.sessionId ? String(params.sessionId) : undefined;
   const examCatalogId = params.examCatalogId ? String(params.examCatalogId) : undefined;
   const reviewMode = params.mode === 'review' || params.mode === 'tekrar';
   const pack = useMemoryLessonPlayerPackage(lessonId || undefined);
@@ -65,7 +69,7 @@ export function MemoryLessonPlayerScreen() {
   const urls = media.data ?? {};
   const narrationUrl = lesson?.narration_key ? urls[lesson.narration_key] : undefined;
   const progress = pack.data?.progress;
-  const answeredIds = new Set((pack.data?.answers ?? []).map((row) => row.checkpoint_question_id));
+  const answeredIds = new Set((pack.data?.answers ?? []).filter((row) => row.correct).map((row) => row.checkpoint_question_id));
   const anchors = pack.data?.anchors ?? [];
 
   const finishNarration = () => {
@@ -75,6 +79,9 @@ export function MemoryLessonPlayerScreen() {
       void completeReview.mutateAsync(String(params.queueId)).catch(() => undefined);
     } else if (!reviewMode) {
       void completeNarration.mutateAsync(lessonId).catch(() => undefined);
+    }
+    if (sessionId) {
+      void actGuided(sessionId, 'lesson_done', { lesson_id: lessonId }).catch(() => undefined);
     }
   };
 
@@ -125,6 +132,7 @@ export function MemoryLessonPlayerScreen() {
       fastRule={lesson.fast_rule ?? null}
       examTechnique={lesson.exam_technique ?? null}
       memoryHooks={Array.isArray(lesson.memory_hooks) ? lesson.memory_hooks.map(String) : []}
+      sessionId={sessionId}
     />
   );
 
@@ -199,6 +207,7 @@ function PlayerBody(props: {
   fastRule?: string | null;
   examTechnique?: Record<string, unknown> | null;
   memoryHooks?: string[];
+  sessionId?: string;
 }) {
   const { colors, radius } = useAppTheme();
   if (!props.narrationUrl) {
@@ -243,6 +252,7 @@ function AudioSession({
   fastRule,
   examTechnique,
   memoryHooks,
+  sessionId,
 }: {
   url: string;
   urls: Record<string, string>;
@@ -266,9 +276,13 @@ function AudioSession({
   fastRule?: string | null;
   examTechnique?: Record<string, unknown> | null;
   memoryHooks?: string[];
+  sessionId?: string;
 }) {
   const { colors, radius } = useAppTheme();
   const player = useAudioPlayer(url);
+  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [card, setCard] = useState<TimelineEvent | null>(null);
+  const seenCards = useRef(new Set<string>());
   const status = useAudioPlayerStatus(player);
   const barWidth = useRef(1);
   const lastSaved = useRef(0);
@@ -279,6 +293,8 @@ function AudioSession({
   const [resumePrompt, setResumePrompt] = useState(resumeMs > 4000 && !reviewMode);
   const [activeCheckpoint, setActiveCheckpoint] = useState<MemoryLessonQuestion | null>(null);
   const [answered, setAnswered] = useState<Set<string>>(answeredIds);
+  const [retries, setRetries] = useState<{ question: MemoryLessonQuestion; triggerMs: number }[]>([]);
+  const [gateKey, setGateKey] = useState(0);
   const [mediaFail, setMediaFail] = useState(false);
   const touch = useTouchLessonProgress();
   const submit = useSubmitCheckpoint();
@@ -286,6 +302,8 @@ function AudioSession({
   const isVirtual = profile?.profile_type === 'virtual';
 
   const positionMs = Math.round((status.currentTime ?? 0) * 1000);
+  const posRef = useRef(positionMs);
+  posRef.current = positionMs;
   const durationMs = Math.max(Math.round((status.duration ?? 0) * 1000), durationHint, 1);
   const playing = Boolean(status.playing);
   const current = useMemo(() => {
@@ -294,7 +312,10 @@ function AudioSession({
     return ordered.find((scene) => positionMs >= scene.start_ms && positionMs < scene.end_ms) ?? ordered[ordered.length - 1];
   }, [positionMs, scenes]);
   const imageUrl = current?.asset_key ? urls[current.asset_key] : undefined;
-  const triggers = useMemo(() => checkpointTriggers(scenes, checkpoints, durationMs), [checkpoints, durationMs, scenes]);
+  const triggers = useMemo(() => {
+    const base = checkpointTriggers(scenes, checkpoints, durationMs);
+    return [...base, ...retries].sort((a, b) => a.triggerMs - b.triggerMs);
+  }, [checkpoints, durationMs, retries, scenes]);
 
   useEffect(() => {
     if (started.current) return;
@@ -308,6 +329,36 @@ function AudioSession({
   }, [player, rate]);
 
   useEffect(() => {
+    void fetchLessonTimeline(lessonId).then(setTimeline).catch(() => undefined);
+  }, [lessonId]);
+
+  useEffect(() => {
+    return () => {
+      if (!sessionId) return;
+      void actGuided(sessionId, 'save_resume', {
+        audio_ms: posRef.current,
+        status: 'paused',
+        lesson_id: lessonId,
+      }).catch(() => undefined);
+    };
+  }, [lessonId, sessionId]);
+
+  useEffect(() => {
+    if (card || activeCheckpoint || resumePrompt) return;
+    const hit = timeline.find(
+      (row) =>
+        row.event_type === 'card_show' &&
+        !seenCards.current.has(row.id) &&
+        positionMs >= row.appear_at_ms &&
+        positionMs <= row.appear_at_ms + 2500,
+    );
+    if (!hit) return;
+    seenCards.current.add(hit.id);
+    setCard(hit);
+    if (hit.pause_audio) player.pause();
+  }, [activeCheckpoint, card, player, positionMs, resumePrompt, timeline]);
+
+  useEffect(() => {
     const crossed = triggers.find(
       (row) =>
         !answered.has(row.question.id) &&
@@ -319,6 +370,7 @@ function AudioSession({
     prevMs.current = positionMs;
     if (crossed) {
       player.pause();
+      setGateKey((n) => n + 1);
       setActiveCheckpoint(crossed.question);
     }
   }, [activeCheckpoint, answered, player, positionMs, resumePrompt, reviewMode, triggers]);
@@ -334,9 +386,16 @@ function AudioSession({
     if (completed.current || phase === 'done' || activeCheckpoint) return;
     const ended = Boolean((status as { didJustFinish?: boolean }).didJustFinish) || (durationMs > 1500 && positionMs >= durationMs - 400 && !playing && positionMs > 1200);
     if (!ended) return;
+    const pending = retries.find((row) => !answered.has(row.question.id));
+    if (pending) {
+      player.pause();
+      setActiveCheckpoint(pending.question);
+      setGateKey((n) => n + 1);
+      return;
+    }
     completed.current = true;
     onComplete();
-  }, [activeCheckpoint, durationMs, onComplete, phase, playing, positionMs, status]);
+  }, [activeCheckpoint, answered, durationMs, onComplete, phase, player, playing, positionMs, retries, status]);
 
   const seek = (ratio: number) => {
     if (activeCheckpoint) return;
@@ -354,6 +413,7 @@ function AudioSession({
         lessonId,
         setType: 'lesson_final',
         count: '10',
+        sessionId: sessionId ?? '',
       },
     });
   };
@@ -368,9 +428,14 @@ function AudioSession({
             5 sn kural: {fastRule}
           </AppText>
         ) : null}
-        <AppText>
+          <AppText>
           Süre {formatMs(durationMs)} · Checkpoint {checkpointCorrect} / {checkpointTotal} doğru
         </AppText>
+        {checkpointCorrect < checkpointTotal ? (
+          <AppText variant="caption" tone="muted">
+            Kaçırdığın ara sorular 2 saat sonra tekrar kuyruğuna düşer.
+          </AppText>
+        ) : null}
         {journey.length ? (
           <View style={{ gap: 4 }}>
             <AppText variant="label">Bugünkü Hafıza Yolculuğun</AppText>
@@ -408,7 +473,7 @@ function AudioSession({
           <AppText tone="accent">Sonra Yap</AppText>
         </Pressable>
         {next?.lesson_id ? (
-          <Pressable onPress={() => router.replace(`/dersler/hafiza/${next.lesson_id}?examCatalogId=${examCatalogId ?? ''}` as never)}>
+          <Pressable onPress={() => router.replace((sessionId ? '/koc' : `/dersler/hafiza/${next.lesson_id}?examCatalogId=${examCatalogId ?? ''}`) as never)}>
             <AppText tone="accent">Sonraki Derse Geç · {next.lesson_title}</AppText>
           </Pressable>
         ) : null}
@@ -457,9 +522,21 @@ function AudioSession({
         </View>
       ) : null}
       <View style={{ position: 'relative' }}>
-        <SceneCanvas scene={current} imageUrl={imageUrl} emphasizeAnchor={Boolean(current?.visual_anchor) && positionMs - (current?.start_ms ?? 0) < 2200} />
+        <SceneCanvas scene={current} imageUrl={imageUrl} positionMs={positionMs} />
+        {card && !activeCheckpoint ? (
+          <CoachEventCard
+            title={String(card.payload.title ?? card.card_type ?? 'KOÇ')}
+            body={String(card.payload.body ?? '')}
+            pause={card.pause_audio}
+            onDismiss={() => {
+              setCard(null);
+              if (card.pause_audio) player.play();
+            }}
+          />
+        ) : null}
         {activeCheckpoint ? (
           <CheckpointCard
+            key={`${activeCheckpoint.id}-${gateKey}`}
             question={activeCheckpoint}
             reinforcement={current?.reinforcement_note}
             submitting={submit.isPending}
@@ -473,8 +550,33 @@ function AudioSession({
                 questionId: activeCheckpoint.id,
                 answer,
               });
-              setAnswered((prev) => new Set(prev).add(activeCheckpoint.id));
+              if (result.correct) {
+                setAnswered((prev) => new Set(prev).add(activeCheckpoint.id));
+                setRetries((prev) => prev.filter((row) => row.question.id !== activeCheckpoint.id));
+              } else {
+                const at = retryTriggerMs(scenes, positionMs, durationMs);
+                setRetries((prev) => [
+                  ...prev.filter((row) => row.question.id !== activeCheckpoint.id),
+                  { question: activeCheckpoint, triggerMs: at },
+                ]);
+                setGateKey((n) => n + 1);
+              }
               AnalyticsProvider.track('checkpoint_answered', { lessonId, correct: result.correct, is_virtual: isVirtual });
+              if (sessionId) {
+                void recordGuidedAttempt({
+                  sessionId,
+                  selected: answer,
+                  correctAnswer: result.correct_answer,
+                  isCorrect: result.correct,
+                  memoryQuestionId: activeCheckpoint.id,
+                  lessonId,
+                  pattern: String(activeCheckpoint.question_strategy ?? 'checkpoint'),
+                }).catch(() => undefined);
+                const nextAnswered = result.correct ? new Set(answered).add(activeCheckpoint.id) : answered;
+                if (result.correct && checkpoints.length > 0 && nextAnswered.size >= checkpoints.length) {
+                  void actGuided(sessionId, 'checkpoint_set_done', { lesson_id: lessonId }).catch(() => undefined);
+                }
+              }
               return result;
             }}
           />

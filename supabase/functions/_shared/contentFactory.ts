@@ -11,6 +11,7 @@ export type FactoryJob = {
   topic_id: string | null;
   job_type: string;
   status: string;
+  priority?: number;
   attempt_count: number;
   max_attempts: number;
   stage_text_done: boolean;
@@ -43,12 +44,16 @@ export function envConcurrency(fallback: number) {
 
 export async function invokeFunction(name: string, body: unknown, req: Request) {
   const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/${name}`;
+  const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const anon = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "";
+  const token = service || anon;
   const response = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: req.headers.get("Authorization") ?? "",
-      apikey: Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "",
+      Authorization: token ? `Bearer ${token}` : (req.headers.get("Authorization") ?? ""),
+      apikey: token,
       "Content-Type": "application/json",
+      "x-factory-wake": req.headers.get("x-factory-wake") ?? Deno.env.get("FACTORY_WAKE_SECRET") ?? "",
     },
     body: JSON.stringify(body),
   });
@@ -101,12 +106,13 @@ type LessonRow = {
   narration_key: string | null;
   canonical_topic_id: string | null;
   lesson_generation_hash?: string | null;
+  media_next_retry_at?: string | null;
 };
 
 export async function loadLesson(admin: SupabaseClient, id: string | null) {
   if (!id) return null;
   const { data } = await admin.from("memory_lessons").select(
-    "id, status, narration, generation_status, pedagogy_score, academic_pass, fast_rule, media_generation_status, narration_key, canonical_topic_id, lesson_generation_hash",
+    "id, status, narration, generation_status, pedagogy_score, academic_pass, fast_rule, media_generation_status, narration_key, canonical_topic_id, lesson_generation_hash, media_next_retry_at",
   ).eq("id", id).maybeSingle();
   return (data as LessonRow | null) ?? null;
 }

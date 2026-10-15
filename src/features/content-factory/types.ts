@@ -16,6 +16,12 @@ export type FactorySettings = {
   engine_state?: 'paused' | 'running' | 'stopping' | 'error' | string;
   last_idle_reason?: string | null;
   last_orchestrated_at?: string | null;
+  factory_blocked_reason?: string | null;
+  factory_blocked_detail?: string | null;
+  current_activity?: string | null;
+  stall_detected_at?: string | null;
+  last_cron_tick_at?: string | null;
+  last_ai_call_at?: string | null;
   max_concurrency: number;
   question_pool_target?: number;
   curriculum_workers?: number;
@@ -24,6 +30,12 @@ export type FactorySettings = {
   tts_workers?: number;
   question_workers?: number;
   curriculum_sync_interval?: string;
+  factory_run_job_cap?: number;
+  scope_mode?: 'single_topic' | 'single_subject' | 'single_exam' | 'full';
+  scope_exam_code?: string;
+  scope_subject_name?: string;
+  scope_max_topics?: number;
+  allow_full_unbounded?: boolean;
   updated_at?: string;
 };
 
@@ -39,6 +51,8 @@ export type FactoryExamCoverage = {
   subjects?: number;
   topics: number;
   segments?: number;
+  lesson_topics?: number;
+  by_subject?: { name: string; master: number; segs: number; ready: number; lessons: number }[];
   mapped_topics?: number;
   lessons_ready: number;
   questions_ready: number;
@@ -54,6 +68,10 @@ export type MotorPreview = {
   needs_confirm?: boolean;
   production_enabled?: boolean;
   engine_state?: string;
+  scope_mode?: string;
+  scope_exam_code?: string;
+  scope_subject_name?: string;
+  factory_run_job_cap?: number;
   skips?: { exam?: string; reason?: string }[];
   exams?: {
     exam: string;

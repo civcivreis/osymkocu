@@ -191,24 +191,36 @@ export async function generateMemoryLessonMedia(input: {
   mode?: MemoryLessonMediaMode;
   sceneId?: string;
 }): Promise<MemoryLesson> {
-  const invoked = await getSupabase().functions.invoke('memory-lesson-generate-media', {
-    body: {
-      lesson_id: input.lessonId,
-      mode: input.mode ?? 'missing',
-      scene_id: input.sceneId,
-    },
-  });
-  const payload = invoked.data as { lesson?: MemoryLesson; error?: { code?: string; message?: string } } | null;
-  if (invoked.error || payload?.error || !payload?.lesson) {
-    console.warn('[memory-lesson-generate-media]', invoked.error, payload);
-    const code = payload?.error?.code ?? '';
-    if (code === 'AI_NOT_CONFIGURED') throw new Error('Üretim anahtarı yapılandırılmamış.');
-    if (code === 'NO_CONTENT') throw new Error('Önce anlatım ve sahneler üretilmeli.');
-    if (code === 'TTS_FAILED') throw new Error('Seslendirme oluşturulamadı.');
-    if (code === 'ADMIN_ONLY') throw new Error('Bu işlem için admin yetkisi gerekir.');
-    throw new Error(payload?.error?.message ?? 'Medya üretilemedi.');
+  let last: MemoryLesson | null = null;
+  const startMode = input.mode ?? 'missing';
+  for (let step = 0; step < 16; step += 1) {
+    const invoked = await getSupabase().functions.invoke('memory-lesson-generate-media', {
+      body: {
+        lesson_id: input.lessonId,
+        mode: startMode === 'all' && step > 0 ? 'missing' : startMode,
+        scene_id: input.sceneId,
+      },
+    });
+    const payload = invoked.data as {
+      lesson?: MemoryLesson;
+      pending?: boolean;
+      error?: { code?: string; message?: string };
+    } | null;
+    if (invoked.error || payload?.error || !payload?.lesson) {
+      console.warn('[memory-lesson-generate-media]', invoked.error, payload);
+      if (last?.media_generation_status === 'ready' || last?.narration_key) return last as MemoryLesson;
+      const code = payload?.error?.code ?? '';
+      if (code === 'AI_NOT_CONFIGURED') throw new Error('Üretim anahtarı yapılandırılmamış.');
+      if (code === 'NO_CONTENT') throw new Error('Önce anlatım ve sahneler üretilmeli.');
+      if (code === 'TTS_FAILED') throw new Error('Seslendirme oluşturulamadı.');
+      if (code === 'ADMIN_ONLY') throw new Error('Bu işlem için admin yetkisi gerekir.');
+      throw new Error(payload?.error?.message ?? 'Medya üretilemedi.');
+    }
+    last = payload.lesson;
+    if (!payload.pending || input.mode === 'scene' || input.mode === 'narration') return last;
   }
-  return payload.lesson;
+  if (last) return last;
+  throw new Error('Medya üretilemedi.');
 }
 
 export async function getLessonMediaUrls(lessonId: string): Promise<Record<string, string>> {
@@ -230,5 +242,10 @@ export async function approveMemoryLesson(id: string) {
 
 export async function publishMemoryLesson(id: string) {
   const { error } = await getSupabase().rpc('admin_publish_memory_lesson', { p_id: id });
+  if (error) throw error;
+}
+
+export async function deleteMemoryLesson(id: string) {
+  const { error } = await getSupabase().rpc('admin_delete_memory_lesson', { p_id: id });
   if (error) throw error;
 }

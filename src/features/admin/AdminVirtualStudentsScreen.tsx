@@ -27,6 +27,21 @@ type Overview = {
   daily_xp?: number;
   jobs?: { queued?: number; running?: number; failed?: number };
   conversation_errors?: number;
+  scheduler?: string;
+  stall?: boolean;
+  stall_message?: string | null;
+  last_virtual_activity?: string | null;
+  last_tick_at?: string | null;
+  eligible_now?: number;
+  rooms?: number;
+  rooms_target?: number;
+  surfaces?: {
+    lesson?: string | null;
+    test?: string | null;
+    room?: string | null;
+    social?: string | null;
+    group_chat?: string | null;
+  };
   profiles?: {
     id: string;
     display_name: string;
@@ -144,13 +159,27 @@ export function AdminVirtualStudentsScreen() {
 
       <View style={adminCard}>
         <AppText variant="subtitle">Durum</AppText>
+        {row.stall ? (
+          <AppText tone="danger">{String(row.stall_message ?? 'Sanal öğrenci motorunda ilerleme yok.')}</AppText>
+        ) : null}
         <AppText>
-          Açık {row.enabled_profiles ?? 0} · çevrimiçi {row.online ?? 0} · ders {row.studying ?? 0} · test {row.testing ?? 0} · oda{' '}
-          {row.in_rooms ?? 0} · sosyal {row.social ?? 0}
+          Zamanlayıcı {String(row.scheduler ?? '—')} · Açık {row.enabled_profiles ?? 0} · şu an uygun {row.eligible_now ?? 0} ·
+          çevrimiçi {row.online ?? 0} · ders {row.studying ?? 0} · test {row.testing ?? 0} · oda {row.in_rooms ?? 0} · sosyal{' '}
+          {row.social ?? 0}
         </AppText>
         <AppText variant="caption">
-          Bugünkü sanal XP {row.daily_xp ?? 0} · kuyruk {row.jobs?.queued ?? 0} · hata {row.jobs?.failed ?? 0} · sohbet hatası{' '}
-          {row.conversation_errors ?? 0}
+          Odalar {row.rooms ?? 0}/{row.rooms_target ?? 6} · bugünkü sanal XP {row.daily_xp ?? 0} · kuyruk {row.jobs?.queued ?? 0} ·
+          çalışan {row.jobs?.running ?? 0} · hata {row.jobs?.failed ?? 0}
+        </AppText>
+        <AppText variant="caption" tone="muted">
+          Son test {row.surfaces?.test ? String(row.surfaces.test) : 'yok'} · son sosyal{' '}
+          {row.surfaces?.social ? String(row.surfaces.social) : 'yok'} · son oda{' '}
+          {row.surfaces?.room ? String(row.surfaces.room) : 'yok'} · son grup sohbeti{' '}
+          {row.surfaces?.group_chat ? String(row.surfaces.group_chat) : 'yok'}
+        </AppText>
+        <AppText variant="caption" tone="muted">
+          Son aktivite {row.last_virtual_activity ? String(row.last_virtual_activity) : 'yok'} · son tik{' '}
+          {row.last_tick_at ? String(row.last_tick_at) : 'yok'}
         </AppText>
       </View>
 

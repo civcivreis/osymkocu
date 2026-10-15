@@ -19,14 +19,14 @@ async function ensureLesson(job: FactoryJob, req: Request) {
   if (!job.topic_id) throw new Error("NO_TOPIC");
   const created = await invokeFunction("memory-lesson-create", {
     topic_id: job.topic_id,
-    unit_id: job.unit_id,
-    subject_id: job.subject_id,
-    exam_id: job.exam_id,
     lesson_scope: job.lesson_scope || "core",
     usage_mode: job.coverage_mode || "core",
   }, req);
   const lessonId = (created.data as { lesson?: { id?: string } } | null)?.lesson?.id;
-  if (!created.ok || !lessonId) throw new Error("CREATE_FAILED");
+  if (!created.ok || !lessonId) {
+    const detail = JSON.stringify(created.data)?.slice(0, 240) ?? "";
+    throw new Error(`CREATE_FAILED:${created.status}:${detail}`);
+  }
   return lessonId;
 }
 
@@ -53,6 +53,28 @@ Deno.serve(async (req) => {
     await admin.rpc("factory_orchestrate_internal");
     const { data: settings } = await admin.from("content_factory_settings").select("*").eq("id", 1).maybeSingle();
     const enabled = Boolean(settings?.production_enabled) || settings?.engine_state === "running" || settings?.engine_state === "stopping";
+    if (settings?.engine_state === "running") {
+      const { data: pipes } = await admin.rpc("factory_claim_pipeline_jobs_internal", { p_limit: 1 });
+      const pipeJobs = Array.isArray(pipes) ? pipes : pipes ? [pipes] : [];
+      for (const pipe of pipeJobs as Array<{ id: string; job_kind: string; canonical_topic_id?: string; unit_id?: string; exam_id?: string; curriculum_version_id?: string }>) {
+        if (pipe.job_kind === "decompose_topic" && pipe.canonical_topic_id) {
+          const dec = await invokeFunction("curriculum-decompose", {
+            mode: "topic",
+            canonical_topic_id: pipe.canonical_topic_id,
+            exam_id: pipe.exam_id,
+            curriculum_version_id: pipe.curriculum_version_id,
+          }, req);
+          await admin.from("factory_pipeline_jobs").update({
+            status: dec.ok ? "needs_review" : "failed",
+            last_error: dec.ok ? null : "decompose_failed",
+            updated_at: new Date().toISOString(),
+          }).eq("id", pipe.id);
+        } else {
+          await admin.from("factory_pipeline_jobs").update({ status: "skipped", updated_at: new Date().toISOString() }).eq("id", pipe.id);
+        }
+      }
+    }
+    await admin.rpc("refresh_factory_health");
     const concurrency = envConcurrency(Number(settings?.max_concurrency ?? 2));
 
     const { data: running } = await admin
@@ -63,7 +85,7 @@ Deno.serve(async (req) => {
       .limit(concurrency);
 
     const jobs: FactoryJob[] = (running ?? []) as FactoryJob[];
-    if (settings?.engine_state === "running" && jobs.length < concurrency) {
+    if (jobs.length < concurrency) {
       const { data: claimed } = await admin.rpc("factory_claim_jobs_internal", { p_limit: concurrency - jobs.length });
       const extra = Array.isArray(claimed) ? claimed as FactoryJob[] : claimed ? [claimed as FactoryJob] : [];
       for (const job of extra) {
@@ -93,9 +115,10 @@ Deno.serve(async (req) => {
 
 async function advanceJob(admin: ReturnType<typeof serviceClient>, job: FactoryJob, req: Request) {
   try {
-    if (job.canonical_topic_id) {
+    if (job.canonical_topic_id && (job.priority ?? 0) < 1000) {
       const { data: blocked } = await admin.rpc("topic_ordering_blocks_generation", { p_topic: job.canonical_topic_id });
       if (blocked) {
+        await saveJob(admin, job, { status: "queued", locked_until: null });
         await appendEvent(admin, job, "ORDERING_REVIEW", "Önkoşul incelemesi bekleniyor; ders üretimi atlandı.");
         return "queued";
       }
@@ -135,9 +158,15 @@ async function advanceJob(admin: ReturnType<typeof serviceClient>, job: FactoryJ
         }
       }
       await saveJob(admin, job, { status: "generating_text", factory_stage: "lesson_text_ready", locked_until: new Date(Date.now() + 12 * 60_000).toISOString() });
-      const gen = await invokeFunction("memory-lesson-generate", { lessonId }, req);
+      const gen = await invokeFunction("memory-lesson-generate", { lesson_id: lessonId }, req);
       if (!gen.ok) {
-        await failJob(admin, job, "TEXT_FAILED", "Metin üretilemedi.");
+        const failCode = String((gen.data as { error?: { code?: string } } | null)?.error?.code ?? "TEXT_FAILED").slice(0, 48);
+        await failJob(
+          admin,
+          job,
+          failCode === "TEXT_FAILED" ? "TEXT_FAILED" : failCode,
+          `Metin üretilemedi ${gen.status} ${JSON.stringify(gen.data)?.slice(0, 280)}`,
+        );
         return "failed";
       }
       if (lessonId) {
@@ -174,7 +203,7 @@ async function advanceJob(admin: ReturnType<typeof serviceClient>, job: FactoryJ
     if (counts.finals !== 10 || counts.checkpoints < 2 || job.job_type === "questions_only") {
       if (counts.finals !== 10 || counts.checkpoints < 2) {
         await saveJob(admin, job, { status: "generating_questions" });
-        const gen = await invokeFunction("memory-lesson-generate", { lessonId }, req);
+        const gen = await invokeFunction("memory-lesson-generate", { lesson_id: lessonId }, req);
         if (!gen.ok) {
           await failJob(admin, job, "QUESTIONS_FAILED", "Sorular üretilemedi.");
           return "failed";
@@ -203,9 +232,8 @@ async function advanceJob(admin: ReturnType<typeof serviceClient>, job: FactoryJ
           curriculum_version_id: job.curriculum_version_id,
           exam_catalog_id: job.exam_id,
         }, req);
-        if (!pool.ok && pool.status !== 200) {
-          await failJob(admin, job, "POOL_FAILED", "Soru havuzu üretilemedi.");
-          return "failed";
+        if (!pool.ok) {
+          await appendEvent(admin, job, "POOL_FAILED", `Soru havuzu atlandı ${pool.status} ${JSON.stringify(pool.data)?.slice(0, 180)}`);
         }
       }
       await saveJob(admin, job, { stage_pool_done: true });
@@ -224,8 +252,9 @@ async function advanceJob(admin: ReturnType<typeof serviceClient>, job: FactoryJ
 
     return await runMedia(admin, job, req);
   } catch (error) {
-    const code = error instanceof Error && error.message === "NO_TOPIC" ? "NO_TOPIC" : "STAGE_FAILED";
-    await failJob(admin, job, code, "Üretim adımı tamamlanamadı.");
+    const raw = error instanceof Error ? error.message : "UNKNOWN";
+    const code = raw.startsWith("CREATE_FAILED") ? "CREATE_FAILED" : raw.slice(0, 40);
+    await failJob(admin, job, code, raw.slice(0, 400));
     return "failed";
   }
 }
@@ -249,10 +278,29 @@ async function runMedia(admin: ReturnType<typeof serviceClient>, job: FactoryJob
     await finishIfReady(admin, job, lessonId);
     return "generating_media";
   }
+  const existingRetry = existing as { media_next_retry_at?: string | null } | null;
+  if (existingRetry?.media_next_retry_at && new Date(existingRetry.media_next_retry_at).getTime() > Date.now()) {
+    await saveJob(admin, job, {
+      status: "queued",
+      factory_stage: "media_ready",
+      locked_until: existingRetry.media_next_retry_at,
+    });
+    await appendEvent(admin, job, "RATE_LIMIT_WAIT", `Medya ${existingRetry.media_next_retry_at} sonrası.`);
+    return "generating_media";
+  }
   await saveJob(admin, job, { status: "generating_media", factory_stage: "media_ready", locked_until: new Date(Date.now() + 12 * 60_000).toISOString() });
-  const media = await invokeFunction("memory-lesson-generate-media", { lessonId, mode: "missing" }, req);
+  const mediaMode = existing?.narration_key ? "missing" : "narration";
+  const media = await invokeFunction("memory-lesson-generate-media", { lesson_id: lessonId, mode: mediaMode }, req);
   if (!media.ok) {
-    await failJob(admin, job, "MEDIA_FAILED", "Medya üretilemedi.");
+    const code = String((media.data as { error?: { code?: string } } | null)?.error?.code ?? "MEDIA_FAILED");
+    if (media.status === 429 || code === "RATE_LIMITED") {
+      const wait = Number((media.data as { error?: { retry_after_ms?: number } } | null)?.error?.retry_after_ms ?? 20_000);
+      const next = new Date(Date.now() + Math.min(Math.max(wait, 5000), 90_000)).toISOString();
+      await saveJob(admin, job, { status: "queued", factory_stage: "media_ready", locked_until: next, error_code: "RATE_LIMITED", error_message: `429 ${code}` });
+      await appendEvent(admin, job, "RATE_LIMITED", `Provider 429, next ${next}`);
+      return "generating_media";
+    }
+    await failJob(admin, job, code.slice(0, 40), "Medya üretilemedi.");
     return "failed";
   }
   const lesson = await loadLesson(admin, lessonId);

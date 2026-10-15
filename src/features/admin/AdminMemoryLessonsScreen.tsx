@@ -3,13 +3,14 @@ import { useMemo, useState } from 'react';
 import { Pressable, View, useWindowDimensions } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
-import { toastError, toastSuccess } from '@/src/components/ui/feedbackStore';
+import { askConfirm, toastError, toastSuccess } from '@/src/components/ui/feedbackStore';
 import { AdminNewLessonModal } from '@/src/features/admin/AdminNewLessonModal';
 import { adminBtn, adminCard, adminGhost } from '@/src/features/admin/adminUi';
 import { mapAdminError } from '@/src/features/admin/roles';
 import { testLessonStorage } from '@/src/features/memory-lessons/memoryLessonApi';
 import {
   useAdminMemoryLessons,
+  useDeleteMemoryLesson,
   useGenerateMemoryLesson,
   useGenerateMemoryLessonMedia,
   usePublishMemoryLesson,
@@ -46,6 +47,7 @@ export function AdminMemoryLessonsScreen() {
   const generate = useGenerateMemoryLesson();
   const generateMedia = useGenerateMemoryLessonMedia();
   const publish = usePublishMemoryLesson();
+  const remove = useDeleteMemoryLesson();
   const [modalOpen, setModalOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [r2Busy, setR2Busy] = useState(false);
@@ -152,6 +154,15 @@ export function AdminMemoryLessonsScreen() {
             withBusy(row.id, generateMedia.mutateAsync({ lessonId: row.id, mode: 'missing' }), 'Medya üretildi')
           }
           onPublish={() => withBusy(row.id, publish.mutateAsync(row.id), 'Yayınlandı')}
+          onDelete={() =>
+            askConfirm({
+              title: 'Dersi sil?',
+              subtitle: `${row.title} kalıcı silinir. Yayın ve taslak dahil.`,
+              confirmLabel: 'Sil',
+              danger: true,
+              onConfirm: () => withBusy(row.id, remove.mutateAsync(row.id), 'Ders silindi'),
+            })
+          }
         />
       ))}
 
@@ -170,6 +181,7 @@ function LessonRow({
   onGenerate,
   onMedia,
   onPublish,
+  onDelete,
 }: {
   row: MemoryLesson;
   compact: boolean;
@@ -179,6 +191,7 @@ function LessonRow({
   onGenerate: () => void;
   onMedia: () => void;
   onPublish: () => void;
+  onDelete: () => void;
 }) {
   const actions = (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, flex: 1.4 }}>
@@ -196,6 +209,9 @@ function LessonRow({
       </Pressable>
       <Pressable disabled={busy || row.status !== 'approved'} onPress={onPublish} style={[adminGhost, busy ? { opacity: 0.6 } : null]}>
         <AppText variant="caption">Yayınla</AppText>
+      </Pressable>
+      <Pressable disabled={busy} onPress={onDelete} style={[adminGhost, busy ? { opacity: 0.6 } : null]}>
+        <AppText variant="caption">Sil</AppText>
       </Pressable>
     </View>
   );

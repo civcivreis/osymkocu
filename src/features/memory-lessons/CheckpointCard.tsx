@@ -47,9 +47,9 @@ export function CheckpointCard({
         gap: 12,
       }}>
       <AppText variant="label" tone="accent">
-        HIZLI HATIRLA
+        DEVAM ETMEDEN ÖNCE
       </AppText>
-      <AppText variant="subtitle">{question.question_text}</AppText>
+      <AppText variant="subtitle">{question.question_text || 'Şu az önce neydi?'}</AppText>
       {choiceEntries(question.options).map((choice) => {
         const selected = picked === choice.key;
         const show = Boolean(result);
@@ -104,7 +104,7 @@ export function CheckpointCard({
               alignItems: 'center',
               justifyContent: 'center',
             }}>
-            <AppText tone="inverse">Derse Devam Et</AppText>
+            <AppText tone="inverse">{result.correct ? 'Derse Devam Et' : 'Kaydedildi, sonra tekrar soracağız'}</AppText>
           </Pressable>
         </View>
       )}

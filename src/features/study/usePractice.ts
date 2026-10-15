@@ -522,11 +522,21 @@ export function useCurriculumPracticeQuestions(input: {
     queryKey: ['curriculum-practice', input],
     enabled: Boolean(
       input.questionIds ||
-        (input.examCatalogId && (input.canonicalTopicId || input.memoryLessonId || input.setType === 'mixed')),
+        (input.examCatalogId && (input.canonicalTopicId || input.memoryLessonId || input.setType === 'mixed' || input.setType === 'daily_guided')),
     ),
     queryFn: async () => {
-      if (input.questionIds) {
-        const ids = input.questionIds.split(',').map((id) => id.trim()).filter(Boolean).slice(0, 12);
+      let bundledIds = input.questionIds;
+      if (input.setType === 'daily_guided' && !bundledIds && input.examCatalogId) {
+        const picked = await getSupabase().rpc('pick_daily_test_questions', {
+          p_exam: input.examCatalogId,
+          p_limit: input.limit ?? 20,
+        });
+        if (picked.error) throw picked.error;
+        const raw = (picked.data as { question_ids?: string[] } | null)?.question_ids ?? [];
+        bundledIds = raw.filter(Boolean).join(',');
+      }
+      if (bundledIds) {
+        const ids = bundledIds.split(',').map((id) => id.trim()).filter(Boolean).slice(0, 20);
         if (!ids.length) return [];
         const { data, error } = await getSupabase()
           .from('questions')

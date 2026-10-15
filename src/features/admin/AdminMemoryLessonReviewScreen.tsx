@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
-import { toastError, toastSuccess } from '@/src/components/ui/feedbackStore';
+import { askConfirm, toastError, toastSuccess } from '@/src/components/ui/feedbackStore';
 import { mapAdminError } from '@/src/features/admin/roles';
 import { AdminLessonPreviewPlayer } from '@/src/features/admin/AdminLessonPreviewPlayer';
 import {
@@ -14,6 +14,7 @@ import {
   useLessonMediaUrls,
   useMemoryLessonQuestions,
   useMemoryLessonScenes,
+  useDeleteMemoryLesson,
   usePublishMemoryLesson,
   useSaveMemoryLessonReview,
 } from '@/src/features/memory-lessons/useMemoryLessons';
@@ -169,6 +170,7 @@ export function AdminMemoryLessonReviewScreen() {
   const save = useSaveMemoryLessonReview();
   const approve = useApproveMemoryLesson();
   const publish = usePublishMemoryLesson();
+  const remove = useDeleteMemoryLesson();
   const [tab, setTab] = useState<Tab>(TABS.some((item) => item.key === tabParam) ? (tabParam as Tab) : 'genel');
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
@@ -385,6 +387,27 @@ export function AdminMemoryLessonReviewScreen() {
           onPress={() => void publish.mutateAsync(id).then(() => toastSuccess('Yayınlandı')).catch(fail)}
           style={ghost}>
           <AppText>Yayınla</AppText>
+        </Pressable>
+        <Pressable
+          disabled={generating}
+          onPress={() =>
+            askConfirm({
+              title: 'Dersi sil?',
+              subtitle: 'Kalıcı silinir. Listeye dönersin.',
+              confirmLabel: 'Sil',
+              danger: true,
+              onConfirm: () =>
+                void remove
+                  .mutateAsync(id)
+                  .then(() => {
+                    toastSuccess('Ders silindi');
+                    router.replace('/admin/hafiza-dersleri' as never);
+                  })
+                  .catch(fail),
+            })
+          }
+          style={ghost}>
+          <AppText>Sil</AppText>
         </Pressable>
       </View>
 
@@ -679,7 +702,7 @@ export function AdminMemoryLessonReviewScreen() {
       ) : null}
 
       {tab === 'onizleme' ? (
-        <AdminLessonPreviewPlayer lesson={lesson} scenes={scenes} urls={mediaUrls.data ?? {}} />
+        <AdminLessonPreviewPlayer lesson={lesson} scenes={scenes} questions={questions} urls={mediaUrls.data ?? {}} />
       ) : null}
     </View>
   );
