@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
-  FlatList,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,6 +14,8 @@ import { AppText } from '@/src/components/ui/AppText';
 import { Button } from '@/src/components/ui/Button';
 import { askConfirm, toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
 import { ChatDropZone } from '@/src/features/social/ChatDropZone';
+import { ChatThreadList } from '@/src/features/social/ChatThreadList';
+import { setActiveThread } from '@/src/features/social/liveMessages';
 import { askCoachFromChat } from '@/src/features/social/askCoachFromChat';
 import { ChatActionSheet } from '@/src/features/social/ChatActionSheet';
 import { ChatBubble } from '@/src/features/social/ChatBubble';
@@ -72,7 +73,7 @@ function buildRows(messages: DmMessage[]): ChatRow[] {
     }
     chronological.push({ type: 'msg', message });
   }
-  return chronological.reverse();
+  return chronological;
 }
 
 function presenceLine(
@@ -132,9 +133,13 @@ export function ChatScreen({
   useFocusEffect(
     useCallback(() => {
       if (!thread) return undefined;
+      setActiveThread('dm', thread);
       markDm({ kind: 'dm', thread });
       const tick = setInterval(() => markDm({ kind: 'dm', thread }), 20_000);
-      return () => clearInterval(tick);
+      return () => {
+        setActiveThread('dm', null);
+        clearInterval(tick);
+      };
     }, [markDm, thread]),
   );
 
@@ -145,7 +150,6 @@ export function ChatScreen({
   const messageIds = useMemo(() => messages.map((item) => item.id), [messages]);
   const reactions = useMessageReactions('dm', messageIds);
   const lastFromThem = [...messages].reverse().find((item) => item.sender_id !== me)?.created_at ?? null;
-  const empty = messages.length === 0;
 
   const onSend = async () => {
     if (!canSend || !me) return;
@@ -271,86 +275,80 @@ export function ChatScreen({
           </View>
         ) : null}
 
-        {empty ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36, gap: 8 }}>
-            <AppText variant="subtitle" style={{ textAlign: 'center' }}>
-              Henüz mesaj yok.
-            </AppText>
-            <AppText tone="muted" style={{ textAlign: 'center' }}>
-              İlk mesajı sen gönder.
-            </AppText>
-            <AppText variant="caption" tone="subtle" style={{ textAlign: 'center', marginTop: 6 }}>
-              Karşı taraf cevap verdiğinde veya mesaj isteğini kabul ettiğinde sohbet açılır.
-            </AppText>
-          </View>
-        ) : (
-          <FlatList
-            inverted
-            data={rows}
-            keyExtractor={(item) => (item.type === 'day' ? item.id : item.message.id)}
-            contentContainerStyle={{ paddingHorizontal: spacing.screen, paddingVertical: 10 }}
-            style={{ flex: 1 }}
-            keyboardShouldPersistTaps="handled"
-            initialNumToRender={12}
-            windowSize={8}
-            removeClippedSubviews
-            renderItem={({ item, index }) => {
-              if (item.type === 'day') {
-                return (
-                  <View style={{ alignItems: 'center', paddingVertical: 10 }}>
-                    <View
-                      style={{
-                        paddingHorizontal: 10,
-                        paddingVertical: 4,
-                        borderRadius: 999,
-                        backgroundColor: colors.bgMuted,
-                      }}>
-                      <AppText variant="caption" tone="muted">
-                        {item.label}
-                      </AppText>
-                    </View>
-                  </View>
-                );
-              }
-              const mine = item.message.sender_id === me;
-              const newer = rows[index - 1];
-              const older = rows[index + 1];
-              const newerMsg = newer?.type === 'msg' ? newer.message : null;
-              const olderMsg = older?.type === 'msg' ? older.message : null;
-              const tight = sameCluster(newerMsg, item.message);
-              const showHeader = !sameCluster(olderMsg, item.message);
-              const showAvatar = !mine && !sameCluster(newerMsg, item.message);
-              const showImage = isImageMessage(item.message);
+        <ChatThreadList
+          threadKey={thread || otherId}
+          pad={spacing.screen}
+          itemCount={messages.length}
+          empty={
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36, gap: 8 }}>
+              <AppText variant="subtitle" style={{ textAlign: 'center' }}>
+                Henüz mesaj yok.
+              </AppText>
+              <AppText tone="muted" style={{ textAlign: 'center' }}>
+                İlk mesajı sen gönder.
+              </AppText>
+              <AppText variant="caption" tone="subtle" style={{ textAlign: 'center', marginTop: 6 }}>
+                Karşı taraf cevap verdiğinde veya mesaj isteğini kabul ettiğinde sohbet açılır.
+              </AppText>
+            </View>
+          }>
+          {rows.map((item, index) => {
+            if (item.type === 'day') {
               return (
-                <ChatBubble
-                  mine={mine}
-                  name={mine ? 'Sen' : name}
-                  body={item.message.body}
-                  time={item.message.created_at}
-                  avatarId={item.message.sender_id}
-                  showAvatar={showAvatar}
-                  showHeader={showHeader}
-                  showUsername={false}
-                  tight={tight}
-                  mediaId={item.message.media_id}
-                  imageUrl={chatImageUrl(item.message.image_path)}
-                  imageWidth={item.message.image_width}
-                  imageHeight={item.message.image_height}
-                  onLongPress={() => setMenu(item.message)}
-                  onPressImage={showImage ? () => setViewer(item.message) : undefined}
-                  reactions={reactions.grouped.get(item.message.id)}
-                  onPressReaction={(emoji) =>
-                    void reactions.toggle.mutateAsync({ messageId: item.message.id, emoji }).catch((error: unknown) =>
-                      toastError(error),
-                    )
-                  }
-                />
+                <View key={item.id} style={{ alignItems: 'center', paddingVertical: 10 }}>
+                  <View
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                      borderRadius: 999,
+                      backgroundColor: colors.bgMuted,
+                    }}>
+                    <AppText variant="caption" tone="muted">
+                      {item.label}
+                    </AppText>
+                  </View>
+                </View>
               );
-            }}
-          />
-        )}
+            }
+            const mine = item.message.sender_id === me;
+            const older = rows[index - 1];
+            const newer = rows[index + 1];
+            const olderMsg = older?.type === 'msg' ? older.message : null;
+            const newerMsg = newer?.type === 'msg' ? newer.message : null;
+            const tight = sameCluster(newerMsg, item.message);
+            const showHeader = !sameCluster(olderMsg, item.message);
+            const showAvatar = !mine && !sameCluster(newerMsg, item.message);
+            const showImage = isImageMessage(item.message);
+            return (
+              <ChatBubble
+                key={item.message.id}
+                mine={mine}
+                name={mine ? 'Sen' : name}
+                body={item.message.body}
+                time={item.message.created_at}
+                avatarId={item.message.sender_id}
+                showAvatar={showAvatar}
+                showHeader={showHeader}
+                showUsername={false}
+                tight={tight}
+                mediaId={item.message.media_id}
+                imageUrl={chatImageUrl(item.message.image_path)}
+                imageWidth={item.message.image_width}
+                imageHeight={item.message.image_height}
+                onLongPress={() => setMenu(item.message)}
+                onPressImage={showImage ? () => setViewer(item.message) : undefined}
+                reactions={reactions.grouped.get(item.message.id)}
+                onPressReaction={(emoji) =>
+                  void reactions.toggle.mutateAsync({ messageId: item.message.id, emoji }).catch((error: unknown) =>
+                    toastError(error),
+                  )
+                }
+              />
+            );
+          })}
+        </ChatThreadList>
 
-        {waiting && !empty ? (
+        {waiting && messages.length > 0 ? (
           <View
             style={{
               marginHorizontal: spacing.screen,

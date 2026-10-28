@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -18,6 +19,7 @@ import { RemoteImage } from '@/src/components/ui/RemoteImage';
 import { IMAGE_REPORT_REASONS, type ReportReasonId } from '@/src/features/social/ReportSheet';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
 import { postedAt, taggedName } from '@/src/features/social/identity';
+import { prefetchProfileCard } from '@/src/features/social/useFollows';
 import type { StoryItem } from '@/src/features/social/useSocial';
 import { nativeDriver } from '@/src/lib/animation/nativeDriver';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
@@ -33,6 +35,7 @@ export function StoryViewer({
   stories,
   startId,
   onClose,
+  onNavigateAway,
   onDelete,
   onReport,
 }: {
@@ -40,6 +43,7 @@ export function StoryViewer({
   stories: StoryItem[];
   startId: string | null;
   onClose: () => void;
+  onNavigateAway?: (storyId: string) => void;
   onDelete: (id: string) => Promise<void>;
   onReport: (story: StoryItem, reason: ReportReasonId) => Promise<void>;
 }) {
@@ -266,7 +270,16 @@ export function StoryViewer({
   const grantedAt = useRef(0);
   const holding = useRef(false);
 
-  const headerBottom = Math.max(insets.top, 12) + 86;
+  const headerTop = Math.max(insets.top, 12);
+  const headerBottom = headerTop + 102;
+
+  const openProfile = () => {
+    if (!current?.user_id) return;
+    pause();
+    onNavigateAway?.(current.id);
+    void prefetchProfileCard(current.user_id);
+    router.push({ pathname: '/user', params: { userId: current.user_id } });
+  };
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const pan = useMemo(
@@ -425,60 +438,73 @@ export function StoryViewer({
               </View>
             ) : null}
 
-            <View
-              pointerEvents="box-none"
-              style={{
-                position: 'absolute',
-                top: Math.max(insets.top, 12) + 8,
-                left: 12,
-                right: 12,
-                gap: 10,
-              }}>
-              <View style={{ flexDirection: 'row', gap: 4 }}>
-                {userStories.map((item, i) => (
-                  <View key={item.id} style={{ flex: 1, height: 3, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.28)', overflow: 'hidden' }}>
-                    <Animated.View
-                      style={{
-                        height: '100%',
-                        borderRadius: 99,
-                        backgroundColor: '#F4F1EA',
-                        width:
-                          i < userIndex
-                            ? '100%'
-                            : i > userIndex
-                              ? '0%'
-                              : fill.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
-                      }}
-                    />
-                  </View>
-                ))}
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <LetterAvatar id={current.user_id} name={current.display_name} size={32} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <AppText variant="subtitle" numberOfLines={1} style={{ color: '#F4F1EA' }}>
-                    {mine ? 'Sen' : taggedName(current.display_name, current.display_tag)}
-                  </AppText>
-                  <AppText variant="caption" style={{ color: 'rgba(244,241,234,0.72)' }}>
-                    {postedAt(current.created_at)}
-                  </AppText>
+            <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 4 }}>
+              <TopScrim height={headerBottom + 8} />
+              <View style={{ paddingTop: headerTop + 8, paddingHorizontal: 12, gap: 10 }}>
+                <View pointerEvents="none" style={{ flexDirection: 'row', gap: 4 }}>
+                  {userStories.map((item, i) => (
+                    <View key={item.id} style={{ flex: 1, height: 3, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.35)', overflow: 'hidden' }}>
+                      <Animated.View
+                        style={{
+                          height: '100%',
+                          borderRadius: 99,
+                          backgroundColor: '#FFFFFF',
+                          width:
+                            i < userIndex
+                              ? '100%'
+                              : i > userIndex
+                                ? '0%'
+                                : fill.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+                        }}
+                      />
+                    </View>
+                  ))}
                 </View>
-                <Pressable
-                  onPress={() => openOverlay('menu')}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel="Story menüsü"
-                  style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="ellipsis-horizontal" size={22} color="#F4F1EA" />
-                </Pressable>
-                <Pressable
-                  onPress={closeViewer}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel="Kapat"
-                  style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="close" size={24} color="#F4F1EA" />
-                </Pressable>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Pressable
+                    onPress={openProfile}
+                    accessibilityRole="link"
+                    accessibilityLabel={`${mine ? 'Sen' : taggedName(current.display_name, current.display_tag)} profilini aç`}
+                    style={({ pressed }) => ({
+                      flex: 1,
+                      minHeight: 44,
+                      minWidth: 44,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 10,
+                      opacity: pressed ? 0.82 : 1,
+                      ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
+                    })}>
+                    <LetterAvatar id={current.user_id} name={current.display_name} size={34} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <AppText
+                        numberOfLines={1}
+                        style={{
+                          color: '#FFFFFF',
+                          fontSize: 16,
+                          fontWeight: '800',
+                          textShadowColor: 'rgba(0,0,0,0.65)',
+                          textShadowOffset: { width: 0, height: 1 },
+                          textShadowRadius: 3,
+                        }}>
+                        {mine ? 'Sen' : taggedName(current.display_name, current.display_tag)}
+                      </AppText>
+                      <AppText
+                        style={{
+                          color: 'rgba(255,255,255,0.88)',
+                          fontSize: 13,
+                          fontWeight: '600',
+                          textShadowColor: 'rgba(0,0,0,0.55)',
+                          textShadowOffset: { width: 0, height: 1 },
+                          textShadowRadius: 2,
+                        }}>
+                        {postedAt(current.created_at)}
+                      </AppText>
+                    </View>
+                  </Pressable>
+                  <HeaderIconButton label="Story menüsü" icon="ellipsis-horizontal" onPress={() => openOverlay('menu')} />
+                  <HeaderIconButton label="Kapat" icon="close" onPress={closeViewer} />
+                </View>
               </View>
             </View>
 
@@ -563,6 +589,45 @@ export function StoryViewer({
         ) : null}
       </Animated.View>
     </Modal>
+  );
+}
+
+function TopScrim({ height }: { height: number }) {
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height }}>
+      {[0.46, 0.36, 0.24, 0.14, 0.07, 0].map((opacity, index) => (
+        <View key={index} style={{ flex: 1, backgroundColor: `rgba(0,0,0,${opacity})` }} />
+      ))}
+    </View>
+  );
+}
+
+function HeaderIconButton({
+  label,
+  icon,
+  onPress,
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => ({
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: pressed ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.38)',
+        ...(Platform.OS === 'web' ? { cursor: 'pointer' as const } : null),
+      })}>
+      <Ionicons name={icon} size={22} color="#FFFFFF" />
+    </Pressable>
   );
 }
 

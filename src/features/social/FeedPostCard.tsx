@@ -8,6 +8,7 @@ import { AppText } from '@/src/components/ui/AppText';
 import { Card } from '@/src/components/ui/Card';
 import { CommentsSheet } from '@/src/features/social/CommentsSheet';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
+import { RemoteImage } from '@/src/components/ui/RemoteImage';
 import { EditPostSheet, ReportSheet, StudyInviteSheet } from '@/src/features/social/ReportSheet';
 import { liveStudyLine, postedAt, subjectGlyph, taggedName } from '@/src/features/social/identity';
 import { prefetchProfileCard } from '@/src/features/social/useFollows';
@@ -45,6 +46,22 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
   const author = postAuthor(post);
   const name = taggedName(author?.display_name, author?.display_tag);
   const preview = (post.comment_preview ?? []).slice(0, 2);
+  const liveMatches =
+    !post.subject_id ||
+    !post.live_subject_id ||
+    post.subject_id === post.live_subject_id;
+  const liveOn =
+    liveMatches && (post.live_presence_state === 'ACTIVE' || post.live_presence_state === 'BREAK');
+  const kindLabel =
+    post.feed_kind === 'TEST_RESULT'
+      ? 'Test'
+      : post.feed_kind === 'ACHIEVEMENT'
+        ? 'Başarı'
+        : post.feed_kind === 'STUDY_STATUS'
+          ? 'Çalışma'
+          : post.feed_kind === 'IMAGE'
+            ? 'Ortam'
+            : null;
 
   const goProfile = () => {
     void prefetchProfileCard(post.user_id);
@@ -148,7 +165,7 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
             <AppText variant="caption" tone="muted">
               {[postedAt(post.created_at), post.goal_label].filter(Boolean).join(' · ')}
             </AppText>
-            {post.live_presence_state === 'ACTIVE' || post.live_presence_state === 'BREAK' ? (
+            {liveOn ? (
               <AppText variant="caption" tone="accent" numberOfLines={2}>
                 {liveStudyLine(post.live_subject_name, post.live_topic_name, post.live_presence_state)}
               </AppText>
@@ -156,6 +173,11 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
           </View>
           {menu}
         </Pressable>
+        {kindLabel ? (
+          <AppText variant="caption" tone="muted">
+            {kindLabel}
+          </AppText>
+        ) : null}
         {post.subject_name || post.canonical_topic_name || post.topic_name ? (
           <View style={{ gap: 2 }}>
             {post.subject_name ? (
@@ -174,6 +196,13 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
           </View>
         ) : null}
         <AppText style={{ lineHeight: 24 }}>{post.body}</AppText>
+        {post.media_id ? (
+          <RemoteImage
+            mediaId={post.media_id}
+            accessibilityLabel="Çalışma ortamı"
+            style={{ width: '100%', height: 180, borderRadius: 14 }}
+          />
+        ) : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <IconAction
             icon={post.liked_by_me ? 'heart' : 'heart-outline'}
@@ -190,7 +219,7 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
             <Pressable
               onPress={() => {
                 const liveSubject = post.live_subject_id || post.subject_id;
-                if (post.live_presence_state === 'ACTIVE' && liveSubject) {
+                if (liveOn && post.live_presence_state === 'ACTIVE' && liveSubject) {
                   setTogetherConfirm(true);
                   return;
                 }
@@ -213,7 +242,7 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
               hitSlop={8}
               style={{ minHeight: 44, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center' }}>
               <AppText variant="caption" tone="accent" style={{ fontWeight: '700' }}>
-                {post.live_presence_state === 'ACTIVE' ? '🟢 Birlikte Çalış' : 'Birlikte Çalış'}
+                {liveOn && post.live_presence_state === 'ACTIVE' ? '🟢 Birlikte Çalış' : 'Birlikte Çalış'}
               </AppText>
             </Pressable>
           ) : null}

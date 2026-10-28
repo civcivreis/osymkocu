@@ -23,7 +23,7 @@ export function postedAt(iso?: string | null) {
   const mins = Math.max(0, Math.round((Date.now() - ms) / 60000));
   if (mins < 1) return 'şimdi';
   if (mins < 60) return `${mins} dk`;
-  const hours = Math.round(mins / 60);
+  const hours = Math.max(1, Math.floor(mins / 60));
   if (hours < 24) return `${hours} sa`;
   return `${Math.round(hours / 24)} g`;
 }

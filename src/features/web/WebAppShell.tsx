@@ -155,9 +155,9 @@ export function WebAppShell({ children }: { children: ReactNode }) {
         </View>
       ) : null}
 
-      <View style={{ flex: 1, minWidth: 0 }}>
+      <View style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
         <AppTopBar />
-        <View style={{ flex: 1 }}>{children}</View>
+        <View style={{ flex: 1, minHeight: 0 }}>{children}</View>
         {showBottomNav ? (
           <View
             style={{

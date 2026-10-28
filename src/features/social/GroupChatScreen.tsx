@@ -22,6 +22,7 @@ import { ChatImageViewer } from '@/src/features/social/ChatImage';
 import { ReportSheet, IMAGE_REPORT_REASONS, REPORT_REASONS } from '@/src/features/social/ReportSheet';
 import { groupActivityLine, taggedName } from '@/src/features/social/identity';
 import { chatImageUrl, chatPreview, isImageMessage, sameCluster, uploadChatImage } from '@/src/features/social/chatMedia';
+import { setActiveThread } from '@/src/features/social/liveMessages';
 import { useInbox, useMarkThreadRead, useToggleThreadMute, useToggleThreadPin } from '@/src/features/social/useInbox';
 import { useMessageReactions } from '@/src/features/social/useMessageReactions';
 import {
@@ -86,11 +87,15 @@ export function GroupChatScreen({
   useFocusEffect(
     useCallback(() => {
       if (!slug) return undefined;
+      setActiveThread('group', slug);
       markGroupRead({ kind: 'group', thread: slug });
       const tick = setInterval(() => {
         markGroupRead({ kind: 'group', thread: slug });
       }, 4000);
-      return () => clearInterval(tick);
+      return () => {
+        setActiveThread('group', null);
+        clearInterval(tick);
+      };
     }, [markGroupRead, slug]),
   );
 

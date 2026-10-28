@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Modal, Pressable, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/src/components/ui/AppText';
@@ -71,7 +71,8 @@ export function RoomChatSheet({
             onPress={close}
             style={{ flex: 1, backgroundColor: 'rgba(14,21,32,0.45)' }}
           />
-          <View
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={{
               height: size === 'full' ? '92%' : '50%',
               backgroundColor: colors.bg,
@@ -111,7 +112,7 @@ export function RoomChatSheet({
             <View style={{ flex: 1, minHeight: 0 }}>
               <RoomChat sessionId={sessionId} me={me} members={members} hideTitle />
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </>

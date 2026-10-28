@@ -284,6 +284,9 @@ export function StatusComposer() {
           {publish.isPending ? 'Paylaşılıyor…' : 'Paylaş →'}
         </AppText>
       </Pressable>
+      <AppText variant="caption" tone="muted" style={{ textAlign: 'center' }}>
+        Paylaşımlar Sosyal akışta 6 saat görünür.
+      </AppText>
     </View>
   );
 }

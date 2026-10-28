@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { chatPreview } from '@/src/features/social/chatMedia';
+import { onDmInsert, onGroupInsert } from '@/src/features/social/liveMessages';
 import { retainChannel } from '@/src/lib/realtime/retainChannel';
 import { getSupabase } from '@/src/lib/supabase/client';
 import { isMissingRpcError, isRpcMissing, markRpcMissing } from '@/src/lib/supabase/rpcStatus';
@@ -353,14 +354,11 @@ export function useInbox() {
     if (!userId) return;
     return retainChannel(`inbox:${userId}`, (channel) =>
       channel
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'exam_chat_messages' }, () => {
-          void client.invalidateQueries({ queryKey: ['inbox', userId] });
-          void client.invalidateQueries({ queryKey: ['group-messages'] });
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'exam_chat_messages' }, (payload) => {
+          void onGroupInsert(client, (payload.new ?? {}) as Record<string, unknown>, userId);
         })
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dm_messages' }, () => {
-          void client.invalidateQueries({ queryKey: ['inbox', userId] });
-          void client.invalidateQueries({ queryKey: ['dm-conversations'] });
-          void client.invalidateQueries({ queryKey: ['dm-messages'] });
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dm_messages' }, (payload) => {
+          void onDmInsert(client, (payload.new ?? {}) as Record<string, unknown>, userId);
         }),
     );
   }, [client, userId]);

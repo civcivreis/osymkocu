@@ -22,6 +22,21 @@ type Overview = {
     social_post_interval_minutes?: number;
     social_comment_interval_minutes?: number;
     social_like_interval_minutes?: number;
+    social_text_enabled?: boolean;
+    social_image_enabled?: boolean;
+    social_like_enabled?: boolean;
+    social_comment_enabled?: boolean;
+    social_follow_enabled?: boolean;
+    social_image_ai_enabled?: boolean;
+    social_post_ttl_hours?: number;
+    story_ttl_hours?: number;
+    achievement_post_ttl_hours?: number;
+    social_image_per_day?: number;
+    social_max_virtual_likes_per_post?: number;
+    social_max_virtual_comments_per_post?: number;
+    social_max_virtual_follows_per_user_window?: number;
+    social_human_engagement_share?: number;
+    social_study_request_enabled?: boolean;
   };
   enabled_profiles?: number;
   online?: number;
@@ -225,8 +240,121 @@ export function AdminVirtualStudentsScreen() {
         </View>
         <AppText variant="caption" tone="muted">
           Gönderi {settings.social_post_interval_minutes ?? 18} dk · yorum {settings.social_comment_interval_minutes ?? 25} dk ·
-          beğeni {settings.social_like_interval_minutes ?? 12} dk
+          beğeni {settings.social_like_interval_minutes ?? 12} dk · paylaşım {settings.social_post_ttl_hours ?? 6} sa · başarı{' '}
+          {settings.achievement_post_ttl_hours ?? 12} sa · story {settings.story_ttl_hours ?? 24} sa · görsel/gün{' '}
+          {settings.social_image_per_day ?? 4}
         </AppText>
+        <AppText variant="caption" tone="muted">
+          Post başına en fazla {settings.social_max_virtual_likes_per_post ?? 6} sanal beğeni ·{' '}
+          {settings.social_max_virtual_comments_per_post ?? 3} yorum · kullanıcıya 24s{' '}
+          {settings.social_max_virtual_follows_per_user_window ?? 3} takip · gerçek kullanıcı payı %
+          {Math.round((settings.social_human_engagement_share ?? 0.45) * 100)}
+        </AppText>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {(
+            [
+              ['p_text', 'Metin', settings.social_text_enabled !== false],
+              ['p_image', 'Görsel', settings.social_image_enabled !== false],
+              ['p_like', 'Beğeni', settings.social_like_enabled !== false],
+              ['p_comment', 'Yorum', settings.social_comment_enabled !== false],
+              ['p_follow', 'Takip', settings.social_follow_enabled !== false],
+              ['p_image_ai', 'AI görsel', settings.social_image_ai_enabled === true],
+              ['p_study_request', 'Çalışma isteği', settings.social_study_request_enabled !== false],
+            ] as const
+          ).map(([key, label, on]) => (
+            <Pressable
+              key={key}
+              onPress={() =>
+                void getSupabase()
+                  .rpc('admin_set_virtual_social', { [key]: !on })
+                  .then(({ error }) => {
+                    if (error) toastError(mapAdminError(error.message));
+                    else {
+                      toastSuccess('Sosyal ayar güncellendi');
+                      void overview.refetch();
+                    }
+                  })
+              }
+              style={on ? adminBtn : adminGhost}>
+              <AppText variant="caption" style={on ? { color: '#fff' } : undefined}>
+                {label} {on ? 'açık' : 'kapalı'}
+              </AppText>
+            </Pressable>
+          ))}
+        </View>
+        <Pressable
+          onPress={() =>
+            void getSupabase()
+              .rpc('admin_simulate_social_network', { p_steps: 12 })
+              .then(({ data, error }) => {
+                if (error) toastError(mapAdminError(error.message));
+                else {
+                  toastSuccess('Hızlandırılmış sosyal simülasyon bitti');
+                  setSim(JSON.stringify(data));
+                  void overview.refetch();
+                }
+              })
+          }
+          style={adminGhost}>
+          <AppText variant="caption">12 adımlık sosyal simülasyon</AppText>
+        </Pressable>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <Pressable
+            onPress={() =>
+              void getSupabase()
+                .rpc('admin_set_virtual_social', {
+                  p_max_likes_post: (settings.social_max_virtual_likes_per_post ?? 6) >= 6 ? 4 : 6,
+                  p_max_comments_post: (settings.social_max_virtual_comments_per_post ?? 3) >= 3 ? 2 : 3,
+                  p_max_follows_window: (settings.social_max_virtual_follows_per_user_window ?? 3) >= 3 ? 2 : 3,
+                })
+                .then(({ error }) => {
+                  if (error) toastError(mapAdminError(error.message));
+                  else {
+                    toastSuccess('Etkileşim tavanı güncellendi');
+                    void overview.refetch();
+                  }
+                })
+            }
+            style={adminGhost}>
+            <AppText variant="caption">Beğeni/yorum/takip tavanı değiştir</AppText>
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              void getSupabase()
+                .rpc('admin_set_virtual_social', {
+                  p_ttl_hours: 6,
+                  p_achievement_ttl: 12,
+                  p_story_ttl: 24,
+                })
+                .then(({ error }) => {
+                  if (error) toastError(mapAdminError(error.message));
+                  else {
+                    toastSuccess('Paylaşım ömrü 6 / 12 / 24 saat');
+                    void overview.refetch();
+                  }
+                })
+            }
+            style={adminGhost}>
+            <AppText variant="caption">Ömür: post 6s · başarı 12s · story 24s</AppText>
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              void getSupabase()
+                .rpc('admin_set_virtual_social', {
+                  p_human_share: (settings.social_human_engagement_share ?? 0.45) >= 0.45 ? 0.3 : 0.45,
+                })
+                .then(({ error }) => {
+                  if (error) toastError(mapAdminError(error.message));
+                  else {
+                    toastSuccess('Gerçek kullanıcı payı güncellendi');
+                    void overview.refetch();
+                  }
+                })
+            }
+            style={adminGhost}>
+            <AppText variant="caption">Gerçek kullanıcı payını değiştir</AppText>
+          </Pressable>
+        </View>
       </View>
 
       <View style={adminCard}>

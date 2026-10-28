@@ -68,7 +68,11 @@ function titleFor(item: AppNotification) {
   if (kind === 'race_accepted') return `${name} yarışmayı kabul etti.`;
   if (kind === 'exam_started') return `${payload.subject_name ?? 'Sınav'} başlıyor.`;
   if (kind === 'study_ended') return `${name} odadan ayrıldı.`;
-  if (kind === 'post_like') return `${name} paylaşımını beğendi.`;
+  if (kind === 'post_like') {
+    const n = Number(payload.count ?? 1);
+    if (n > 1) return `${n} kişi paylaşımını beğendi.`;
+    return `${name} paylaşımını beğendi.`;
+  }
   if (kind === 'post_comment') return `${name} paylaşımına yorum yaptı.`;
   if (kind === 'room_invite') return `${name} seni bir çalışma odasına davet etti.`;
   if (kind === 'system_exam_reminder') {
@@ -98,7 +102,10 @@ function openNotification(item: AppNotification) {
     return;
   }
   if ((item.kind === 'post_like' || item.kind === 'post_comment') && payload.from_user) {
-    router.push({ pathname: '/user', params: { userId: payload.from_user, postId: payload.post_id } });
+    router.push({
+      pathname: '/user',
+      params: { userId: payload.from_user, postId: payload.post_id ?? '' },
+    });
     return;
   }
   if (item.kind === 'room_invite' && payload.session_id) {

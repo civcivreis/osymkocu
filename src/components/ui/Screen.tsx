@@ -31,7 +31,7 @@ export function Screen({ children, scroll, center, wide, style, safeEdges }: Pro
   const padRight = Math.max(contentPad, showSidebar ? 0 : insets.right);
 
   const innerStyle: ViewStyle[] = [
-    scroll ? styles.scroll : { flex: 1, minWidth: 0 },
+    scroll ? styles.scroll : { flex: 1, minWidth: 0, minHeight: 0 },
     {
       paddingLeft: padLeft,
       paddingRight: padRight,

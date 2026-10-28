@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
@@ -21,7 +22,20 @@ export function StoriesRail() {
   const remove = useDeleteStory();
   const reportUser = useReportUser();
   const [startId, setStartId] = useState<string | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const resumeViewer = useRef(false);
+  const startIdRef = useRef<string | null>(null);
+  startIdRef.current = startId;
   const [pending, setPending] = useState<{ uri: string; base64: string } | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (resumeViewer.current && startIdRef.current) {
+        resumeViewer.current = false;
+        setViewerOpen(true);
+      }
+    }, []),
+  );
 
   const items = stories.data ?? [];
   const rings = useMemo(() => {
@@ -81,7 +95,10 @@ export function StoriesRail() {
         {rings.map((item) => (
           <Pressable
             key={item.user_id}
-            onPress={() => setStartId(item.id)}
+            onPress={() => {
+              setStartId(item.id);
+              setViewerOpen(true);
+            }}
             style={{ alignItems: 'center', width: 72 }}>
             <View
               style={{
@@ -145,10 +162,18 @@ export function StoriesRail() {
       </Modal>
 
       <StoryViewer
-        visible={Boolean(startId) && items.length > 0}
+        visible={viewerOpen && Boolean(startId) && items.length > 0}
         stories={items}
         startId={startId}
-        onClose={() => setStartId(null)}
+        onClose={() => {
+          setViewerOpen(false);
+          setStartId(null);
+        }}
+        onNavigateAway={(storyId) => {
+          resumeViewer.current = true;
+          setStartId(storyId);
+          setViewerOpen(false);
+        }}
         onDelete={async (id) => {
           try {
             await remove.mutateAsync(id);

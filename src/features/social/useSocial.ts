@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { chatPreview } from '@/src/features/social/chatMedia';
+import { applyDmMessage, onDmInsert, onGroupInsert, upsertChatRow } from '@/src/features/social/liveMessages';
 import { retainChannel } from '@/src/lib/realtime/retainChannel';
 import { getSupabase } from '@/src/lib/supabase/client';
 import { useAuthStore } from '@/src/stores/authStore';
@@ -49,6 +50,9 @@ export type SocialPost = {
   live_topic_name?: string | null;
   live_subject_id?: string | null;
   live_topic_id?: string | null;
+  feed_kind?: 'TEXT' | 'ACHIEVEMENT' | 'STUDY_STATUS' | 'IMAGE' | 'TEST_RESULT' | string | null;
+  event_kind?: string | null;
+  media_id?: string | null;
   profiles?: SocialProfile | SocialProfile[] | null;
 };
 
@@ -258,7 +262,7 @@ export function useSocialPosts() {
       const now = Date.now();
       return ((primary.data ?? []) as SocialPost[]).filter((post) => {
         if (blocked.has(post.user_id)) return false;
-        if (post.expires_at && new Date(post.expires_at).getTime() < now) return false;
+        if (!post.expires_at || new Date(post.expires_at).getTime() < now) return false;
         return true;
       });
     },
@@ -405,7 +409,9 @@ export function useConversations() {
 }
 
 export function useMessages(conversationId: string | null) {
-  return useQuery({
+  const client = useQueryClient();
+  const userId = useAuthStore((s) => s.session?.user.id);
+  const query = useQuery({
     queryKey: ['dm-messages', conversationId],
     enabled: Boolean(conversationId),
     queryFn: async () => {
@@ -426,6 +432,27 @@ export function useMessages(conversationId: string | null) {
       return (data ?? []) as DmMessage[];
     },
   });
+
+  useEffect(() => {
+    if (!conversationId) return;
+    return retainChannel(`dm-messages:${conversationId}`, (channel) =>
+      channel.on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'dm_messages', filter: `conversation_id=eq.${conversationId}` },
+        (payload) => {
+          void onDmInsert(
+            client,
+            (payload.new ?? {}) as Record<string, unknown>,
+            userId,
+            conversationId,
+            { inbox: false },
+          );
+        },
+      ),
+    );
+  }, [client, conversationId, userId]);
+
+  return query;
 }
 
 export function useConversationWith(otherId: string | null) {
@@ -759,10 +786,12 @@ async function fetchExamChatWindow(slug: string) {
 }
 
 export function useGroupMessages(slug: string | null) {
-  return useQuery({
+  const client = useQueryClient();
+  const userId = useAuthStore((s) => s.session?.user.id);
+  const query = useQuery({
     queryKey: ['group-messages', slug, 'tail-v2'],
     enabled: Boolean(slug),
-    refetchInterval: 4000,
+    refetchInterval: 12_000,
     queryFn: async () => {
       const supabase = getSupabase();
       await supabase.rpc('pulse_exam_chats');
@@ -798,6 +827,21 @@ export function useGroupMessages(slug: string | null) {
       });
     },
   });
+
+  useEffect(() => {
+    if (!slug) return;
+    return retainChannel(`group-messages:${slug}`, (channel) =>
+      channel.on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'exam_chat_messages', filter: `slug=eq.${slug}` },
+        (payload) => {
+          void onGroupInsert(client, (payload.new ?? {}) as Record<string, unknown>, userId, slug, { inbox: false });
+        },
+      ),
+    );
+  }, [client, slug, userId]);
+
+  return query;
 }
 
 export function useSendGroupMessage() {
@@ -1058,7 +1102,7 @@ export function useSendDm() {
         throw new Error('Fotoğraf henüz açık değil. SQL’i yapıştırıp tekrar dene.');
       }
       if (error) throw new Error(mapSocialError(error.message));
-      return data as string;
+      return data as string | null;
     },
     onMutate: async (input) => {
       const convo = client.getQueryData<DmConversation>(['dm-with', userId, input.otherId]);
@@ -1066,28 +1110,23 @@ export function useSendDm() {
       const key = ['dm-messages', convo.id] as const;
       await client.cancelQueries({ queryKey: key });
       const prev = client.getQueryData<DmMessage[]>(key);
-      client.setQueryData<DmMessage[]>(key, [
-        ...(prev ?? []),
-        {
-          id: `local-${Date.now()}`,
-          conversation_id: convo.id,
-          sender_id: userId,
-          body: input.body,
-          created_at: new Date().toISOString(),
-          kind: input.mediaId || input.imagePath ? 'image' : 'text',
-          media_id: input.mediaId ?? null,
-          image_width: input.width ?? null,
-          image_height: input.height ?? null,
-        },
-      ]);
+      const optimistic: DmMessage = {
+        id: `local-${Date.now()}`,
+        conversation_id: convo.id,
+        sender_id: userId,
+        body: input.body,
+        created_at: new Date().toISOString(),
+        kind: input.mediaId || input.imagePath ? 'image' : 'text',
+        media_id: input.mediaId ?? null,
+        image_width: input.width ?? null,
+        image_height: input.height ?? null,
+      };
+      client.setQueryData<DmMessage[]>(key, upsertChatRow(prev, optimistic));
+      applyDmMessage(client, optimistic, userId);
       return { key, prev };
     },
     onError: (_error, _input, ctx) => {
       if (ctx?.prev) client.setQueryData(ctx.key, ctx.prev);
-    },
-    onSettled: (_data, _error, input) => {
-      const convo = client.getQueryData<DmConversation>(['dm-with', userId, input.otherId]);
-      if (convo?.id) void client.invalidateQueries({ queryKey: ['dm-messages', convo.id] });
     },
   });
 }

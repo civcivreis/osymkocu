@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
+import { AppText } from '@/src/components/ui/AppText';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 
 export function ChatThreadList({
@@ -78,26 +79,30 @@ export function ChatThreadList({
       {jump ? (
         <Pressable
           onPress={() => goLatest(true)}
-          accessibilityLabel="En yeni mesajlara in"
+          accessibilityLabel="Yeni mesaj"
           style={{
             position: 'absolute',
-            right: pad,
+            alignSelf: 'center',
             bottom: 12,
-            width: 40,
-            height: 40,
-            borderRadius: 20,
+            minHeight: 36,
+            paddingHorizontal: 12,
+            borderRadius: 18,
+            flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: colors.surface,
+            gap: 4,
+            backgroundColor: colors.accent,
             borderWidth: 1,
-            borderColor: colors.border,
+            borderColor: colors.accent,
             shadowColor: '#142033',
             shadowOpacity: 0.12,
             shadowRadius: 8,
             shadowOffset: { width: 0, height: 3 },
             elevation: 3,
           }}>
-          <Ionicons name="chevron-down" size={22} color={colors.text} />
+          <Ionicons name="chevron-down" size={16} color={colors.accentText} />
+          <AppText variant="caption" tone="inverse" style={{ fontWeight: '700' }}>
+            Yeni mesaj
+          </AppText>
         </Pressable>
       ) : null}
     </View>

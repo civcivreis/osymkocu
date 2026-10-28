@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { ActionSheet } from '@/src/components/ui/ActionSheet';
@@ -152,6 +152,16 @@ export function UserProfileScreen({
   };
 
   const onMenu = () => setProfileMenu(true);
+  const missingPostTold = useRef(false);
+  useEffect(() => {
+    const postId = params.postId ? String(params.postId) : '';
+    if (!postId || !cardQuery.isSuccess || missingPostTold.current) return;
+    const found = (card?.posts ?? []).some((post) => post.id === postId);
+    if (!found) {
+      missingPostTold.current = true;
+      toastInfo('Bu paylaşım artık mevcut değil.');
+    }
+  }, [card?.posts, cardQuery.isSuccess, params.postId]);
 
   const inner = (
     <ContentColumn maxWidth={720} style={{ gap: spacing.md, paddingBottom: embedded ? 8 : 20 }}>

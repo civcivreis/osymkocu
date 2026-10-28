@@ -51,6 +51,7 @@ export type AppNotification = {
     status?: string;
     expires_at?: string;
     post_id?: string;
+    count?: number;
   };
   read_at: string | null;
   created_at: string;

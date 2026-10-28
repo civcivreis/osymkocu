@@ -1,6 +1,6 @@
-import { generateText } from "../_shared/aiRouter.ts";
+import { generateImage, generateText } from "../_shared/aiRouter.ts";
 import { json, mapHttpError, preflight, requireLessonAdmin, serviceClient } from "../_shared/lessonHttp.ts";
-import { r2Delete } from "../_shared/r2.ts";
+import { r2Delete, r2Put } from "../_shared/r2.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return preflight(req);
@@ -28,10 +28,16 @@ Deno.serve(async (req) => {
       for (const key of keys) {
         if (typeof key === "string" && key.length > 4) await r2Delete(key);
       }
+      const social = (data as { deterministic_social?: { cleanup?: { r2_keys?: string[] } } } | null)?.deterministic_social;
+      const socialKeys = social?.cleanup?.r2_keys ?? [];
+      for (const key of socialKeys) {
+        if (typeof key === "string" && key.length > 4) await r2Delete(key);
+      }
     }
 
+    const scene = await maybeGenerateSocialScene(admin);
     const drained = await drainVirtualAi(admin);
-    return json({ ok: true, data: tick, ai: drained });
+    return json({ ok: true, data: tick, ai: drained, scene });
   } catch (error) {
     return mapHttpError(error, req);
   }
@@ -44,6 +50,37 @@ type PendingAi = {
   requested_tier: number;
   context: Record<string, unknown>;
 };
+
+async function maybeGenerateSocialScene(admin: ReturnType<typeof serviceClient>) {
+  try {
+    const { data, error } = await admin.rpc("claim_social_scene_generation");
+    if (error) return { generate: false, reason: error.message };
+    const claim = (data ?? {}) as {
+      generate?: boolean;
+      reason?: string;
+      category?: string;
+      prompt?: string;
+      storage_key?: string;
+    };
+    if (!claim.generate || !claim.prompt || !claim.storage_key) {
+      return { generate: false, reason: claim.reason ?? "SKIP" };
+    }
+    const image = await generateImage("image_generation", claim.prompt, { size: "1024x1024" });
+    await r2Put(claim.storage_key, image.bytes, "image/png");
+    const saved = await admin.rpc("register_social_scene_asset", {
+      p_storage_key: claim.storage_key,
+      p_category: claim.category ?? "desk",
+      p_bytes: image.bytes.byteLength,
+    });
+    if (saved.error) {
+      await r2Delete(claim.storage_key);
+      return { generate: false, reason: saved.error.message };
+    }
+    return { generate: true, category: claim.category };
+  } catch (error) {
+    return { generate: false, skipped: true, reason: error instanceof Error ? error.message : "IMAGE_FAILED" };
+  }
+}
 
 async function drainVirtualAi(admin: ReturnType<typeof serviceClient>) {
   const { data, error } = await admin.rpc("virtual_ai_pending", { p_limit: 2 });

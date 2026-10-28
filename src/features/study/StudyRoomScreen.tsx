@@ -131,7 +131,7 @@ export function StudyRoomScreen() {
 
   const questionStage =
     live && state && question ? (
-      <View style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: 16, overflow: 'hidden', backgroundColor: '#1A2433', padding: 16, justifyContent: 'center' }}>
+      <View style={{ width: '100%', borderRadius: 16, backgroundColor: '#1A2433', padding: 16 }}>
         <AppText variant="caption" style={{ color: 'rgba(244,241,234,0.7)', marginBottom: 8 }}>
           {(state.current_index ?? 0) + 1} / {state.total}
           {mode === 'exam' ? ` · ${questionLeft} sn` : ''}
@@ -254,8 +254,8 @@ export function StudyRoomScreen() {
     ) : null;
 
   return (
-    <Screen scroll={!landscape} style={landscape ? { maxWidth: 1600, flex: 1 } : undefined}>
-      <View style={{ gap: spacing.md, flex: landscape ? 1 : undefined, paddingBottom: 24 }}>
+    <Screen scroll={false} style={{ maxWidth: 1600, flex: 1, minHeight: 0, paddingBottom: 12 }}>
+      <View style={{ gap: spacing.md, flex: 1, minHeight: 0 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <Pressable onPress={onLeave} hitSlop={12} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Ionicons name="chevron-back" size={22} color={colors.accent} />
@@ -278,9 +278,9 @@ export function StudyRoomScreen() {
           <StudySplitLayout
             landscape={landscape}
             media={
-              <View style={{ gap: 12, flex: landscape ? 1 : undefined, minHeight: 0 }}>
+              <View style={{ gap: 12 }}>
                 {state?.status === 'countdown' ? (
-                  <View style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: 16, overflow: 'hidden', backgroundColor: '#1A2433', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                  <View style={{ width: '100%', minHeight: 160, borderRadius: 16, backgroundColor: '#1A2433', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
                     <AppText variant="title" style={{ color: '#F4F1EA', textAlign: 'center' }}>
                       {mode === 'race'
                         ? `${partner?.display_name ?? 'Kullanıcı'} ile ${state.subject_name ?? 'ders'} yarışması başlıyor`
