@@ -14,6 +14,8 @@ export function SystemExamResultScreen() {
   const boardQuery = useSystemExamLeaderboard(String(params.examId ?? '') || null);
   const result = resultQuery.data as
     | {
+        released?: boolean;
+        message?: string;
         exam?: { title?: string; finished?: boolean };
         attempt?: {
           total_correct?: number;
@@ -39,6 +41,9 @@ export function SystemExamResultScreen() {
         </Pressable>
         <AppText variant="title">{result?.exam?.title ?? 'Sonuç'}</AppText>
         {resultQuery.isLoading ? <AppText tone="muted">Hesaplanıyor…</AppText> : null}
+        {result && result.released === false ? (
+          <AppText>{result.message || 'Sonuçlar henüz açıklanmadı.'}</AppText>
+        ) : null}
         {attempt ? (
           <View style={{ backgroundColor: colors.surface, borderRadius: 20, padding: 16, gap: 8 }}>
             <Row label="Doğru" value={`${attempt.total_correct ?? 0}`} />
@@ -79,7 +84,12 @@ export function SystemExamResultScreen() {
 
         {boardQuery.data?.ready ? (
           <View style={{ gap: 8 }}>
-            <AppText variant="subtitle">Sıralama</AppText>
+            <AppText variant="subtitle">{boardQuery.data.label ?? 'ÖSYM Koçu sıralaması'}</AppText>
+            {boardQuery.data.count != null ? (
+              <AppText variant="caption" tone="muted">
+                Katılımcı sayısı: {boardQuery.data.count} · platform sıralaması
+              </AppText>
+            ) : null}
             {boardQuery.data.mine ? (
               <AppText variant="caption" tone="accent">
                 Senin sıran: {boardQuery.data.mine}

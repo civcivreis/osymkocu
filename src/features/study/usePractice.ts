@@ -2,8 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { fetchAuthExtras } from '@/src/features/auth/useAuth';
-import { applyXpAward, getLevelFromXp, type XpAwardResult } from '@/src/features/progress/xp';
-import { useXpFeedbackStore } from '@/src/features/progress/xpFeedbackStore';
+import { type XpAwardResult } from '@/src/features/progress/xp';
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
 import { choiceKeys, shuffle } from '@/src/lib/practice/shuffle';
 import { getSupabase } from '@/src/lib/supabase/client';
@@ -229,7 +228,7 @@ export function useWrongAnswers() {
 }
 
 export function useCompleteLessonTopic() {
-  const userId = useAuthStore((s) => s.session?.user.id);
+  const client = useQueryClient();
 
   return useMutation({
     mutationFn: async (topicId: string) => {
@@ -237,9 +236,9 @@ export function useCompleteLessonTopic() {
       if (error) throw error;
       return data as XpAwardResult;
     },
-    onSuccess: async (result) => {
-      applyXpAward(result, 'Konu tamamlandı');
-      if (userId) await fetchAuthExtras(userId);
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['study-hub'] });
+      await client.invalidateQueries({ queryKey: ['student-lesson-cards'] });
     },
   });
 }
@@ -272,8 +271,7 @@ export function useCompletePracticeSet() {
       if (error) throw error;
       return data as XpAwardResult;
     },
-    onSuccess: async (result) => {
-      applyXpAward(result, 'Test tamamlandı');
+    onSuccess: async () => {
       if (userId) await fetchAuthExtras(userId);
     },
   });
@@ -291,13 +289,18 @@ export function useSubmitAttempt() {
         p_mode: input.mode ?? 'practice',
       });
       if (error) throw error;
-      return data as AttemptResult;
+      const row = (data ?? {}) as AttemptResult;
+      return {
+        ...row,
+        is_correct: Boolean(row.is_correct),
+        correct_choice: String(row.correct_choice ?? ''),
+        explanation: String(row.explanation ?? ''),
+        xp_awarded: 0,
+      };
     },
     onSuccess: async (result) => {
       AnalyticsProvider.track('question_answered', { correct: result.is_correct });
       if (!result.is_correct) AnalyticsProvider.track('wrong_question_saved');
-      if (result.mastered) AnalyticsProvider.track('wrong_question_mastered');
-      const prevXp = useAuthStore.getState().profile?.current_xp ?? 0;
       await Promise.all([
         client.invalidateQueries({ queryKey: ['wrong-answers'] }),
         client.invalidateQueries({ queryKey: ['study-subjects'] }),
@@ -307,13 +310,10 @@ export function useSubmitAttempt() {
         client.invalidateQueries({ queryKey: ['study-hub'] }),
         client.invalidateQueries({ queryKey: ['progress-insights'] }),
         client.invalidateQueries({ queryKey: ['weekly-stats'] }),
+        client.invalidateQueries({ queryKey: ['student-lesson-cards'] }),
+        client.invalidateQueries({ queryKey: ['curriculum-practice'] }),
       ]);
       if (userId) await fetchAuthExtras(userId);
-      const nextXp = useAuthStore.getState().profile?.current_xp ?? prevXp;
-      const nextLevel = getLevelFromXp(nextXp);
-      if (nextLevel > getLevelFromXp(prevXp)) {
-        useXpFeedbackStore.getState().showLevelUp(nextLevel);
-      }
     },
   });
 }
@@ -363,15 +363,14 @@ export function useStudyHub(examId: string | null) {
 
   const hubQuery = useQuery({
     queryKey: ['study-hub', userId, examId, subjectIds],
-    enabled: Boolean(userId && examId && subjects.length),
+    enabled: Boolean(userId && examId),
     queryFn: async () => {
       const supabase = getSupabase();
       const ids = subjects.map((row) => row.id);
-      const { data: topicRows, error: topicError } = await supabase
-        .from('topics')
-        .select('id, subject_id, name')
-        .in('subject_id', ids)
-        .order('sort_order');
+      const topicQuery = ids.length
+        ? await supabase.from('topics').select('id, subject_id, name').in('subject_id', ids).order('sort_order')
+        : { data: [] as HubTopic[], error: null };
+      const { data: topicRows, error: topicError } = topicQuery;
       if (topicError) throw topicError;
       const topics = (topicRows ?? []) as HubTopic[];
       const topicById = new Map(topics.map((row) => [row.id, row]));
@@ -483,8 +482,29 @@ export function useStudyHub(examId: string | null) {
       const totalMs = trackedAttempts.reduce((sum, row) => sum + (row.time_spent_ms ?? 0), 0);
       const hasDuration = trackedAttempts.some((row) => row.time_spent_ms != null);
 
+      const cms = await supabase.rpc('get_cms_study_progress', { p_exam: examId });
+      const cmsRow = !cms.error && cms.data && typeof cms.data === 'object' ? (cms.data as {
+        examCatalogId?: string | null;
+        totalTopics?: number;
+        completedTopics?: number;
+        ratio?: number;
+        questions?: number;
+        subjects?: Array<{
+          id: string;
+          name: string;
+          slug?: string;
+          topicCount: number;
+          completedTopics: number;
+          completion: number;
+          topics: { id: string; name: string; lessonId?: string; completed?: boolean }[];
+        }>;
+      }) : null;
+      const cmsSubjects = cmsRow?.subjects ?? [];
+      const useCms = (cmsRow?.totalTopics ?? 0) > 0;
+
       return {
         topics,
+        examCatalogId: cmsRow?.examCatalogId ?? null,
         today: {
           topicCount: todayTopicIds.size || todaySubjects.size,
           questions: todayAttempts.length,
@@ -494,15 +514,41 @@ export function useStudyHub(examId: string | null) {
           blank: todayBlank,
           accuracy: todayAccuracy,
         },
-        overall: {
-          totalTopics,
-          completedTopics,
-          ratio: totalTopics > 0 ? completedTopics / totalTopics : 0,
-          questions: trackedAttempts.length,
-          ms: hasDuration ? totalMs : null,
-        },
+        overall: useCms
+          ? {
+              totalTopics: Number(cmsRow?.totalTopics ?? 0),
+              completedTopics: Number(cmsRow?.completedTopics ?? 0),
+              ratio: Number(cmsRow?.ratio ?? 0),
+              questions: Number(cmsRow?.questions ?? 0),
+              ms: null,
+            }
+          : {
+              totalTopics,
+              completedTopics,
+              ratio: totalTopics > 0 ? completedTopics / totalTopics : 0,
+              questions: trackedAttempts.length,
+              ms: hasDuration ? totalMs : null,
+            },
         lastLesson,
-        subjectStats,
+        subjectStats: useCms
+          ? cmsSubjects.map((row) => ({
+              id: row.id,
+              exam_id: examId!,
+              slug: row.slug ?? row.name,
+              name: row.name,
+              sort_order: 0,
+              questionCount: row.topicCount,
+              topicCount: row.topicCount,
+              completedTopics: row.completedTopics,
+              completion: row.completion,
+              lastTopicName: row.topics.find((topic) => !topic.completed)?.name ?? row.topics[0]?.name ?? null,
+              topics: row.topics.map((topic) => ({
+                id: topic.lessonId ?? topic.id,
+                subject_id: row.id,
+                name: topic.name,
+              })),
+            }))
+          : subjectStats,
       };
     },
   });
@@ -522,7 +568,13 @@ export function useCurriculumPracticeQuestions(input: {
     queryKey: ['curriculum-practice', input],
     enabled: Boolean(
       input.questionIds ||
-        (input.examCatalogId && (input.canonicalTopicId || input.memoryLessonId || input.setType === 'mixed' || input.setType === 'daily_guided')),
+        (input.examCatalogId &&
+          (input.canonicalTopicId ||
+            input.memoryLessonId ||
+            input.setType === 'mixed' ||
+            input.setType === 'daily_guided' ||
+            input.setType === 'general_review' ||
+            input.setType === 'review')),
     ),
     queryFn: async () => {
       let bundledIds = input.questionIds;

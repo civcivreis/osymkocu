@@ -11,8 +11,10 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "ÖSYM Koçu, soruyu taraman için kameraya erişir.",
-        "NSPhotoLibraryUsageDescription": "ÖSYM Koçu, seçtiğin fotoğrafı göndermek için sistem fotoğraf seçicisini kullanır."
-      }
+        "NSPhotoLibraryUsageDescription": "ÖSYM Koçu, seçtiğin fotoğrafı göndermek için sistem fotoğraf seçicisini kullanır.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.civciv.kocum"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +24,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": true,
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "package": "com.civciv.kocum",
+      "permissions": [
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -71,10 +77,24 @@
           "recordAudioAndroid": false,
           "enableBackgroundPlayback": false
         }
-      ]
+      ],
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": false,
+          "supportsPictureInPicture": false
+        }
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6ba41ebb-f90c-4c48-a3fe-da8bd0114258"
+      }
     }
   }
 }

@@ -127,6 +127,17 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  const peek = await req.clone().json().catch(() => null) as Record<string, unknown> | null;
+  if (peek && (peek.action === "delete_story" || peek.purpose === "delete_story")) {
+    const { data, error } = await supabase.rpc("delete_own_story", { p_id: peek.storyId ?? peek.story_id ?? null });
+    if (error) return json({ error: { code: error.message, message: "Story silinemedi." } }, 400, req);
+    const keys = ((data as { r2_keys?: string[] } | null)?.r2_keys ?? []) as string[];
+    for (const key of keys) {
+      if (typeof key === "string" && key.length > 4) await r2Delete(key);
+    }
+    return json({ ok: true, data }, 200, req);
+  }
+
   try {
     const { data: stale } = await admin.rpc("stale_media_for_cleanup");
     for (const row of (stale ?? []) as { id: string; storage_key: string }[]) {

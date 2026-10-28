@@ -1,262 +1,778 @@
-import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, View, useWindowDimensions } from 'react-native';
+import { Modal, Platform, Pressable, TextInput, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
 import { askConfirm, toastError, toastSuccess } from '@/src/components/ui/feedbackStore';
-import { AdminNewLessonModal } from '@/src/features/admin/AdminNewLessonModal';
-import { adminBtn, adminCard, adminGhost } from '@/src/features/admin/adminUi';
+import { adminBtn, adminCard, adminField, adminGhost, mufredatHref, queryParam } from '@/src/features/admin/adminUi';
 import { mapAdminError } from '@/src/features/admin/roles';
-import { testLessonStorage } from '@/src/features/memory-lessons/memoryLessonApi';
+import { swapCatalogSort } from '@/src/features/curriculum/curriculumApi';
 import {
-  useAdminMemoryLessons,
-  useDeleteMemoryLesson,
-  useGenerateMemoryLesson,
-  useGenerateMemoryLessonMedia,
-  usePublishMemoryLesson,
-} from '@/src/features/memory-lessons/useMemoryLessons';
-import type { MemoryLesson } from '@/src/features/memory-lessons/types';
+  useCurriculumMutations,
+  useExamCatalog,
+  useSubjectCatalog,
+  useTopicCatalog,
+  useUnitCatalog,
+} from '@/src/features/curriculum/useCurriculum';
+import { createMemoryLesson } from '@/src/features/memory-lessons/memoryLessonApi';
+import { getSupabase } from '@/src/lib/supabase/client';
 
-function statusLabel(status: string) {
-  if (status === 'draft') return 'Taslak';
-  if (status === 'generating') return 'Üretiliyor';
-  if (status === 'pending_validation') return 'Onay Bekliyor';
-  if (status === 'approved') return 'Onaylı';
-  if (status === 'published') return 'Yayında';
-  if (status === 'archived') return 'Arşiv';
-  return status;
+type CatalogTable = 'subject_catalog' | 'unit_catalog' | 'topic_catalog';
+type LessonHit = {
+  id: string;
+  title: string;
+  status: string;
+  delivery_mode: string | null;
+  topic_id: string | null;
+  canonical_topic_id: string | null;
+};
+type CountRow = { id: string; name: string; sort_order: number; is_active?: boolean };
+type StatusKind = 'published' | 'draft' | 'empty' | 'archived';
+
+function useLessonsForTopics(topicIds: string[], canonicalIds: string[]) {
+  return useQuery({
+    queryKey: ['admin-lessons-tree', topicIds.join(','), canonicalIds.join(',')],
+    enabled: topicIds.length > 0,
+    queryFn: async () => {
+      const parts = [
+        topicIds.length ? `topic_id.in.(${topicIds.join(',')})` : '',
+        canonicalIds.length ? `canonical_topic_id.in.(${canonicalIds.join(',')})` : '',
+      ].filter(Boolean);
+      const { data, error } = await getSupabase()
+        .from('memory_lessons')
+        .select('id, title, status, delivery_mode, topic_id, canonical_topic_id')
+        .or(parts.join(','));
+      if (error) throw error;
+      return (data ?? []) as LessonHit[];
+    },
+  });
 }
 
-function scopeLabel(scope?: string | null) {
-  if (scope === 'exam_specific') return 'Exam Specific';
-  if (scope === 'exam_extension') return 'Exam Extension';
-  return 'Core';
+function useQuestionCounts(lessonIds: string[]) {
+  return useQuery({
+    queryKey: ['admin-lesson-q-counts', lessonIds.join(',')],
+    enabled: lessonIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await getSupabase().from('memory_lesson_questions').select('lesson_id').in('lesson_id', lessonIds);
+      if (error) throw error;
+      const map = new Map<string, number>();
+      for (const row of data ?? []) {
+        const id = String((row as { lesson_id: string }).lesson_id);
+        map.set(id, (map.get(id) ?? 0) + 1);
+      }
+      return map;
+    },
+  });
 }
 
-function mediaLabel(status?: string | null) {
-  if (status === 'ready') return 'Hazır';
-  if (status === 'failed') return 'Hata';
-  if (status === 'generating') return 'Üretiliyor';
-  return 'Eksik';
+function useChildCounts(subjectIds: string[]) {
+  return useQuery({
+    queryKey: ['admin-child-counts', subjectIds.join(',')],
+    enabled: subjectIds.length > 0,
+    queryFn: async () => {
+      const supabase = getSupabase();
+      const { data: units, error: unitError } = await supabase
+        .from('unit_catalog')
+        .select('id, subject_id')
+        .in('subject_id', subjectIds);
+      if (unitError) throw unitError;
+      const unitRows = (units ?? []) as { id: string; subject_id: string }[];
+      const unitIds = unitRows.map((row) => row.id);
+      const { data: topics, error: topicError } = unitIds.length
+        ? await supabase.from('topic_catalog').select('id, unit_id').in('unit_id', unitIds)
+        : { data: [], error: null };
+      if (topicError) throw topicError;
+      const topicRows = (topics ?? []) as { id: string; unit_id: string }[];
+      const unitsBySubject = new Map<string, number>();
+      const topicsBySubject = new Map<string, number>();
+      const topicsByUnit = new Map<string, number>();
+      const subjectOfUnit = new Map(unitRows.map((row) => [row.id, row.subject_id]));
+      for (const row of unitRows) unitsBySubject.set(row.subject_id, (unitsBySubject.get(row.subject_id) ?? 0) + 1);
+      for (const row of topicRows) {
+        topicsByUnit.set(row.unit_id, (topicsByUnit.get(row.unit_id) ?? 0) + 1);
+        const subjectId = subjectOfUnit.get(row.unit_id);
+        if (subjectId) topicsBySubject.set(subjectId, (topicsBySubject.get(subjectId) ?? 0) + 1);
+      }
+      return { unitsBySubject, topicsBySubject, topicsByUnit };
+    },
+  });
 }
 
 export function AdminMemoryLessonsScreen() {
-  const { width } = useWindowDimensions();
-  const compact = width < 900;
-  const list = useAdminMemoryLessons();
-  const generate = useGenerateMemoryLesson();
-  const generateMedia = useGenerateMemoryLessonMedia();
-  const publish = usePublishMemoryLesson();
-  const remove = useDeleteMemoryLesson();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [r2Busy, setR2Busy] = useState(false);
-  const [r2Message, setR2Message] = useState<string | null>(null);
-  const rows = list.data ?? [];
+  return <AdminLessonTree title="Müfredat" />;
+}
 
-  const counts = useMemo(() => {
-    return {
-      draft: rows.filter((row) => row.status === 'draft').length,
-      generating: rows.filter((row) => row.status === 'generating' || row.generation_status === 'generating').length,
-      pending: rows.filter((row) => row.status === 'pending_validation').length,
-      published: rows.filter((row) => row.status === 'published').length,
-    };
-  }, [rows]);
-
-  const runR2Test = () => {
-    setR2Busy(true);
-    setR2Message(null);
-    void testLessonStorage()
-      .then((result) => {
-        const extra = result.cleaned ? ' Test dosyası silindi.' : '';
-        setR2Message(`R2 bağlantısı başarılı · ${result.key}${extra}`);
-        toastSuccess('R2 bağlantısı başarılı');
-      })
-      .catch((error: unknown) => {
-        toastError(error instanceof Error ? error.message : 'R2 bağlantısı doğrulanamadı.');
-      })
-      .finally(() => setR2Busy(false));
+export function AdminLessonTree({ title }: { title: string }) {
+  const exams = useExamCatalog();
+  const mutations = useCurriculumMutations();
+  const queryClient = useQueryClient();
+  const params = useLocalSearchParams<{ exam?: string; subject?: string; unit?: string }>();
+  const examId = queryParam(params.exam);
+  const subjectId = examId ? queryParam(params.subject) : null;
+  const unitId = examId && subjectId ? queryParam(params.unit) : null;
+  const [draft, setDraft] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const go = (exam: string | null, subject: string | null, unit: string | null) => {
+    router.replace(mufredatHref(exam, subject, unit) as never);
   };
+  const subjects = useSubjectCatalog(examId);
+  const units = useUnitCatalog(subjectId);
+  const topics = useTopicCatalog(unitId);
+
+  const exam = useMemo(() => (exams.data ?? []).find((row) => row.id === examId) ?? null, [examId, exams.data]);
+  const subject = useMemo(() => (subjects.data ?? []).find((row) => row.id === subjectId) ?? null, [subjectId, subjects.data]);
+  const unit = useMemo(() => (units.data ?? []).find((row) => row.id === unitId) ?? null, [unitId, units.data]);
+  const topicRows = topics.data ?? [];
+  const lessons = useLessonsForTopics(
+    topicRows.map((row) => row.id),
+    topicRows.map((row) => row.canonical_topic_id).filter((id): id is string => Boolean(id)),
+  );
+  const counts = useChildCounts((subjects.data ?? []).map((row) => row.id));
+  const questionCounts = useQuestionCounts((lessons.data ?? []).map((row) => row.id));
 
   const fail = (error: unknown) => {
     toastError(mapAdminError(error instanceof Error ? error.message : 'İşlem başarısız.'));
   };
 
-  const withBusy = (id: string, fn: Promise<unknown>, ok: string) => {
-    setBusyId(id);
-    void fn
-      .then(() => toastSuccess(ok))
-      .catch(fail)
-      .finally(() => setBusyId(null));
+  const lessonFor = (topicId: string, canonicalId?: string | null) =>
+    (lessons.data ?? []).find((item) => item.topic_id === topicId) ??
+    (lessons.data ?? []).find((item) => canonicalId && item.canonical_topic_id === canonicalId);
+
+  const move = (table: CatalogTable, list: { id: string; sort_order: number }[], id: string, dir: -1 | 1) => {
+    const index = list.findIndex((row) => row.id === id);
+    const other = list[index + dir];
+    if (index < 0 || !other) return;
+    void mutations.swapSort.mutateAsync({ table, first: list[index], second: other }).catch(fail);
   };
+
+  const reorder = async (table: CatalogTable, list: { id: string; sort_order: number }[], fromId: string, toId: string) => {
+    const from = list.findIndex((row) => row.id === fromId);
+    const to = list.findIndex((row) => row.id === toId);
+    if (from < 0 || to < 0 || from === to) return;
+    const copy = list.map((row) => ({ ...row }));
+    const dir = from < to ? 1 : -1;
+    let index = from;
+    try {
+      while (index !== to) {
+        const first = copy[index];
+        const second = copy[index + dir];
+        if (!first || !second) break;
+        await swapCatalogSort(table, first, second);
+        const stored = first.sort_order;
+        first.sort_order = second.sort_order;
+        second.sort_order = stored;
+        copy[index] = second;
+        copy[index + dir] = first;
+        index += dir;
+      }
+      await queryClient.invalidateQueries({ queryKey: ['subject-catalog'] });
+      await queryClient.invalidateQueries({ queryKey: ['unit-catalog'] });
+      await queryClient.invalidateQueries({ queryKey: ['topic-catalog'] });
+    } catch (error) {
+      fail(error);
+    }
+  };
+
+  const remove = (table: CatalogTable, id: string, name: string) => {
+    askConfirm({
+      title: 'Silinsin mi?',
+      subtitle: `${name} kalıcı silinir.`,
+      confirmLabel: 'Sil',
+      danger: true,
+      onConfirm: () =>
+        void mutations.removeRow
+          .mutateAsync({ table, id })
+          .then(() => {
+            if (table === 'subject_catalog' && subjectId === id) go(examId, null, null);
+            if (table === 'unit_catalog' && unitId === id) go(examId, subjectId, null);
+            toastSuccess('Silindi');
+          })
+          .catch(fail),
+    });
+  };
+
+  const archive = (table: CatalogTable, id: string, active: boolean) => {
+    void mutations.setActive
+      .mutateAsync({ table, id, isActive: !active })
+      .then(() => toastSuccess(active ? 'Arşivlendi' : 'Yayına alındı'))
+      .catch(fail);
+  };
+
+  const saveRename = (table: CatalogTable, id: string) => {
+    if (!renameValue.trim()) return;
+    void mutations.rename
+      .mutateAsync({ table, id, name: renameValue })
+      .then(() => {
+        setRenameId(null);
+        toastSuccess('Ad güncellendi');
+      })
+      .catch(fail);
+  };
+
+  const openContent = async (topic: { id: string; name: string; canonical_topic_id?: string | null }) => {
+    if (!examId || !subjectId || !unitId) return;
+    const existing = lessonFor(topic.id, topic.canonical_topic_id);
+    try {
+      const lessonId = existing
+        ? existing.id
+        : (
+            await createMemoryLesson({
+              exam_id: examId,
+              subject_id: subjectId,
+              unit_id: unitId,
+              topic_id: topic.id,
+              title: topic.name,
+              lesson_scope: 'core',
+              usage_mode: 'core',
+            })
+          ).id;
+      router.push(
+        `/admin/hafiza-dersleri/${lessonId}?exam=${encodeURIComponent(examId)}&subject=${encodeURIComponent(subjectId)}&unit=${encodeURIComponent(unitId)}` as never,
+      );
+    } catch (error) {
+      fail(error);
+    }
+  };
+
+  const crumb = (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+      <Pressable onPress={() => go(null, null, null)}>
+        <AppText variant="caption" tone="accent">
+          {title}
+        </AppText>
+      </Pressable>
+      {exam ? (
+        <>
+          <AppText variant="caption" tone="muted">
+            /
+          </AppText>
+          <Pressable onPress={() => go(exam.id, null, null)}>
+            <AppText variant="caption" tone={subject ? 'accent' : 'muted'}>
+              {exam.name}
+            </AppText>
+          </Pressable>
+        </>
+      ) : null}
+      {subject ? (
+        <>
+          <AppText variant="caption" tone="muted">
+            /
+          </AppText>
+          <Pressable onPress={() => go(examId, subject.id, null)}>
+            <AppText variant="caption" tone={unit ? 'accent' : 'muted'}>
+              {subject.name}
+            </AppText>
+          </Pressable>
+        </>
+      ) : null}
+      {unit ? (
+        <>
+          <AppText variant="caption" tone="muted">
+            /
+          </AppText>
+          <AppText variant="caption" tone="muted">
+            {unit.name}
+          </AppText>
+        </>
+      ) : null}
+    </View>
+  );
 
   return (
     <View style={{ gap: 16 }}>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <View style={{ gap: 4 }}>
-          <AppText variant="title">Hafıza Dersleri</AppText>
-          <AppText tone="muted">Motorun ürettiği dersler. Manuel oluşturma yalnızca yedek yoldur.</AppText>
-        </View>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          <Pressable onPress={() => setModalOpen(true)} style={adminGhost}>
-            <AppText>+ Yeni Ders</AppText>
-          </Pressable>
-          <Pressable onPress={() => router.push('/admin/mufredat' as never)} style={adminGhost}>
-            <AppText>Müfredatı Yönet</AppText>
-          </Pressable>
-          <Pressable onPress={runR2Test} disabled={r2Busy} style={[adminGhost, r2Busy ? { opacity: 0.6 } : null]}>
-            <AppText>{r2Busy ? 'Test ediliyor…' : 'R2 Bağlantısını Test Et'}</AppText>
-          </Pressable>
-        </View>
-      </View>
-      {r2Message ? <AppText variant="caption">{r2Message}</AppText> : null}
-
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-        {[
-          ['Taslak', counts.draft],
-          ['Üretiliyor', counts.generating],
-          ['Onay Bekliyor', counts.pending],
-          ['Yayında', counts.published],
-        ].map(([label, value]) => (
-          <View key={String(label)} style={[adminCard, { minWidth: compact ? '46%' : 160, flexGrow: 1 }]}>
-            <AppText variant="caption" tone="muted">
-              {label}
-            </AppText>
-            <AppText variant="title">{value}</AppText>
-          </View>
-        ))}
+      <View style={{ gap: 6 }}>
+        <AppText variant="title">{unit ? `Ana konu: ${unit.name}` : subject ? subject.name : exam ? exam.name : title}</AppText>
+        {exam ? crumb : <AppText tone="muted">Sınav seç, sonra ders → ana konu → konu.</AppText>}
       </View>
 
-      {list.isError ? (
-        <AppText tone="danger">{list.error instanceof Error ? list.error.message : 'Liste alınamadı.'}</AppText>
+      {exam ? (
+        <Pressable
+          onPress={() => {
+            setDraft('');
+            setAdding(false);
+            if (unitId) {
+              go(examId, subjectId, null);
+              return;
+            }
+            if (subjectId) {
+              go(examId, null, null);
+              return;
+            }
+            go(null, null, null);
+          }}
+          hitSlop={8}>
+          <AppText tone="accent">← Geri</AppText>
+        </Pressable>
       ) : null}
 
-      {!compact ? (
-        <View style={[adminCard, { flexDirection: 'row', gap: 8 }]}>
-          {['Ders', 'Sınav', 'Ders / Konu', 'Scope', 'Pedagogy Score', 'Media Status', 'Status', 'Updated', 'Actions'].map((col) => (
-            <AppText key={col} variant="caption" tone="muted" style={{ flex: col === 'Ders' || col === 'Actions' ? 1.4 : 1 }}>
-              {col}
-            </AppText>
-          ))}
+      {!examId ? (
+        <View style={{ gap: 8 }}>
+          {(exams.data ?? [])
+            .filter((row) => row.is_active)
+            .map((row) => (
+              <Pressable
+                key={row.id}
+                onPress={() => {
+                  setDraft('');
+                  go(row.id, null, null);
+                }}
+                style={rowCard}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <AppText variant="subtitle">{row.name}</AppText>
+                  <AppText variant="caption" tone="muted">
+                    {row.code}
+                  </AppText>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+              </Pressable>
+            ))}
         </View>
       ) : null}
 
-      {rows.map((row) => (
-        <LessonRow
-          key={row.id}
-          row={row}
-          compact={compact}
-          busy={busyId === row.id}
-          onEdit={() => router.push(`/admin/hafiza-dersleri/${row.id}` as never)}
-          onPreview={() => router.push(`/admin/hafiza-dersleri/${row.id}?tab=onizleme` as never)}
-          onGenerate={() => withBusy(row.id, generate.mutateAsync(row.id), 'İçerik üretildi')}
-          onMedia={() =>
-            withBusy(row.id, generateMedia.mutateAsync({ lessonId: row.id, mode: 'missing' }), 'Medya üretildi')
+      {exam && !subject ? (
+        <ManageList
+          section="Dersler"
+          addLabel="+ Ders ekle"
+          placeholder="Yeni ders (Türkçe, Matematik…)"
+          adding={adding}
+          setAdding={setAdding}
+          draft={draft}
+          setDraft={setDraft}
+          onAdd={() =>
+            void mutations.createSubject
+              .mutateAsync({ exam_id: exam.id, name: draft })
+              .then(() => {
+                setDraft('');
+                setAdding(false);
+                toastSuccess('Ders eklendi');
+              })
+              .catch(fail)
           }
-          onPublish={() => withBusy(row.id, publish.mutateAsync(row.id), 'Yayınlandı')}
-          onDelete={() =>
-            askConfirm({
-              title: 'Dersi sil?',
-              subtitle: `${row.title} kalıcı silinir. Yayın ve taslak dahil.`,
-              confirmLabel: 'Sil',
-              danger: true,
-              onConfirm: () => withBusy(row.id, remove.mutateAsync(row.id), 'Ders silindi'),
-            })
-          }
+          rows={(subjects.data ?? []).map((row) => {
+            const unitsCount = counts.data?.unitsBySubject.get(row.id) ?? 0;
+            const topicsCount = counts.data?.topicsBySubject.get(row.id) ?? 0;
+            return {
+              id: row.id,
+              name: row.name,
+              sort_order: row.sort_order,
+              is_active: row.is_active,
+              subtitle: `${unitsCount} ana konu · ${topicsCount} konu`,
+              status: row.is_active ? undefined : ('archived' as const),
+            };
+          })}
+          renameId={renameId}
+          renameValue={renameValue}
+          setRenameValue={setRenameValue}
+          onOpen={(id) => {
+            setDraft('');
+            setAdding(false);
+            go(examId, id, null);
+          }}
+          onStartRename={(id, name) => {
+            setRenameId(id);
+            setRenameValue(name);
+          }}
+          onSaveRename={(id) => saveRename('subject_catalog', id)}
+          onCloseRename={() => setRenameId(null)}
+          onDelete={(id, name) => remove('subject_catalog', id, name)}
+          onArchive={(id, active) => archive('subject_catalog', id, active)}
+          onMove={(id, dir) => move('subject_catalog', subjects.data ?? [], id, dir)}
+          onReorder={(from, to) => void reorder('subject_catalog', subjects.data ?? [], from, to)}
         />
-      ))}
+      ) : null}
 
-      {!list.isLoading && rows.length === 0 ? <AppText tone="muted">Henüz hafıza dersi yok.</AppText> : null}
-      <AdminNewLessonModal open={modalOpen} onClose={() => setModalOpen(false)} />
+      {subject && !unit ? (
+        <ManageList
+          section="Ana konular"
+          addLabel="+ Ana konu ekle"
+          placeholder="Yeni ana konu"
+          adding={adding}
+          setAdding={setAdding}
+          draft={draft}
+          setDraft={setDraft}
+          onAdd={() =>
+            void mutations.createUnit
+              .mutateAsync({ subject_id: subject.id, name: draft })
+              .then(() => {
+                setDraft('');
+                setAdding(false);
+                toastSuccess('Ana konu eklendi');
+              })
+              .catch(fail)
+          }
+          rows={(units.data ?? []).map((row) => ({
+            id: row.id,
+            name: row.name,
+            sort_order: row.sort_order,
+            is_active: row.is_active,
+            subtitle: `${counts.data?.topicsByUnit.get(row.id) ?? 0} konu`,
+            status: row.is_active ? undefined : ('archived' as const),
+          }))}
+          renameId={renameId}
+          renameValue={renameValue}
+          setRenameValue={setRenameValue}
+          onOpen={(id) => {
+            setDraft('');
+            setAdding(false);
+            go(examId, subject.id, id);
+          }}
+          onStartRename={(id, name) => {
+            setRenameId(id);
+            setRenameValue(name);
+          }}
+          onSaveRename={(id) => saveRename('unit_catalog', id)}
+          onCloseRename={() => setRenameId(null)}
+          onDelete={(id, name) => remove('unit_catalog', id, name)}
+          onArchive={(id, active) => archive('unit_catalog', id, active)}
+          onMove={(id, dir) => move('unit_catalog', units.data ?? [], id, dir)}
+          onReorder={(from, to) => void reorder('unit_catalog', units.data ?? [], from, to)}
+        />
+      ) : null}
+
+      {unit ? (
+        <ManageList
+          section="Konular"
+          addLabel="+ Konu ekle"
+          placeholder="Yeni konu"
+          adding={adding}
+          setAdding={setAdding}
+          draft={draft}
+          setDraft={setDraft}
+          onAdd={() =>
+            void mutations.createTopic
+              .mutateAsync({ unit_id: unit.id, name: draft })
+              .then(() => {
+                setDraft('');
+                setAdding(false);
+                toastSuccess('Konu eklendi');
+              })
+              .catch(fail)
+          }
+          rows={topicRows.map((row) => {
+            const lesson = lessonFor(row.id, row.canonical_topic_id);
+            const questions = lesson ? (questionCounts.data?.get(lesson.id) ?? 0) : 0;
+            const delivery =
+              lesson?.delivery_mode === 'video' ? 'Video' : lesson?.delivery_mode === 'hybrid' ? 'Hibrit' : lesson ? 'Metin' : null;
+            const status: StatusKind = !row.is_active
+              ? 'archived'
+              : !lesson
+                ? 'empty'
+                : lesson.status === 'published'
+                  ? 'published'
+                  : 'draft';
+            return {
+              id: row.id,
+              name: row.name,
+              sort_order: row.sort_order,
+              is_active: row.is_active,
+              subtitle: [delivery, lesson ? `1 ders · ${questions} soru` : 'Ders yok'].filter(Boolean).join(' · '),
+              status,
+            };
+          })}
+          renameId={renameId}
+          renameValue={renameValue}
+          setRenameValue={setRenameValue}
+          onOpen={(id) => {
+            const topic = topicRows.find((row) => row.id === id);
+            if (topic) void openContent(topic);
+          }}
+          onStartRename={(id, name) => {
+            setRenameId(id);
+            setRenameValue(name);
+          }}
+          onSaveRename={(id) => saveRename('topic_catalog', id)}
+          onCloseRename={() => setRenameId(null)}
+          onDelete={(id, name) => remove('topic_catalog', id, name)}
+          onArchive={(id, active) => archive('topic_catalog', id, active)}
+          onMove={(id, dir) => move('topic_catalog', topicRows, id, dir)}
+          onReorder={(from, to) => void reorder('topic_catalog', topicRows, from, to)}
+        />
+      ) : null}
     </View>
   );
 }
 
-function LessonRow({
-  row,
-  compact,
-  busy,
-  onEdit,
-  onPreview,
-  onGenerate,
-  onMedia,
-  onPublish,
-  onDelete,
-}: {
-  row: MemoryLesson;
-  compact: boolean;
-  busy: boolean;
-  onEdit: () => void;
-  onPreview: () => void;
-  onGenerate: () => void;
-  onMedia: () => void;
-  onPublish: () => void;
-  onDelete: () => void;
-}) {
-  const actions = (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, flex: 1.4 }}>
-      <Pressable onPress={onEdit} style={adminGhost}>
-        <AppText variant="caption">Düzenle</AppText>
-      </Pressable>
-      <Pressable onPress={onPreview} style={adminGhost}>
-        <AppText variant="caption">Önizle</AppText>
-      </Pressable>
-      <Pressable disabled={busy || row.status === 'published'} onPress={onGenerate} style={[adminGhost, busy ? { opacity: 0.6 } : null]}>
-        <AppText variant="caption">İçerik Üret</AppText>
-      </Pressable>
-      <Pressable disabled={busy} onPress={onMedia} style={[adminGhost, busy ? { opacity: 0.6 } : null]}>
-        <AppText variant="caption">Medya Üret</AppText>
-      </Pressable>
-      <Pressable disabled={busy || row.status !== 'approved'} onPress={onPublish} style={[adminGhost, busy ? { opacity: 0.6 } : null]}>
-        <AppText variant="caption">Yayınla</AppText>
-      </Pressable>
-      <Pressable disabled={busy} onPress={onDelete} style={[adminGhost, busy ? { opacity: 0.6 } : null]}>
-        <AppText variant="caption">Sil</AppText>
-      </Pressable>
+const rowCard = {
+  backgroundColor: '#FFFCF7',
+  borderRadius: 16,
+  borderWidth: 1,
+  borderColor: '#E4DDD0',
+  paddingVertical: 14,
+  paddingHorizontal: 14,
+  flexDirection: 'row' as const,
+  alignItems: 'center' as const,
+  gap: 12,
+  minHeight: 64,
+};
+
+function StatusBadge({ status }: { status?: StatusKind }) {
+  if (!status) return null;
+  const map: Record<StatusKind, { label: string; bg: string; fg: string }> = {
+    published: { label: 'Yayında', bg: '#E7F3EA', fg: '#1F6B3A' },
+    draft: { label: 'Taslak', bg: '#F8EBDD', fg: '#8A3D16' },
+    empty: { label: 'İçerik yok', bg: '#EEEAE2', fg: '#64748B' },
+    archived: { label: 'Arşivde', bg: '#E8E8E8', fg: '#57534E' },
+  };
+  const tone = map[status];
+  return (
+    <View style={{ backgroundColor: tone.bg, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}>
+      <AppText variant="caption" style={{ color: tone.fg, fontWeight: '600' }}>
+        {tone.label}
+      </AppText>
     </View>
   );
+}
 
-  if (compact) {
-    return (
-      <View style={adminCard}>
-        <AppText variant="subtitle">{row.title}</AppText>
-        <AppText variant="caption" tone="muted">
-          {String(row.exam_type).toUpperCase()} · {row.subject} / {row.topic} · {scopeLabel(row.lesson_scope)}
-        </AppText>
-        <AppText variant="caption" tone="muted">
-          Pedagoji {typeof row.pedagogy_score === 'number' ? row.pedagogy_score : '—'} · Medya {mediaLabel(row.media_generation_status)} ·{' '}
-          {statusLabel(row.status)} · {String(row.updated_at ?? row.created_at).slice(0, 10)}
-        </AppText>
-        {actions}
-      </View>
-    );
-  }
+function ManageList({
+  section,
+  placeholder,
+  addLabel,
+  adding,
+  setAdding,
+  draft,
+  setDraft,
+  onAdd,
+  rows,
+  renameId,
+  renameValue,
+  setRenameValue,
+  onOpen,
+  onStartRename,
+  onSaveRename,
+  onCloseRename,
+  onDelete,
+  onArchive,
+  onMove,
+  onReorder,
+}: {
+  section: string;
+  placeholder: string;
+  addLabel: string;
+  adding: boolean;
+  setAdding: (value: boolean) => void;
+  draft: string;
+  setDraft: (value: string) => void;
+  onAdd: () => void;
+  rows: (CountRow & { subtitle?: string; status?: StatusKind })[];
+  renameId: string | null;
+  renameValue: string;
+  setRenameValue: (value: string) => void;
+  onOpen?: (id: string) => void;
+  onStartRename: (id: string, name: string) => void;
+  onSaveRename: (id: string) => void;
+  onCloseRename: () => void;
+  onDelete: (id: string, name: string) => void;
+  onArchive: (id: string, active: boolean) => void;
+  onMove: (id: string, dir: -1 | 1) => void;
+  onReorder: (fromId: string, toId: string) => void;
+}) {
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const menuRow = rows.find((row) => row.id === menuId) ?? null;
+  const menuIndex = menuRow ? rows.findIndex((row) => row.id === menuRow.id) : -1;
+  const renaming = rows.find((row) => row.id === renameId) ?? null;
 
   return (
-    <View style={[adminCard, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
-      <AppText style={{ flex: 1.4 }}>{row.title}</AppText>
-      <AppText variant="caption" style={{ flex: 1 }}>
-        {String(row.exam_type).toUpperCase()}
+    <View style={{ gap: 10 }}>
+      <AppText variant="label" tone="muted">
+        {section}
       </AppText>
-      <AppText variant="caption" style={{ flex: 1 }}>
-        {row.subject} / {row.topic}
-      </AppText>
-      <AppText variant="caption" style={{ flex: 1 }}>
-        {scopeLabel(row.lesson_scope)}
-      </AppText>
-      <AppText variant="caption" style={{ flex: 1 }}>
-        {typeof row.pedagogy_score === 'number' ? String(row.pedagogy_score) : '—'}
-      </AppText>
-      <AppText variant="caption" style={{ flex: 1 }}>
-        {mediaLabel(row.media_generation_status)}
-      </AppText>
-      <AppText variant="caption" style={{ flex: 1 }}>
-        {statusLabel(row.status)}
-      </AppText>
-      <AppText variant="caption" style={{ flex: 1 }}>
-        {String(row.updated_at ?? row.created_at).slice(0, 10)}
-      </AppText>
-      {actions}
+      <View style={[adminCard, { paddingVertical: 4, paddingHorizontal: 4, gap: 0 }]}>
+        {rows.length === 0 ? (
+          <View style={{ padding: 16 }}>
+            <AppText variant="caption" tone="muted">
+              Henüz kayıt yok.
+            </AppText>
+          </View>
+        ) : null}
+        {rows.map((row) => {
+          const webDrag =
+            Platform.OS === 'web'
+              ? {
+                  onDragOver: (event: { preventDefault?: () => void }) => event.preventDefault?.(),
+                  onDrop: (event: { preventDefault?: () => void }) => {
+                    event.preventDefault?.();
+                    if (dragId) onReorder(dragId, row.id);
+                    setDragId(null);
+                  },
+                }
+              : {};
+          return (
+            <View
+              key={row.id}
+              {...webDrag}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                minHeight: 64,
+                paddingVertical: 10,
+                paddingHorizontal: 8,
+                borderRadius: 12,
+                backgroundColor: dragId === row.id ? '#F8EBDD' : 'transparent',
+              }}>
+              <Pressable
+                accessibilityLabel="Sıralamak için sürükle"
+                hitSlop={8}
+                {...(Platform.OS === 'web'
+                  ? {
+                      draggable: true,
+                      onDragStart: () => setDragId(row.id),
+                      onDragEnd: () => setDragId(null),
+                    }
+                  : {})}
+                style={{ width: 28, alignItems: 'center', justifyContent: 'center' }}>
+                <AppText tone="muted" style={{ fontSize: 16, letterSpacing: -1 }}>
+                  ☰
+                </AppText>
+              </Pressable>
+              <Pressable onPress={() => onOpen?.(row.id)} style={{ flex: 1, gap: 2, minWidth: 0 }}>
+                <AppText variant="subtitle" numberOfLines={1}>
+                  {row.name}
+                </AppText>
+                {row.subtitle ? (
+                  <AppText variant="caption" tone="muted" numberOfLines={1}>
+                    {row.subtitle}
+                  </AppText>
+                ) : null}
+              </Pressable>
+              <StatusBadge status={row.status} />
+              <Pressable
+                onPress={() => setMenuId(row.id)}
+                hitSlop={10}
+                accessibilityLabel="Daha fazla"
+                style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 10 }}>
+                <Ionicons name="ellipsis-horizontal" size={18} color="#64748B" />
+              </Pressable>
+            </View>
+          );
+        })}
+      </View>
+
+      <Pressable
+        onPress={() => {
+          setDraft('');
+          setAdding(true);
+        }}
+        style={[adminGhost, { alignSelf: 'flex-start', minHeight: 40, paddingHorizontal: 12 }]}>
+        <AppText>{addLabel}</AppText>
+      </Pressable>
+
+      <Modal visible={adding} transparent animationType="fade" onRequestClose={() => setAdding(false)}>
+        <Pressable
+          onPress={() => setAdding(false)}
+          style={{ flex: 1, backgroundColor: 'rgba(15,28,46,0.35)', justifyContent: 'center', padding: 24 }}>
+          <Pressable onPress={() => undefined} style={[adminCard, { maxWidth: 420, width: '100%', alignSelf: 'center', gap: 12 }]}>
+            <AppText variant="subtitle">{addLabel.replace(/^\+\s*/, '')}</AppText>
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={placeholder}
+              autoFocus
+              style={adminField}
+              onSubmitEditing={() => {
+                if (draft.trim()) onAdd();
+              }}
+            />
+            <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
+              <Pressable onPress={() => setAdding(false)} style={adminGhost}>
+                <AppText>Vazgeç</AppText>
+              </Pressable>
+              <Pressable onPress={onAdd} disabled={!draft.trim()} style={[adminBtn, { opacity: draft.trim() ? 1 : 0.5 }]}>
+                <AppText tone="inverse">Ekle</AppText>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={Boolean(renaming)} transparent animationType="fade" onRequestClose={onCloseRename}>
+        <Pressable
+          onPress={onCloseRename}
+          style={{ flex: 1, backgroundColor: 'rgba(15,28,46,0.35)', justifyContent: 'center', padding: 24 }}>
+          <Pressable onPress={() => undefined} style={[adminCard, { maxWidth: 420, width: '100%', alignSelf: 'center', gap: 12 }]}>
+            <AppText variant="subtitle">Adını değiştir</AppText>
+            <TextInput value={renameValue} onChangeText={setRenameValue} autoFocus style={adminField} />
+            <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
+              <Pressable onPress={onCloseRename} style={adminGhost}>
+                <AppText>Vazgeç</AppText>
+              </Pressable>
+              <Pressable onPress={() => renaming && onSaveRename(renaming.id)} style={adminBtn}>
+                <AppText tone="inverse">Kaydet</AppText>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={Boolean(menuRow)} transparent animationType="fade" onRequestClose={() => setMenuId(null)}>
+        <Pressable
+          onPress={() => setMenuId(null)}
+          style={{ flex: 1, backgroundColor: 'rgba(15,28,46,0.35)', justifyContent: 'center', padding: 24 }}>
+          <Pressable onPress={() => undefined} style={[adminCard, { maxWidth: 360, width: '100%', alignSelf: 'center', gap: 4 }]}>
+            <AppText variant="subtitle">{menuRow?.name}</AppText>
+            {(
+              [
+                {
+                  label: 'Adını değiştir',
+                  onPress: () => {
+                    if (!menuRow) return;
+                    onStartRename(menuRow.id, menuRow.name);
+                    setMenuId(null);
+                  },
+                },
+                {
+                  label: 'Yukarı taşı',
+                  disabled: menuIndex <= 0,
+                  onPress: () => {
+                    if (!menuRow) return;
+                    onMove(menuRow.id, -1);
+                    setMenuId(null);
+                  },
+                },
+                {
+                  label: 'Aşağı taşı',
+                  disabled: menuIndex < 0 || menuIndex >= rows.length - 1,
+                  onPress: () => {
+                    if (!menuRow) return;
+                    onMove(menuRow.id, 1);
+                    setMenuId(null);
+                  },
+                },
+                {
+                  label: menuRow?.is_active === false ? 'Yayına al' : 'Arşivle',
+                  onPress: () => {
+                    if (!menuRow) return;
+                    onArchive(menuRow.id, menuRow.is_active !== false);
+                    setMenuId(null);
+                  },
+                },
+                {
+                  label: 'Sil',
+                  danger: true,
+                  onPress: () => {
+                    if (!menuRow) return;
+                    setMenuId(null);
+                    onDelete(menuRow.id, menuRow.name);
+                  },
+                },
+              ] as { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }[]
+            ).map((item) => (
+              <Pressable
+                key={item.label}
+                disabled={item.disabled}
+                onPress={item.onPress}
+                style={{ paddingVertical: 12, opacity: item.disabled ? 0.4 : 1 }}>
+                <AppText tone={item.danger ? 'danger' : 'primary'}>{item.label}</AppText>
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }

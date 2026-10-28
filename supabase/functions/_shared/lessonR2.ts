@@ -124,3 +124,15 @@ export async function createLessonSignedUrl(key: string, expiresIn = 600) {
   });
   return signed.url;
 }
+
+export async function createLessonSignedPutUrl(key: string, contentType: string, expiresIn = 600) {
+  const client = lessonR2Client();
+  const ttl = Math.min(Math.max(expiresIn, 30), 3600);
+  const url = `${objectUrl(client.endpoint, client.bucket, key)}?X-Amz-Expires=${ttl}`;
+  const signed = await client.aws.sign(url, {
+    method: "PUT",
+    headers: { "Content-Type": contentType },
+    aws: { signQuery: true },
+  });
+  return signed.url;
+}

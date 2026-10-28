@@ -1,15 +1,20 @@
 import { json, mapHttpError, preflight, requireFactoryCaller, serviceClient } from "../_shared/lessonHttp.ts";
 import {
   generateImage,
-  generateSpeech,
   generationMeta,
-  inputHash,
   isRateLimitError,
   retryAfterMsFromError,
 } from "../_shared/aiRouter.ts";
 import { createLessonSignedUrl, getLessonObject, headLessonObject, lessonAssetPrefix, putLessonObject } from "../_shared/lessonR2.ts";
 import { estimateSpeechMs, mp3DurationMs } from "../_shared/mp3Duration.ts";
-import { COACH_SPEECH_INSTRUCTIONS, preprocessNarrationScript } from "../_shared/speechProviderAdapter.ts";
+import {
+  buildLessonNarrationScript,
+  findReusableAudio,
+  minNarrationChunks,
+  narrationHashFor,
+  speakSerialized,
+  withTtsLock,
+} from "../_shared/ttsQueue.ts";
 
 const MIN_SCENE_MS = 4000;
 
@@ -78,63 +83,12 @@ function concatMp3(parts: Uint8Array[]) {
   return out;
 }
 
-function chunkNarration(text: string, max = 3900) {
-  const trimmed = text.trim();
-  if (trimmed.length <= max) return [trimmed];
-  const chunks: string[] = [];
-  let rest = trimmed;
-  while (rest.length > max) {
-    let cut = rest.lastIndexOf(". ", max);
-    if (cut < max * 0.4) cut = rest.lastIndexOf(" ", max);
-    if (cut < 1) cut = max;
-    chunks.push(rest.slice(0, cut).trim());
-    rest = rest.slice(cut).trim();
-  }
-  if (rest) chunks.push(rest);
-  return chunks;
-}
-
-function semanticNarrationChunks(scenes: SceneRow[], fallback: string) {
-  const parts = scenes
-    .map((scene) => String(scene.narration_script || scene.narration_text || "").trim())
-    .filter(Boolean);
-  if (parts.length >= 2) return parts.flatMap((part) => chunkNarration(preprocessNarrationScript(part), 1800));
-  return chunkNarration(preprocessNarrationScript(fallback), 1800);
-}
-
-function chunkRole(scene: SceneRow, index: number, total: number) {
-  if (index === 0) return "hook";
-  if (index === total - 1) return "summary";
-  if (scene.recall_prompt) return "checkpoint_transition";
-  const blob = `${scene.memory_technique ?? ""} ${scene.narration_script ?? ""} ${scene.narration_text ?? ""}`.toLowerCase();
-  if (/örnek|örneğin/.test(blob)) return "example";
-  if (scene.memory_technique) return "technique";
-  return "hap_bilgi";
-}
-
-type ChunkPlan = { chunkIndex: number; sceneId: string | null; role: string; text: string };
-
-function buildChunkPlan(scenes: SceneRow[], fallback: string): ChunkPlan[] {
-  const out: ChunkPlan[] = [];
-  scenes.forEach((scene, index) => {
-    const raw = String(scene.narration_script || scene.narration_text || "").trim();
-    if (!raw) return;
-    const role = chunkRole(scene, index, scenes.length);
-    for (const piece of chunkNarration(preprocessNarrationScript(raw), 1800)) {
-      out.push({ chunkIndex: out.length, sceneId: scene.id, role, text: piece });
-    }
-  });
-  if (out.length === 0) {
-    semanticNarrationChunks(scenes, fallback).forEach((piece, i, all) => {
-      out.push({
-        chunkIndex: i,
-        sceneId: null,
-        role: i === 0 ? "hook" : i === all.length - 1 ? "summary" : "hap_bilgi",
-        text: piece,
-      });
-    });
-  }
-  return out;
+async function patchStages(
+  admin: ReturnType<typeof serviceClient>,
+  lessonId: string,
+  patch: Record<string, unknown>,
+) {
+  await admin.from("memory_lessons").update(patch).eq("id", lessonId);
 }
 
 function applyTiming(scenes: SceneRow[], durationMs: number) {
@@ -178,11 +132,15 @@ async function persistRateLimit(
 ) {
   const wait = retryAfterMsFromError(error, 0);
   const next = new Date(Date.now() + wait).toISOString();
-  await admin.from("memory_lessons").update({
-    media_generation_status: "generating",
+  const patch: Record<string, unknown> = {
+    media_generation_status: "waiting_retry",
     media_generation_error: `RATE_LIMITED:${operation}`,
     media_next_retry_at: next,
-  }).eq("id", lessonId);
+    lesson_status: "waiting_media",
+  };
+  if (operation === "tts") patch.tts_status = "rate_limited";
+  if (operation === "image") patch.visual_status = "pending";
+  await admin.from("memory_lessons").update(patch).eq("id", lessonId);
   return { wait, next };
 }
 
@@ -210,20 +168,20 @@ async function upsertAsset(
 }
 
 async function speak(text: string, lessonId: string) {
-  const spoken = await generateSpeech("tts_generation", text, undefined, COACH_SPEECH_INSTRUCTIONS, { lessonId });
+  const spoken = await speakSerialized(text, lessonId);
   return {
     bytes: spoken.bytes,
     mimeType: spoken.mimeType ?? "audio/mpeg",
     model: spoken.model,
     speechPath: spoken.speechPath,
-    meta: generationMeta(spoken, { voice: spoken.voice, prompt_version: "tts-v2", speech_path: spoken.speechPath }),
+    meta: generationMeta(spoken.meta, { voice: spoken.voice, prompt_version: "tts-lesson-v1", speech_path: spoken.speechPath }),
   };
 }
 
 async function generateSceneImage(prompt: string, premium: boolean, lessonId: string) {
   const task = premium ? "premium_image_generation" : "image_generation";
-  const image = await generateImage(task, prompt, { lessonId, size: "1536x1024" });
-  return { bytes: image.bytes, meta: generationMeta(image, { prompt_version: "scene-image-v1" }) };
+  const image = await generateImage(task, prompt, { lessonId, size: "1792x1024" });
+  return { bytes: image.bytes, meta: generationMeta(image, { prompt_version: "scene-image-16x9-v1" }) };
 }
 
 function imagePrompt(lesson: LessonRow, scene: SceneRow) {
@@ -231,7 +189,10 @@ function imagePrompt(lesson: LessonRow, scene: SceneRow) {
   const anchor = scene.visual_anchor || scene.memory_hook || "";
   const target = scene.memory_target || "";
   return [
-    "Educational mnemonic scene, 16:9 landscape, calm cinematic educational illustration, soft painterly lighting, muted earth tones.",
+    "Educational mnemonic scene, ONE master 16:9 landscape image (1792x1024). Do not produce a portrait or 9:16 variant.",
+    "Compose for responsive reuse. Keep all essential subjects, mnemonic objects and visual focal points inside the central 55–60% safe area. Avoid critical visual information near the extreme left/right edges.",
+    "Do not bake important explanatory text into the image. Lesson text and cards are UI overlays. The scene must remain understandable in mobile, tablet and desktop layouts.",
+    "Calm cinematic educational illustration, soft painterly lighting, muted earth tones.",
     "The image must reinforce one consistent memory anchor. Do not change the meaning of a recurring symbol.",
     "No text, no letters, no numbers, no captions, no watermarks, no logos.",
     "No fake historical documents, no labeled maps, no gore, no violence, no shocking imagery.",
@@ -279,7 +240,7 @@ Deno.serve(async (req) => {
     const admin = serviceClient();
     const { data: lesson, error: lessonError } = await admin
       .from("memory_lessons")
-      .select("id, exam_type, subject, unit, topic, title, slug, version, narration, narration_key, thumbnail_key, duration_sec, primary_memory_technique, memory_journey_title")
+      .select("id, exam_type, subject, unit, topic, title, slug, version, narration, narration_key, narration_hash, thumbnail_key, duration_sec, primary_memory_technique, memory_journey_title, tts_status, content_status, questions_status, visual_status, lesson_status")
       .eq("id", lessonId)
       .maybeSingle();
     if (lessonError) throw lessonError;
@@ -300,18 +261,23 @@ Deno.serve(async (req) => {
     let narrationKey = lesson.narration_key as string | null;
     const missingImagesNow = scenes.some((scene) => !scene.asset_key);
     if (mode === "missing" && narrationKey && !missingImagesNow) {
-      await admin
-        .from("memory_lessons")
-        .update({ media_generation_status: "ready", media_generation_error: null, media_generated_at: new Date().toISOString() })
-        .eq("id", lessonId);
+      await patchStages(admin, lessonId, {
+        media_generation_status: "ready",
+        media_generation_error: null,
+        media_generated_at: new Date().toISOString(),
+        tts_status: "ready",
+        visual_status: "ready",
+        lesson_status: "pending_validation",
+      });
       const { data: ready } = await admin.from("memory_lessons").select("*").eq("id", lessonId).maybeSingle();
       return json({ lesson: ready, keys: [], skipped: true, pending: false });
     }
 
-    await admin
-      .from("memory_lessons")
-      .update({ media_generation_status: "generating", media_generation_error: null })
-      .eq("id", lessonId);
+    await patchStages(admin, lessonId, {
+      media_generation_status: "generating",
+      media_generation_error: null,
+      lesson_status: "waiting_media",
+    });
 
     const prefix = lessonAssetPrefix({
       examType: String(lesson.exam_type),
@@ -327,171 +293,180 @@ Deno.serve(async (req) => {
     let usedTtsModel: string | null = null;
     let usedImageModel: string | null = null;
 
-    const shouldNarration = mode === "all" || mode === "narration" || (mode === "missing" && !narrationKey);
+    const forceTts = body.force === true && (mode === "all" || mode === "narration");
+    const script = buildLessonNarrationScript(narration, scenes);
+    const hash = await narrationHashFor(script);
+    const shouldNarration = (mode === "narration" || ((mode === "missing" || mode === "all") && !narrationKey) || forceTts) &&
+      Boolean(script);
     if (shouldNarration) {
       try {
-        const plan = buildChunkPlan(scenes, narration);
-        if (plan.length === 0) throw new Error("NO_NARRATION_SCRIPT");
-        for (const item of plan) {
-          const textHash = await inputHash(item.text);
-          const { error: upsertError } = await admin.from("memory_lesson_narration_chunks").upsert({
+        await patchStages(admin, lessonId, { narration_hash: hash, tts_status: "queued" });
+        const reused = !forceTts ? await findReusableAudio(admin, hash) : null;
+        if (reused?.r2_key) {
+          narrationKey = String(reused.r2_key);
+          durationMs = estimateSpeechMs(script);
+          await patchStages(admin, lessonId, {
+            narration_key: narrationKey,
+            narration_hash: hash,
+            duration_sec: Math.max(1, Math.round(durationMs / 1000)),
+            tts_status: "ready",
+            lesson_status: "waiting_media",
+          });
+          await admin.from("tts_jobs").upsert({
             lesson_id: lessonId,
-            scene_id: item.sceneId,
-            chunk_index: item.chunkIndex,
-            chunk_role: item.role,
-            text_hash: textHash,
-            script_text: item.text,
-            status: "pending",
+            narration_hash: hash,
+            script_text: script.slice(0, 8000),
+            chunk_index: 0,
+            chunk_total: 1,
+            status: "ready",
+            r2_key: narrationKey,
+            reused_from_lesson_id: reused.lesson_id === lessonId ? null : reused.lesson_id,
             updated_at: new Date().toISOString(),
-          }, { onConflict: "lesson_id,chunk_index", ignoreDuplicates: true });
-          if (upsertError) throw new Error(`CHUNK_UPSERT:${upsertError.message}`);
-          const { data: existing } = await admin
-            .from("memory_lesson_narration_chunks")
-            .select("id, text_hash, status, r2_key, script_text")
-            .eq("lesson_id", lessonId)
-            .eq("chunk_index", item.chunkIndex)
-            .maybeSingle();
-          if (existing?.script_text) {
-            /* keep existing narration text; resume audio only */
-          } else if (existing && existing.text_hash !== textHash && existing.status === "ready") {
-            await admin.from("memory_lesson_narration_chunks").update({
-              text_hash: textHash,
-              script_text: item.text,
-              chunk_role: item.role,
-              status: "pending",
-              r2_key: null,
-              updated_at: new Date().toISOString(),
-            }).eq("id", existing.id);
+          }, { onConflict: "lesson_id,chunk_index" });
+        } else {
+          const pieces = minNarrationChunks(script);
+          if (pieces.length === 0) throw new Error("NO_NARRATION_SCRIPT");
+          const { data: pendingCap } = await admin.rpc("factory_pending_tts_count");
+          const { data: settings } = await admin.from("content_factory_settings").select("max_pending_tts_jobs").eq("id", 1).maybeSingle();
+          if (Number(pendingCap ?? 0) >= Number(settings?.max_pending_tts_jobs ?? 5)) {
+            await patchStages(admin, lessonId, { tts_status: "queued", media_generation_status: "waiting_media", lesson_status: "waiting_media" });
+            const { data: outCap } = await admin.from("memory_lessons").select("*").eq("id", lessonId).maybeSingle();
+            return json({ lesson: outCap, pending: true, deferred: true, reason: "tts_batch_cap" });
           }
-        }
-
-        const { data: chunkRows } = await admin
-          .from("memory_lesson_narration_chunks")
-          .select("*")
-          .eq("lesson_id", lessonId)
-          .order("chunk_index", { ascending: true });
-        const rows = chunkRows ?? [];
-        let ttsMeta: Record<string, unknown> | undefined;
-        let limitedChunk: { wait: number; next: string; index: number } | null = null;
-
-        for (const row of rows) {
-          if (onlyChunk != null && Number(row.chunk_index) !== onlyChunk) continue;
-          if (row.status === "ready" && row.r2_key) continue;
-          if (row.next_retry_at && new Date(String(row.next_retry_at)).getTime() > Date.now()) {
-            limitedChunk = {
-              wait: Math.max(0, new Date(String(row.next_retry_at)).getTime() - Date.now()),
-              next: String(row.next_retry_at),
-              index: Number(row.chunk_index),
-            };
-            break;
-          }
-          const planItem = plan.find((item) => item.chunkIndex === Number(row.chunk_index));
-          const script = String(planItem?.text || row.script_text || "").trim();
-          if (!script) continue;
-          await admin.from("memory_lesson_narration_chunks").update({
-            status: "generating",
-            attempt_count: Number(row.attempt_count ?? 0) + 1,
-            updated_at: new Date().toISOString(),
-          }).eq("id", row.id);
-          try {
-            const spoken = await speak(script, lessonId);
-            if (spoken.bytes.byteLength < 400) throw new Error("TTS_EMPTY");
-            const chunkKey = `${prefix}/narration/chunk-${String(row.chunk_index).padStart(3, "0")}.mp3`;
-            await putLessonObject(chunkKey, spoken.bytes, "audio/mpeg");
-            await verifyUploaded(chunkKey, 400, "audio/mpeg");
-            const dur = mp3DurationMs(spoken.bytes);
-            await admin.from("memory_lesson_narration_chunks").update({
-              status: "ready",
-              r2_key: chunkKey,
-              mime_type: spoken.mimeType,
-              duration_ms: dur,
-              model: spoken.model,
-              voice: spoken.meta.voice ?? null,
-              last_error: null,
-              next_retry_at: null,
+          for (let i = 0; i < pieces.length; i++) {
+            await admin.from("tts_jobs").upsert({
+              lesson_id: lessonId,
+              narration_hash: hash,
+              script_text: pieces[i],
+              chunk_index: i,
+              chunk_total: pieces.length,
+              status: "queued",
               updated_at: new Date().toISOString(),
-            }).eq("id", row.id);
-            ttsMeta = spoken.meta;
-            usedTtsModel = spoken.model;
-            createdKeys.push(chunkKey);
-            row.status = "ready";
-            row.r2_key = chunkKey;
-          } catch (error) {
-            console.error("memory-lesson-generate-media chunk", row.chunk_index, error);
-            if (isRateLimitError(error)) {
-              const limited = await persistRateLimit(admin, lessonId, error, "tts");
-              await admin.from("memory_lesson_narration_chunks").update({
-                status: "rate_limited",
-                last_error: "429",
-                next_retry_at: limited.next,
+            }, { onConflict: "lesson_id,chunk_index" });
+          }
+          const { data: jobRows } = await admin.from("tts_jobs").select("*").eq("lesson_id", lessonId).order("chunk_index");
+          const rows = jobRows ?? [];
+          let ttsMeta: Record<string, unknown> | undefined;
+          let limited: { wait: number; next: string; index: number } | null = null;
+
+          await withTtsLock(admin, async () => {
+            for (const row of rows) {
+              if (onlyChunk != null && Number(row.chunk_index) !== onlyChunk) continue;
+              if (row.status === "ready" && row.r2_key) continue;
+              if (row.next_retry_at && new Date(String(row.next_retry_at)).getTime() > Date.now()) {
+                limited = {
+                  wait: Math.max(0, new Date(String(row.next_retry_at)).getTime() - Date.now()),
+                  next: String(row.next_retry_at),
+                  index: Number(row.chunk_index),
+                };
+                break;
+              }
+              await admin.from("tts_jobs").update({
+                status: "generating",
+                attempt_count: Number(row.attempt_count ?? 0) + 1,
                 updated_at: new Date().toISOString(),
               }).eq("id", row.id);
-              limitedChunk = { wait: limited.wait, next: limited.next, index: Number(row.chunk_index) };
-              break;
-            }
-            await admin.from("memory_lesson_narration_chunks").update({
-              status: "failed",
-              last_error: error instanceof Error ? error.message.slice(0, 180) : "TTS_FAILED",
-              updated_at: new Date().toISOString(),
-            }).eq("id", row.id);
-            throw error;
-          }
-        }
-
-        const { data: afterChunks } = await admin
-          .from("memory_lesson_narration_chunks")
-          .select("chunk_index, status, r2_key, next_retry_at")
-          .eq("lesson_id", lessonId)
-          .order("chunk_index", { ascending: true });
-        const ready = (afterChunks ?? []).filter((row) => row.status === "ready" && row.r2_key);
-        const pending = (afterChunks ?? []).filter((row) => row.status !== "ready");
-
-        if (ready.length > 0 && pending.length === 0) {
-          const audioParts: Uint8Array[] = [];
-          for (const row of ready) {
-            audioParts.push(await getLessonObject(String(row.r2_key)));
-          }
-          const mp3 = concatMp3(audioParts);
-          if (mp3.byteLength < 2000) throw new Error("TTS_EMPTY");
-          const key = `${prefix}/narration.mp3`;
-          const uploaded = await putLessonObject(key, mp3, "audio/mpeg");
-          await verifyUploaded(key, 2000, "audio/mpeg");
-          const assembledUrl = await createLessonSignedUrl(key, 600);
-          if (!assembledUrl) throw new Error("TTS_URL_FAILED");
-          narrationKey = key;
-          durationMs = mp3DurationMs(mp3) ?? estimateSpeechMs(narration);
-          await admin
-            .from("memory_lessons")
-            .update({
-              narration_key: key,
-              duration_sec: Math.max(1, Math.round(durationMs / 1000)),
-            })
-            .eq("id", lessonId);
-          await upsertAsset(admin, lessonId, "narration", key, "audio/mpeg", uploaded.bytes, ttsMeta);
-          createdKeys.push(key);
-        }
-
-        if (limitedChunk || pending.length > 0) {
-          const { data: outPartial } = await admin.from("memory_lessons").select("*").eq("id", lessonId).maybeSingle();
-          return json({
-            lesson: outPartial,
-            keys: createdKeys,
-            pending: true,
-            narration_chunks: afterChunks,
-            ready_chunks: ready.length,
-            remaining_chunks: pending.length,
-            tts_model: usedTtsModel,
-            error: limitedChunk
-              ? {
-                code: "RATE_LIMITED",
-                message: "TTS rate-limited.",
-                operation: "tts",
-                chunk_index: limitedChunk.index,
-                retry_after_ms: limitedChunk.wait,
-                next_retry_at: limitedChunk.next,
+              await patchStages(admin, lessonId, { tts_status: "generating" });
+              try {
+                const spoken = await speak(String(row.script_text), lessonId);
+                if (spoken.bytes.byteLength < 400) throw new Error("TTS_EMPTY");
+                const chunkKey = pieces.length === 1
+                  ? `${prefix}/narration.mp3`
+                  : `${prefix}/narration/chunk-${String(row.chunk_index).padStart(3, "0")}.mp3`;
+                await putLessonObject(chunkKey, spoken.bytes, "audio/mpeg");
+                await verifyUploaded(chunkKey, 400, "audio/mpeg");
+                await admin.from("tts_jobs").update({
+                  status: "ready",
+                  r2_key: chunkKey,
+                  last_error: null,
+                  next_retry_at: null,
+                  updated_at: new Date().toISOString(),
+                }).eq("id", row.id);
+                ttsMeta = spoken.meta;
+                usedTtsModel = spoken.model;
+                createdKeys.push(chunkKey);
+                row.status = "ready";
+                row.r2_key = chunkKey;
+              } catch (error) {
+                console.error("memory-lesson-generate-media tts", row.chunk_index, error);
+                if (isRateLimitError(error) || (error instanceof Error && error.message === "TTS_BUSY")) {
+                  const stored = await persistRateLimit(admin, lessonId, error, "tts");
+                  await admin.from("tts_jobs").update({
+                    status: Number(row.attempt_count ?? 0) + 1 >= 3 ? "waiting_retry" : "rate_limited",
+                    last_error: "429",
+                    next_retry_at: stored.next,
+                    updated_at: new Date().toISOString(),
+                  }).eq("id", row.id);
+                  await patchStages(admin, lessonId, {
+                    tts_status: Number(row.attempt_count ?? 0) + 1 >= 3 ? "waiting_retry" : "rate_limited",
+                    lesson_status: "waiting_media",
+                    media_generation_status: "waiting_retry",
+                  });
+                  limited = { wait: stored.wait, next: stored.next, index: Number(row.chunk_index) };
+                  break;
+                }
+                await admin.from("tts_jobs").update({
+                  status: "failed",
+                  last_error: error instanceof Error ? error.message.slice(0, 180) : "TTS_FAILED",
+                  updated_at: new Date().toISOString(),
+                }).eq("id", row.id);
+                throw error;
               }
-              : undefined,
-          }, limitedChunk ? 429 : 200);
+            }
+          });
+
+          const { data: afterJobs } = await admin.from("tts_jobs").select("chunk_index, status, r2_key").eq("lesson_id", lessonId).order("chunk_index");
+          const ready = (afterJobs ?? []).filter((row) => row.status === "ready" && row.r2_key);
+          const pending = (afterJobs ?? []).filter((row) => row.status !== "ready");
+
+          if (ready.length > 0 && pending.length === 0) {
+            let mp3: Uint8Array;
+            if (ready.length === 1) {
+              mp3 = await getLessonObject(String(ready[0].r2_key));
+            } else {
+              const audioParts: Uint8Array[] = [];
+              for (const row of ready) audioParts.push(await getLessonObject(String(row.r2_key)));
+              mp3 = concatMp3(audioParts);
+            }
+            if (mp3.byteLength < 400) throw new Error("TTS_EMPTY");
+            const key = `${prefix}/narration.mp3`;
+            const uploaded = await putLessonObject(key, mp3, "audio/mpeg");
+            await verifyUploaded(key, 400, "audio/mpeg");
+            const assembledUrl = await createLessonSignedUrl(key, 600);
+            if (!assembledUrl) throw new Error("TTS_URL_FAILED");
+            narrationKey = key;
+            durationMs = mp3DurationMs(mp3) ?? estimateSpeechMs(script);
+            await patchStages(admin, lessonId, {
+              narration_key: key,
+              narration_hash: hash,
+              duration_sec: Math.max(1, Math.round(durationMs / 1000)),
+              tts_status: "ready",
+              lesson_status: "waiting_media",
+            });
+            await upsertAsset(admin, lessonId, "narration", key, "audio/mpeg", uploaded.bytes, ttsMeta);
+            createdKeys.push(key);
+          }
+
+          if (limited || pending.length > 0) {
+            const { data: outPartial } = await admin.from("memory_lessons").select("*").eq("id", lessonId).maybeSingle();
+            return json({
+              lesson: outPartial,
+              keys: createdKeys,
+              pending: true,
+              tts_calls: ready.length,
+              remaining_chunks: pending.length,
+              tts_model: usedTtsModel,
+              error: limited
+                ? {
+                  code: "RATE_LIMITED",
+                  message: "TTS rate-limited. Lesson content preserved.",
+                  operation: "tts",
+                  retry_after_ms: limited.wait,
+                  next_retry_at: limited.next,
+                }
+                : undefined,
+            }, limited ? 429 : 200);
+          }
         }
 
         const { data: outAfterTts } = await admin.from("memory_lessons").select("*").eq("id", lessonId).maybeSingle();
@@ -500,27 +475,19 @@ Deno.serve(async (req) => {
             lesson: outAfterTts,
             keys: createdKeys,
             pending: false,
-            ready_chunks: ready.length,
+            tts_calls: 1,
             tts_model: usedTtsModel,
             signed_ok: true,
           });
         }
-        return json({
-          lesson: outAfterTts,
-          keys: createdKeys,
-          pending: true,
-          remaining: scenes.filter((scene) => mode === "all" || !scene.asset_key).length,
-          tts_model: usedTtsModel,
-          ready_chunks: ready.length,
-        });
       } catch (error) {
         console.error("memory-lesson-generate-media narration", error);
-        if (isRateLimitError(error)) {
+        if (isRateLimitError(error) || (error instanceof Error && error.message === "TTS_BUSY")) {
           const limited = await persistRateLimit(admin, lessonId, error, "tts");
           return json({
             error: {
               code: "RATE_LIMITED",
-              message: "TTS rate-limited.",
+              message: "TTS rate-limited. Lesson content preserved.",
               operation: "tts",
               retry_after_ms: limited.wait,
               next_retry_at: limited.next,
@@ -528,11 +495,13 @@ Deno.serve(async (req) => {
           }, 429);
         }
         ttsError = error instanceof Error ? error.message.slice(0, 180) : "Seslendirme oluşturulamadı.";
+        await patchStages(admin, lessonId, {
+          tts_status: "failed",
+          lesson_status: "waiting_media",
+          media_generation_status: "waiting_media",
+          media_generation_error: ttsError,
+        });
         if (mode === "narration") {
-          await admin
-            .from("memory_lessons")
-            .update({ media_generation_status: "failed", media_generation_error: ttsError })
-            .eq("id", lessonId);
           return json({ error: { code: "TTS_FAILED", message: ttsError } }, 502);
         }
       }
@@ -643,13 +612,15 @@ Deno.serve(async (req) => {
     const missingImages = latestScenes.some((scene) => !scene.asset_key);
     const remaining = (mode === "all" ? latestScenes.length - createdKeys.filter((key) => key.includes("/scenes/")).length : latestScenes.filter((scene) => !scene.asset_key).length);
     const complete = Boolean(narrationKey) && !missingImages;
-    const stalled = !complete && createdKeys.length === 0 && imageFailures > 0;
     const patch: Record<string, unknown> = {
-      media_generation_status: complete ? "ready" : stalled ? "failed" : "generating",
-      media_generation_error: complete ? null : stalled ? "Görsel üretilemedi." : !narrationKey ? (ttsError ?? "Seslendirme bekleniyor.") : null,
+      media_generation_status: complete ? "ready" : narrationKey ? "waiting_media" : (ttsError ? "waiting_media" : "generating"),
+      media_generation_error: complete ? null : !narrationKey ? (ttsError ?? "Seslendirme bekleniyor.") : missingImages ? "Görsel bekleniyor." : null,
+      tts_status: narrationKey ? "ready" : undefined,
+      visual_status: missingImages ? "pending" : "ready",
+      lesson_status: complete ? "pending_validation" : "waiting_media",
     };
     if (complete) patch.media_generated_at = new Date().toISOString();
-    await admin.from("memory_lessons").update(patch).eq("id", lessonId);
+    await admin.from("memory_lessons").update(Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined))).eq("id", lessonId);
 
     const { data: out } = await admin.from("memory_lessons").select("*").eq("id", lessonId).maybeSingle();
     return json({
@@ -670,7 +641,8 @@ Deno.serve(async (req) => {
         const { data: sceneRows } = await admin.from("memory_lesson_scenes").select("asset_key").eq("lesson_id", failLessonId);
         const complete = Boolean(lesson?.narration_key) && (sceneRows ?? []).length > 0 && (sceneRows ?? []).every((row) => row.asset_key);
         await admin.from("memory_lessons").update({
-          media_generation_status: complete ? "ready" : "generating",
+          media_generation_status: complete ? "ready" : "waiting_media",
+          lesson_status: complete ? "pending_validation" : "waiting_media",
           media_generation_error: complete ? null : "Medya üretimi yarıda kaldı, tekrar dene.",
         }).eq("id", failLessonId);
       } catch {

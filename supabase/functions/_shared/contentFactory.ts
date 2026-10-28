@@ -107,12 +107,13 @@ type LessonRow = {
   canonical_topic_id: string | null;
   lesson_generation_hash?: string | null;
   media_next_retry_at?: string | null;
+  lock_authored?: boolean | null;
 };
 
 export async function loadLesson(admin: SupabaseClient, id: string | null) {
   if (!id) return null;
   const { data } = await admin.from("memory_lessons").select(
-    "id, status, narration, generation_status, pedagogy_score, academic_pass, fast_rule, media_generation_status, narration_key, canonical_topic_id, lesson_generation_hash, media_next_retry_at",
+    "id, status, narration, generation_status, pedagogy_score, academic_pass, fast_rule, media_generation_status, narration_key, canonical_topic_id, lesson_generation_hash, media_next_retry_at, lock_authored, content_status, questions_status, tts_status, visual_status, lesson_status",
   ).eq("id", id).maybeSingle();
   return (data as LessonRow | null) ?? null;
 }

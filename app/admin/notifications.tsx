@@ -1,3 +1,5 @@
-import { AdminNotificationsScreen } from '@/src/features/admin/AdminPages';
+import { Redirect } from 'expo-router';
 
-export default AdminNotificationsScreen;
+export default function Page() {
+  return <Redirect href={'/admin/duyurular' as never} />;
+}

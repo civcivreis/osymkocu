@@ -1,0 +1,36 @@
+{
+  "canonical_topic_id": "kut",
+  "title": "Kut anlayışı",
+  "subject": "Tarih",
+  "exam_codes": ["KPSS_LISANS"],
+  "estimated_duration_sec": 210,
+  "learning_objective": "Kut’un ilahi hükümdarlık yetkisi olduğunu ayırt etmek.",
+  "hook": "Türk devlet geleneğinde taht rastgele verilmez.",
+  "teaching_blocks": [
+    {
+      "type": "definition",
+      "narration": "Kut, hükümdarlık yetkisinin Tanrı tarafından verildiğine inanılmasıdır.",
+      "card_type": "HAP BİLGİ",
+      "card_text": "KUT — İlahi yönetme yetkisi",
+      "semantic_key": "kut-definition"
+    }
+  ],
+  "checkpoints": [
+    {
+      "intro_narration": "Şimdi kut’u şıklarda yakala.",
+      "question": "Kut neyi ifade eder?",
+      "choices": ["Askeri güç", "İlahi hükümdarlık yetkisi", "Vergi sistemi", "Boylar meclisi", "Göç"],
+      "correct_answer": "B",
+      "wrong_explanation": "Kut askeri güç değil, Tanrı kaynaklı yönetme yetkisidir.",
+      "retry_question": "Tanrı’nın hükümdara verdiği yetkinin adı nedir?"
+    }
+  ],
+  "final_questions": [
+    {
+      "question": "Kut inancı hangi sonucu doğurur?",
+      "choices": ["Hükümdarın meşruiyeti gökten gelir", "Halk meclisi kurulur", "Ordu dağıtılır", "Başkent değişir", "Din değişir"],
+      "correct_answer": "A"
+    }
+  ],
+  "memory_summary": "Kut = Tanrı’nın verdiği yönetme yetkisi."
+}

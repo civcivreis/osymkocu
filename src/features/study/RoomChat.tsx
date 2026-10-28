@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
 import { ChatActionSheet } from '@/src/features/social/ChatActionSheet';
@@ -20,10 +20,12 @@ export function RoomChat({
   sessionId,
   me,
   members,
+  hideTitle,
 }: {
   sessionId: string;
   me?: string;
   members: { user_id: string; display_name: string }[];
+  hideTitle?: boolean;
 }) {
   const { colors } = useAppTheme();
   const chat = useStudyRoomMessages(sessionId);
@@ -48,22 +50,23 @@ export function RoomChat({
 
   const onSend = () => {
     const body = draft.trim();
-    if (!body || chat.send.isPending) return;
+    if (!body) return;
     if (isBlockedRoomMessage(body)) {
       toastInfo('Bu içerik topluluk kurallarına uygun değil.');
       return;
     }
-    void chat.send.mutateAsync(body).then(
-      () => setDraft(''),
-      (error: unknown) => toastError(error),
-    );
+    setDraft('');
+    void chat.send.mutateAsync(body).catch((error: unknown) => toastError(error));
   };
 
   return (
-    <View style={{ gap: 8, marginTop: 8 }}>
-      <AppText variant="label" tone="accent">
-        ODA SOHBETİ
-      </AppText>
+    <View style={{ gap: 8, flex: 1, minHeight: 0 }}>
+      {hideTitle ? null : (
+        <AppText variant="label" tone="accent">
+          ODA SOHBETİ
+        </AppText>
+      )}
+      <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ gap: 8, paddingBottom: 8 }}>
       {(chat.data ?? []).map((message) => {
         const mine = message.sender_id === me;
         return (
@@ -93,6 +96,7 @@ export function RoomChat({
           </Pressable>
         );
       })}
+      </ScrollView>
       <ChatComposer
         draft={draft}
         onChangeDraft={setDraft}

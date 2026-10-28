@@ -1,13 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Platform, Pressable, View, type ViewStyle } from 'react-native';
+import { Platform, Pressable, ScrollView, View, type ViewStyle } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
 import { Button } from '@/src/components/ui/Button';
 import { Card } from '@/src/components/ui/Card';
 import { EmptyState } from '@/src/components/ui/EmptyState';
 import { Screen } from '@/src/components/ui/Screen';
+import { SegmentedTabs } from '@/src/components/ui/SegmentedTabs';
 import { TextField } from '@/src/components/ui/TextField';
 import { toastError } from '@/src/components/ui/feedbackStore';
 import { WeeklyXpCard } from '@/src/features/progress/WeeklyXpCard';
@@ -17,15 +18,18 @@ import { LetterAvatar } from '@/src/features/social/LetterAvatar';
 import { StudyInviteSheet } from '@/src/features/social/ReportSheet';
 import { StatusComposer } from '@/src/features/social/StatusComposer';
 import { StoriesRail } from '@/src/features/social/StoriesRail';
-import { taggedName, postedAt } from '@/src/features/social/identity';
+import { liveStudyLine, taggedName, postedAt } from '@/src/features/social/identity';
+import { prefetchProfileCard, useFollowList } from '@/src/features/social/useFollows';
 import {
   useActiveStudyTopics,
   useFriendships,
+  useLiveStudying,
   useOpenRooms,
   useRecommendedPartners,
   useRespondFriend,
   useSocialPosts,
   type ActiveStudyTopic,
+  type LiveStudyingUser,
   type OpenRoom,
   type RecommendedPartner,
 } from '@/src/features/social/useSocial';
@@ -62,10 +66,14 @@ export function SocialScreen() {
   const [topicFilter, setTopicFilter] = useState<string | null>(params.topicId ?? null);
   const [canonicalFilter, setCanonicalFilter] = useState<string | null>(params.canonicalTopicId ?? null);
   const posts = useSocialPosts();
+  const liveNow = useLiveStudying();
+  const following = useFollowList(me ?? null, 'following', '');
   const rooms = useOpenRooms();
   const friendships = useFriendships();
   const respond = useRespondFriend();
   const [createOpen, setCreateOpen] = useState(false);
+  const [hub, setHub] = useState<'social' | 'rooms'>('social');
+  const [feedTab, setFeedTab] = useState<'for_you' | 'following'>('for_you');
   const subjects = useStudySubjects(examId ?? null);
   const topics = useActiveStudyTopics();
   const partners = useRecommendedPartners({
@@ -83,14 +91,20 @@ export function SocialScreen() {
     [friendships.data, me],
   );
 
+  const followingIds = useMemo(
+    () => new Set((following.data ?? []).map((row) => row.id)),
+    [following.data],
+  );
+
   const filteredPosts = useMemo(() => {
     return (posts.data ?? []).filter((post) => {
       if (subjectFilter && post.subject_id !== subjectFilter) return false;
       if (topicFilter && post.topic_id !== topicFilter) return false;
       if (canonicalFilter && post.canonical_topic_id !== canonicalFilter) return false;
+      if (feedTab === 'following' && !followingIds.has(post.user_id)) return false;
       return true;
     });
-  }, [canonicalFilter, posts.data, subjectFilter, topicFilter]);
+  }, [canonicalFilter, feedTab, followingIds, posts.data, subjectFilter, topicFilter]);
 
   const filteredRooms = useMemo(() => {
     const list = rooms.data ?? [];
@@ -135,30 +149,31 @@ export function SocialScreen() {
           </View>
         </View>
       </Card>
-      <Card>
-        <View style={{ gap: 10 }}>
-          <AppText variant="label" tone="accent">
-            AKTİF ODALAR
-          </AppText>
-          {filteredRooms.slice(0, 5).length === 0 ? (
-            <AppText variant="caption" tone="muted">Henüz açık oda yok.</AppText>
-          ) : (
-            filteredRooms.slice(0, 5).map((room) => <JoinableRoomCard key={room.id} room={room} compact />)
-          )}
-          <Pressable
-            onPress={() => setCreateOpen(true)}
-            style={{
-              minHeight: 40,
-              borderRadius: 12,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}>
-            <AppText variant="label">Çalışma Odası Kur</AppText>
-          </Pressable>
-        </View>
-      </Card>
+    </View>
+  );
+
+  const createRoomButton = (sticky?: boolean) => (
+    <Pressable
+      onPress={() => setCreateOpen(true)}
+      style={{
+        minHeight: 48,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.accent,
+        paddingHorizontal: 16,
+        ...(sticky ? { alignSelf: 'flex-end' } : { width: '100%' }),
+      }}>
+      <AppText variant="label" tone="inverse">+ Çalışma Odası Kur</AppText>
+    </Pressable>
+  );
+
+  const roomsPanel = (
+    <View style={{ gap: 12, width: '100%' }}>
+      <View style={{ flexDirection: width >= 900 ? 'row' : 'column', justifyContent: 'space-between', gap: 10, alignItems: width >= 900 ? 'center' : 'stretch' }}>
+        <AppText variant="title">Çalışma Odaları</AppText>
+        {createRoomButton(width >= 900)}
+      </View>
       <Card>
         <View style={{ gap: 10 }}>
           <AppText variant="caption">Eşleşme havuzu: {autoMatch ? 'Açık' : 'Kapalı'}</AppText>
@@ -175,25 +190,30 @@ export function SocialScreen() {
               {autoMatch ? 'Eşleşmeyi Kapat' : 'Eşleşmeyi Aç'}
             </AppText>
           </Pressable>
-          {autoMatch ? (
-            <AppText variant="caption" tone="muted">
-              Şu anda eşleşme arıyorsun
-            </AppText>
-          ) : null}
         </View>
       </Card>
+      {left}
+      {filteredRooms.length === 0 ? (
+        <EmptyState icon="people-outline" title="Henüz açık oda yok." body="Yukarıdan bir çalışma odası kur." />
+      ) : (
+        filteredRooms.map((room) => <JoinableRoomCard key={room.id} room={room} />)
+      )}
     </View>
   );
 
   const feed = (
     <View style={{ gap: 12, width: '100%', alignSelf: 'stretch', minWidth: 0 }}>
       <StoriesRail />
+      <NowStudyingRail rows={liveNow.data ?? []} />
       <StatusComposer />
-      {autoMatch ? (
-        <Card>
-          <AppText variant="caption">Eşleşme havuzu açık. Uygun bir öğrenci bulunursa “Birini buldum” kartı açılır.</AppText>
-        </Card>
-      ) : null}
+      <SegmentedTabs
+        value={feedTab}
+        onChange={setFeedTab}
+        tabs={[
+          { value: 'for_you', label: 'Sana Özel' },
+          { value: 'following', label: 'Takip' },
+        ]}
+      />
       {incoming.length > 0 ? (
         <Card>
           <View style={{ gap: 8 }}>
@@ -294,7 +314,7 @@ export function SocialScreen() {
       } as unknown as ViewStyle)
     : null;
 
-  const shell = threeCol ? (
+  const socialShell = threeCol ? (
     <View style={[{ width: '100%', minWidth: 0 }, desktopGrid ?? { flexDirection: 'row', gap: 24, alignItems: 'flex-start' }]}>
       <View style={{ width: desktopGrid ? undefined : 220, flexShrink: 0 }}>{left}</View>
       <View style={{ minWidth: 0, width: '100%', flexGrow: 1, maxWidth: desktopGrid ? undefined : 760 }}>{feed}</View>
@@ -326,13 +346,34 @@ export function SocialScreen() {
     <View style={{ gap: 14, width: '100%' }}>
       {feed}
       {left}
+    </View>
+  );
+
+  const roomsShell = twoCol || threeCol ? (
+    <View style={{ width: '100%', flexDirection: 'row', gap: 20, alignItems: 'flex-start' }}>
+      <View style={{ flex: 1, minWidth: 0 }}>{roomsPanel}</View>
+      <View style={{ width: 300, flexShrink: 0 }}>{right}</View>
+    </View>
+  ) : (
+    <View style={{ gap: 14, width: '100%' }}>
+      {roomsPanel}
       {right}
     </View>
   );
 
   return (
-    <Screen scroll safeEdges={['top']} wide style={{ paddingTop: 12 }}>
-      {shell}
+    <Screen scroll safeEdges={['top']} wide style={{ paddingTop: 12, width: '100%' }}>
+      <View style={{ marginBottom: 16, maxWidth: 420, width: '100%', alignSelf: 'flex-start' }}>
+        <SegmentedTabs
+          value={hub}
+          onChange={setHub}
+          tabs={[
+            { value: 'social', label: 'Sosyal' },
+            { value: 'rooms', label: 'Çalışma Odaları' },
+          ]}
+        />
+      </View>
+      {hub === 'social' ? socialShell : roomsShell}
       <CreateRoomModal visible={createOpen} onClose={() => setCreateOpen(false)} />
     </Screen>
   );
@@ -359,7 +400,11 @@ export function PersonRow({
     .join(' · ');
 
   return (
-    <Pressable onPress={() => router.push({ pathname: '/user', params: { userId: person.id } })}>
+    <Pressable
+      onPress={() => {
+        void prefetchProfileCard(person.id);
+        router.push({ pathname: '/user', params: { userId: person.id } });
+      }}>
       <Card>
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
           <LetterAvatar id={person.id} name={person.display_name} />
@@ -372,6 +417,62 @@ export function PersonRow({
         </View>
       </Card>
     </Pressable>
+  );
+}
+
+function NowStudyingRail({ rows }: { rows: LiveStudyingUser[] }) {
+  const { colors, radius } = useAppTheme();
+  const [picked, setPicked] = useState<LiveStudyingUser | null>(null);
+  return (
+    <View style={{ gap: 8 }}>
+      <AppText variant="label" tone="accent">
+        ŞU AN ÇALIŞANLAR
+      </AppText>
+      {rows.length === 0 ? (
+        <AppText variant="caption" tone="muted">
+          Şu an görünür çalışan yok. Ders açınca durumun burada çıkar.
+        </AppText>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          {rows.map((row) => (
+            <Pressable
+              key={row.user_id}
+              onPress={() => setPicked(row)}
+              style={{
+                width: 148,
+                padding: 12,
+                borderRadius: radius.md,
+                backgroundColor: colors.surface,
+                borderWidth: 1,
+                borderColor: colors.border,
+                gap: 4,
+              }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <LetterAvatar id={row.user_id} name={row.display_name} size={28} />
+                <AppText variant="caption" style={{ fontWeight: '700', flex: 1 }} numberOfLines={1}>
+                  {row.display_name}
+                </AppText>
+              </View>
+              <AppText variant="caption" tone="accent" numberOfLines={1}>
+                {row.subject_name ?? 'Ders'}
+              </AppText>
+              <AppText variant="caption" tone="muted" numberOfLines={2}>
+                {row.topic_name ?? liveStudyLine(row.subject_name, row.topic_name, 'ACTIVE')}
+              </AppText>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+      {picked ? (
+        <TogetherSheet
+          visible
+          otherId={picked.user_id}
+          subjectId={picked.subject_id}
+          topicId={picked.topic_id}
+          onClose={() => setPicked(null)}
+        />
+      ) : null}
+    </View>
   );
 }
 
@@ -400,7 +501,12 @@ function PartnerCard({ person }: { person: RecommendedPartner }) {
   const [open, setOpen] = useState(false);
   return (
     <View style={{ backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 12, gap: 6 }}>
-      <Pressable onPress={() => router.push({ pathname: '/user', params: { userId: person.user_id } })} style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+      <Pressable
+        onPress={() => {
+          void prefetchProfileCard(person.user_id);
+          router.push({ pathname: '/user', params: { userId: person.user_id } });
+        }}
+        style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
         <LetterAvatar id={person.user_id} name={person.display_name} size={36} imageUrl={person.avatar_url} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <AppText numberOfLines={1}>{taggedName(person.display_name, person.display_tag)}</AppText>

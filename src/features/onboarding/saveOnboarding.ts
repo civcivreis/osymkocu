@@ -14,8 +14,8 @@ export async function saveOnboarding(values: OnboardingValues) {
     p_target_tyt_net: null,
     p_target_ayt_net: null,
     p_target_kpss_score: kpss ? values.targetScore : null,
-    p_strong: values.strongSubjectIds,
-    p_weak: values.weakSubjectIds,
+    p_strong: [],
+    p_weak: [],
     p_exam_year: values.examYear,
   });
 

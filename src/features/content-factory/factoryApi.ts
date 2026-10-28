@@ -94,6 +94,39 @@ export async function queueTestTopic() {
   return data as { action: string; job_id?: string };
 }
 
+export async function importContentPack(input: {
+  text: string;
+  filename?: string;
+  updateExisting?: boolean;
+  enqueueMedia?: boolean;
+}) {
+  const invoked = await getSupabase().functions.invoke('content-pack-import', {
+    body: {
+      text: input.text,
+      filename: input.filename ?? 'pack.json',
+      update_existing: Boolean(input.updateExisting),
+      enqueue_media: false,
+      enqueue_first_media_batch: Boolean(input.enqueueMedia),
+    },
+  });
+  if (invoked.error) throw invokeError(invoked.data, invoked.error.message);
+  return invoked.data as {
+    ok: boolean;
+    import_id?: string;
+    total: number;
+    imported: number;
+    invalid: unknown[];
+    duplicates: unknown[];
+    media_queued?: number;
+  };
+}
+
+export async function enqueueKpssTurkceBatch() {
+  const { data, error } = await getSupabase().rpc('admin_factory_enqueue_kpss_turkce_batch');
+  if (error) throw error;
+  return data as { queued?: number; jobs?: unknown; skipped?: unknown; cap?: number };
+}
+
 export async function listFactoryJobs(): Promise<FactoryJob[]> {
   const { data, error } = await getSupabase()
     .from('content_generation_jobs')

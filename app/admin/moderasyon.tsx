@@ -1,5 +1,5 @@
-import { AdminModerationScreen } from '@/src/features/admin/AdminModerationScreen';
+import { Redirect } from 'expo-router';
 
-export default function AdminModerationRoute() {
-  return <AdminModerationScreen />;
+export default function Page() {
+  return <Redirect href={'/admin/reports' as never} />;
 }

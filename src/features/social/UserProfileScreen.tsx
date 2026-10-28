@@ -7,6 +7,7 @@ import { Pressable, View } from 'react-native';
 import { ActionSheet } from '@/src/components/ui/ActionSheet';
 import { AppText } from '@/src/components/ui/AppText';
 import { Card } from '@/src/components/ui/Card';
+import { ContentColumn } from '@/src/components/ui/ContentColumn';
 import { PageHeader } from '@/src/components/ui/PageHeader';
 import { ProgressBar } from '@/src/components/ui/ProgressBar';
 import { Screen } from '@/src/components/ui/Screen';
@@ -15,7 +16,7 @@ import { formatXp, getLevelProgress } from '@/src/features/progress/xp';
 import { useXpSummary } from '@/src/features/progress/useXpBoard';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
 import { EditPostSheet, ReportSheet, StudyInviteSheet } from '@/src/features/social/ReportSheet';
-import { postedAt, taggedName } from '@/src/features/social/identity';
+import { liveStudyLine, postedAt, taggedName } from '@/src/features/social/identity';
 import { VirtualDisclosure, isVirtualProfile } from '@/src/features/social/VirtualDisclosure';
 import {
     followLabel,
@@ -153,7 +154,7 @@ export function UserProfileScreen({
   const onMenu = () => setProfileMenu(true);
 
   const inner = (
-    <View style={{ gap: spacing.md, paddingBottom: embedded ? 8 : 20 }}>
+    <ContentColumn maxWidth={720} style={{ gap: spacing.md, paddingBottom: embedded ? 8 : 20 }}>
       <PageHeader title="Profil" />
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {embedded ? null : (
@@ -196,6 +197,11 @@ export function UserProfileScreen({
           </View>
           <AppText variant="title">{name}</AppText>
           <VirtualDisclosure profile={card} />
+          {card.live_study?.presence_state === 'ACTIVE' || card.live_study?.presence_state === 'BREAK' ? (
+            <AppText variant="caption" tone="accent" style={{ textAlign: 'center' }}>
+              {liveStudyLine(card.live_study.subject_name, card.live_study.topic_name, card.live_study.presence_state)}
+            </AppText>
+          ) : null}
           {mine ? (
             <View style={{ width: '100%', gap: 8, paddingHorizontal: 12 }}>
               <AppText variant="subtitle" style={{ textAlign: 'center' }}>
@@ -336,7 +342,9 @@ export function UserProfileScreen({
               borderColor: colors.border,
               backgroundColor: colors.surface,
             }}>
-            <AppText variant="label">Birlikte çalış</AppText>
+            <AppText variant="label">
+              {card.live_study?.presence_state === 'ACTIVE' ? '🟢 Birlikte çalış' : 'Birlikte çalış'}
+            </AppText>
           </Pressable>
         </View>
       ) : null}
@@ -577,7 +585,7 @@ export function UserProfileScreen({
           );
         }}
       />
-    </View>
+    </ContentColumn>
   );
 
   if (embedded) return inner;

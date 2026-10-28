@@ -15,9 +15,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/src/components/ui/AppText';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
 import { postedAt, taggedName } from '@/src/features/social/identity';
+import { ReportSheet } from '@/src/features/social/ReportSheet';
 import {
   useAddPostComment,
+  useDeleteOwnComment,
   usePostComments,
+  useReportContent,
   useToggleCommentLike,
   type PostComment,
   type SocialPost,
@@ -44,6 +47,9 @@ export function CommentsSheet({
   const comments = usePostComments(visible && post ? post.id : null);
   const send = useAddPostComment();
   const like = useToggleCommentLike();
+  const remove = useDeleteOwnComment();
+  const report = useReportContent();
+  const [reportId, setReportId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [replyTo, setReplyTo] = useState<PostComment | null>(null);
   const [page, setPage] = useState(PAGE);
@@ -142,6 +148,13 @@ export function CommentsSheet({
                   setDraft(`@${taggedName(row.display_name, row.display_tag)} `);
                 }}
                 onLike={(id) => void like.mutateAsync(id)}
+                onDelete={(id) =>
+                  void remove.mutateAsync(id).then(
+                    () => toastSuccess('Yorum silindi.'),
+                    (error: unknown) => toastError(error),
+                  )
+                }
+                onReport={(id) => setReportId(id)}
               />
             )}
           />
@@ -196,6 +209,20 @@ export function CommentsSheet({
             </View>
           </View>
         </View>
+        <ReportSheet
+          visible={Boolean(reportId)}
+          title="Yorumu şikayet et"
+          onClose={() => setReportId(null)}
+          onSubmit={(reason) => {
+            const id = reportId;
+            setReportId(null);
+            if (!id) return;
+            void report.mutateAsync({ type: 'comment', contentId: id, reason }).then(
+              () => toastSuccess('Şikayetin alındı.'),
+              (error: unknown) => toastError(error),
+            );
+          }}
+        />
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -207,19 +234,30 @@ function CommentBlock({
   me,
   onReply,
   onLike,
+  onDelete,
+  onReport,
 }: {
   item: PostComment;
   replies: PostComment[];
   me?: string;
   onReply: (row: PostComment) => void;
   onLike: (id: string) => void;
+  onDelete: (id: string) => void;
+  onReport: (id: string) => void;
 }) {
   return (
     <View style={{ gap: 12 }}>
-      <CommentRow item={item} me={me} onReply={onReply} onLike={onLike} />
+      <CommentRow item={item} me={me} onReply={onReply} onLike={onLike} onDelete={onDelete} onReport={onReport} />
       {replies.map((reply) => (
         <View key={reply.id} style={{ marginLeft: 36 }}>
-          <CommentRow item={reply} me={me} onReply={() => onReply(item)} onLike={onLike} />
+          <CommentRow
+            item={reply}
+            me={me}
+            onReply={() => onReply(item)}
+            onLike={onLike}
+            onDelete={onDelete}
+            onReport={onReport}
+          />
         </View>
       ))}
     </View>
@@ -231,11 +269,15 @@ function CommentRow({
   me,
   onReply,
   onLike,
+  onDelete,
+  onReport,
 }: {
   item: PostComment;
   me?: string;
   onReply: (row: PostComment) => void;
   onLike: (id: string) => void;
+  onDelete: (id: string) => void;
+  onReport: (id: string) => void;
 }) {
   const { colors } = useAppTheme();
   return (
@@ -259,6 +301,19 @@ function CommentRow({
               Yanıtla
             </AppText>
           </Pressable>
+          {item.user_id === me ? (
+            <Pressable onPress={() => onDelete(item.id)} hitSlop={8}>
+              <AppText variant="caption" tone="muted" style={{ fontWeight: '600' }}>
+                Sil
+              </AppText>
+            </Pressable>
+          ) : (
+            <Pressable onPress={() => onReport(item.id)} hitSlop={8}>
+              <AppText variant="caption" tone="muted" style={{ fontWeight: '600' }}>
+                Şikayet
+              </AppText>
+            </Pressable>
+          )}
           <Pressable onPress={() => onLike(item.id)} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Ionicons
               name={item.liked_by_me ? 'heart' : 'heart-outline'}

@@ -1,3 +1,5 @@
-import { AdminContentFactoryScreen } from '@/src/features/admin/AdminContentFactoryScreen';
+import { Redirect } from 'expo-router';
 
-export default AdminContentFactoryScreen;
+export default function Page() {
+  return <Redirect href={'/admin/mufredat' as never} />;
+}

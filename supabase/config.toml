@@ -1,5 +1,22 @@
 project_id = "qvmhtzpaoxdychyjhqyj"
 
+[auth]
+site_url = "https://osymkocu.com"
+additional_redirect_urls = [
+  "https://osymkocu.com/email-confirmed",
+  "https://osymkocu.com/auth/callback",
+  "https://osymkocu.com/**",
+  "https://www.osymkocu.com/**",
+  "https://www.osymkocu.com/email-confirmed",
+  "https://admin.osymkocu.com/**",
+  "kocum://email-confirmed",
+  "kocum://auth/callback",
+  "kocum://**",
+  "http://127.0.0.1:8081/**",
+  "http://localhost:8081/**",
+  "exp://127.0.0.1:8081/**",
+]
+
 [functions.ai]
 verify_jwt = false
 
@@ -40,6 +57,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.content-factory-breakdown]
+verify_jwt = false
+
+[functions.content-pack-import]
 verify_jwt = false
 
 [functions.curriculum-decompose]

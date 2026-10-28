@@ -202,6 +202,120 @@ export async function getTodayStudyRecommendations(examId: string) {
   return Array.isArray(items) ? items : [];
 }
 
+export type PackageReview = {
+  packageId: string;
+  title: string;
+  isLast: boolean;
+  position: number;
+  total: number;
+  questions: MemoryLessonQuestion[];
+};
+
+async function questionsForLessonIds(lessonIds: string[], limit = 5): Promise<MemoryLessonQuestion[]> {
+  if (!lessonIds.length) return [];
+  const { data: questions } = await getSupabase()
+    .from('memory_lesson_questions')
+    .select('*')
+    .in('lesson_id', lessonIds)
+    .order('question_order', { ascending: true });
+  const picked: MemoryLessonQuestion[] = [];
+  const seen = new Set<string>();
+  for (const q of (questions ?? []) as MemoryLessonQuestion[]) {
+    if (seen.has(q.lesson_id)) continue;
+    seen.add(q.lesson_id);
+    picked.push(q);
+    if (picked.length >= limit) break;
+  }
+  return picked;
+}
+
+export async function getPackageReviewForLesson(lessonId: string): Promise<PackageReview | null> {
+  const supabase = getSupabase();
+  const { data: lesson, error: lessonError } = await supabase
+    .from('memory_lessons')
+    .select('id, canonical_topic_id, unit_id, topic_id')
+    .eq('id', lessonId)
+    .maybeSingle();
+  if (lessonError || !lesson) return null;
+
+  if (lesson.canonical_topic_id) {
+    const { data: membership } = await supabase
+      .from('lesson_package_items')
+      .select('package_id, sort_order')
+      .eq('canonical_topic_id', lesson.canonical_topic_id)
+      .maybeSingle();
+    if (membership) {
+      const { data: items } = await supabase
+        .from('lesson_package_items')
+        .select('canonical_topic_id, sort_order')
+        .eq('package_id', membership.package_id)
+        .order('sort_order', { ascending: true });
+      const list = items ?? [];
+      const index = list.findIndex((row) => row.canonical_topic_id === lesson.canonical_topic_id);
+      const position = index + 1;
+      const total = list.length;
+      const isLast = total > 0 && index === total - 1;
+      const { data: pack } = await supabase
+        .from('lesson_packages')
+        .select('id, title, review_question_count, status')
+        .eq('id', membership.package_id)
+        .maybeSingle();
+      const title = pack?.title ?? 'Paket';
+      if (!isLast || pack?.status !== 'published') {
+        return { packageId: membership.package_id, title, isLast, position, total, questions: [] };
+      }
+      const topicIds = list.map((row) => row.canonical_topic_id);
+      const { data: lessons } = await supabase
+        .from('memory_lessons')
+        .select('id, canonical_topic_id')
+        .eq('status', 'published')
+        .in('canonical_topic_id', topicIds);
+      const questions = await questionsForLessonIds(
+        (lessons ?? []).map((row) => row.id),
+        Number(pack.review_question_count ?? 5),
+      );
+      return { packageId: pack.id, title, isLast: true, position, total, questions };
+    }
+  }
+
+  if (!lesson.unit_id) return { packageId: lesson.unit_id ?? lessonId, title: 'Paket', isLast: false, position: 1, total: 1, questions: [] };
+  const { data: siblings } = await supabase
+    .from('memory_lessons')
+    .select('id, topic_id, created_at')
+    .eq('unit_id', lesson.unit_id)
+    .eq('status', 'published')
+    .order('created_at', { ascending: true });
+  const list = siblings ?? [];
+  const index = list.findIndex((row) => row.id === lessonId);
+  if (index < 0) return null;
+  const packStart = Math.floor(index / 5) * 5;
+  const pack = list.slice(packStart, packStart + 5);
+  const position = index - packStart + 1;
+  const total = pack.length;
+  const isLast = position === total;
+  if (!isLast) {
+    return { packageId: `${lesson.unit_id}-${packStart}`, title: 'Paket', isLast: false, position, total, questions: [] };
+  }
+  const questions = await questionsForLessonIds(pack.map((row) => row.id), 5);
+  return { packageId: `${lesson.unit_id}-${packStart}`, title: 'Paket', isLast: true, position, total, questions };
+}
+
+export async function getLessonCues(lessonId: string) {
+  const { data, error } = await getSupabase()
+    .from('lesson_timeline_events')
+    .select('event_type, appear_at_ms, payload')
+    .eq('lesson_id', lessonId)
+    .order('appear_at_ms');
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getNextLessonCountdown(): Promise<number> {
+  const { data } = await getSupabase().from('app_runtime_settings').select('*').eq('id', 1).maybeSingle();
+  const value = Number((data as { default_next_lesson_countdown?: number } | null)?.default_next_lesson_countdown);
+  return Number.isFinite(value) && value >= 5 && value <= 30 ? value : 10;
+}
+
 export async function getNextPublishedLesson(lessonId: string, examId: string) {
   const { data, error } = await getSupabase().rpc('get_next_published_memory_lesson', {
     p_lesson: lessonId,

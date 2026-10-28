@@ -133,14 +133,14 @@ export function ChatScreen({
     useCallback(() => {
       if (!thread) return undefined;
       markDm({ kind: 'dm', thread });
-      const tick = setInterval(() => markDm({ kind: 'dm', thread }), 4000);
+      const tick = setInterval(() => markDm({ kind: 'dm', thread }), 20_000);
       return () => clearInterval(tick);
     }, [markDm, thread]),
   );
 
   const waiting = Boolean(conversation && !conversation.accepted_at && conversation.initiated_by === me);
   const incoming = Boolean(conversation && !conversation.accepted_at && conversation.initiated_by !== me);
-  const canSend = Boolean(otherId && (draft.trim() || pending) && !send.isPending && !sendingImage && !waiting);
+  const canSend = Boolean(otherId && (draft.trim() || pending) && !sendingImage && !waiting);
   const rows = useMemo(() => buildRows(messages), [messages]);
   const messageIds = useMemo(() => messages.map((item) => item.id), [messages]);
   const reactions = useMessageReactions('dm', messageIds);
@@ -154,18 +154,21 @@ export function ChatScreen({
       toastInfo('Bu içerik topluluk kurallarına uygun değil.');
       return;
     }
+    const image = pending;
     try {
-      setSendingImage(Boolean(pending));
+      setSendingImage(Boolean(image));
       let mediaId: string | undefined;
-      let width = pending?.width;
-      let height = pending?.height;
-      if (pending) {
+      let width = image?.width;
+      let height = image?.height;
+      setDraft('');
+      setPending(null);
+      if (image) {
         const uploaded = await uploadChatImage({
           userId: me,
-          base64: pending.base64,
-          mime: pending.mime,
-          width: pending.width,
-          height: pending.height,
+          base64: image.base64,
+          mime: image.mime,
+          width: image.width,
+          height: image.height,
           conversationId: conversation?.id,
           otherUserId: otherId,
         });
@@ -180,13 +183,9 @@ export function ChatScreen({
         width,
         height,
       });
-      setDraft('');
-      setPending(null);
-      await conversationQuery.refetch();
-      await messagesQuery.refetch();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Fotoğraf gönderilemedi';
-      if (pending) {
+      if (image) {
         askConfirm({
           title: 'Fotoğraf gönderilemedi',
           subtitle: message,

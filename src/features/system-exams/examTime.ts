@@ -82,9 +82,9 @@ export function countdownLabel(startIso: string, now = Date.now()) {
   const days = Math.floor(totalMin / (60 * 24));
   const hours = Math.floor((totalMin % (60 * 24)) / 60);
   const mins = totalMin % 60;
-  if (days > 0) return `${days} gün ${hours} saat kaldı`;
-  if (hours > 0) return `${hours} saat ${mins} dk kaldı`;
-  return `${Math.max(1, mins)} dk kaldı`;
+  if (days > 0) return `${days} gün ${hours} saat sonra başlayacak`;
+  if (hours > 0) return `${hours} saat ${mins} dk sonra başlayacak`;
+  return `${Math.max(1, mins)} dk sonra başlayacak`;
 }
 
 export function clockLabel(totalSeconds: number) {

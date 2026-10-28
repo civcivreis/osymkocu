@@ -53,6 +53,15 @@ export function groupActivityLine(memberCount: number, lastAt?: string | null) {
   return members;
 }
 
+export function liveStudyLine(subject?: string | null, topic?: string | null, state?: string | null) {
+  if (!subject && !topic) return null;
+  const prefix = state === 'BREAK' ? '⏸' : '🟢';
+  const verb = state === 'BREAK' ? 'molada' : 'çalışıyor';
+  if (subject && topic) return `${prefix} ${subject} ${verb} · ${topic}`;
+  if (subject) return `${prefix} ${subject} ${verb}`;
+  return `${prefix} ${topic} ${verb}`;
+}
+
 export function subjectGlyph(name: string) {
   const n = name.toLocaleLowerCase('tr-TR');
   if (n.includes('coğrafya') || n.includes('cografya')) return '🌍';

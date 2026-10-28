@@ -15,6 +15,7 @@ export type Profile = {
   match_same_topic?: boolean;
   match_same_subject?: boolean;
   is_private?: boolean;
+  show_study_status_social?: boolean;
   exam_id: string | null;
   target_score: number | null;
   exam_date: string | null;

@@ -3,8 +3,17 @@ export type MemoryLessonStatus =
   | 'generating'
   | 'pending_validation'
   | 'approved'
+  | 'ready_review'
   | 'published'
   | 'archived';
+
+export type LessonDeliveryMode = 'text' | 'video' | 'hybrid';
+
+export type HapBlock = {
+  type: string;
+  title?: string;
+  text: string;
+};
 
 export type MemoryLessonExam = 'tyt' | 'ayt' | 'kpss';
 export type MemorySceneAssetType = 'image' | 'video' | 'animation';
@@ -60,9 +69,25 @@ export type MemoryLesson = {
   exam_technique?: Record<string, unknown> | null;
   technique_score?: number | null;
   academic_pass?: boolean | null;
+  delivery_mode?: LessonDeliveryMode | string;
+  hook?: string | null;
+  hap_blocks?: HapBlock[] | null;
+  detailed_explanation?: string | null;
+  study_minutes?: number | null;
+  video_key?: string | null;
+  editorial_status?: string | null;
 };
 
 export type MemoryLessonMediaMode = 'missing' | 'all' | 'narration' | 'scene';
+
+export type OverlayCard = {
+  card_type: string;
+  short_text: string;
+  semantic_key?: string;
+  narration_segment_id?: string;
+  start_ms?: number;
+  end_ms?: number;
+};
 
 export type MemoryLessonScene = {
   id: string;
@@ -82,6 +107,7 @@ export type MemoryLessonScene = {
   recall_prompt?: string | null;
   reinforcement_note?: string | null;
   journey_step?: string | null;
+  overlay_cards?: OverlayCard[] | null;
   created_at: string;
 };
 
@@ -99,6 +125,10 @@ export type MemoryLessonQuestion = {
   question_strategy?: string | null;
   technique_role?: string | null;
   trap_type?: string | null;
+  checkpoint_intro?: string | null;
+  correct_feedback?: string | null;
+  wrong_feedback?: string | null;
+  retry_question_text?: string | null;
   created_at: string;
 };
 

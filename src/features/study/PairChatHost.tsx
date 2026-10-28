@@ -17,7 +17,7 @@ export function PairChatHost() {
   const bump = usePairChatStore((s) => s.bumpUnread);
   const lastCount = useRef(0);
   const chat = useStudyRoomMessages(session?.sessionId ?? null);
-  const hidden = pathname === '/system-exam';
+  const hidden = pathname === '/system-exam' || pathname.startsWith('/dersler/hafiza');
 
   useEffect(() => {
     const count = chat.data?.length ?? 0;

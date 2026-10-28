@@ -1,9 +1,10 @@
-import { Redirect, Slot, usePathname, router } from 'expo-router';
+import { Redirect, Slot, useGlobalSearchParams, usePathname, router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
 import { SeoHead } from '@/src/features/seo/SeoHead';
+import { mufredatHref, queryParam } from '@/src/features/admin/adminUi';
 import { canManageExams, canManageUsers, canModerate, isStaffRole, isSuperAdmin, mapAdminError } from '@/src/features/admin/roles';
 import { useStaffContext } from '@/src/features/admin/useAdmin';
 import { isEmailVerified } from '@/src/lib/auth/emailVerification';
@@ -16,6 +17,7 @@ type NavSection = { id: string; label: string | null; items: NavLink[] };
 
 export function AdminShell() {
   const pathname = usePathname();
+  const search = useGlobalSearchParams<{ exam?: string; subject?: string; unit?: string }>();
   const { width } = useWindowDimensions();
   const session = useAuthStore((s) => s.session);
   const profile = useAuthStore((s) => s.profile);
@@ -25,6 +27,21 @@ export function AdminShell() {
   const role = staff.data?.role ?? profile?.app_role;
   const allowed = isStaffRole(role);
   const [menuOpen, setMenuOpen] = useState(false);
+  const onLessonEditor = pathname.startsWith('/admin/hafiza-dersleri/');
+  const goEditorBack = () => {
+    const exam = queryParam(search.exam);
+    const subject = queryParam(search.subject);
+    const unit = queryParam(search.unit);
+    if (exam) {
+      router.replace(mufredatHref(exam, subject, unit) as never);
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/admin/mufredat' as never);
+  };
 
   useEffect(() => {
     if (!session) return;
@@ -47,13 +64,13 @@ export function AdminShell() {
       },
       {
         id: 'content',
-        label: 'İÇERİK',
+        label: 'İÇERİK YÖNETİMİ',
         items: [
           { href: '/admin/mufredat', label: 'Müfredat', show: canManageExams(role) },
-          { href: '/admin/hafiza-dersleri', label: 'Hafıza Dersleri', show: canManageExams(role) },
-          { href: '/admin/icerik-uretimi', label: 'İçerik Üretimi', show: canManageExams(role) },
           { href: '/admin/questions', label: 'Soru Bankası', show: canManageExams(role) },
+          { href: '/admin/testler', label: 'Testler', show: canManageExams(role) },
           { href: '/admin/exams', label: 'Sistem Sınavları', show: canManageExams(role) },
+          { href: '/admin/yayin', label: 'Yayın', show: canManageExams(role) },
         ],
       },
       {
@@ -62,18 +79,16 @@ export function AdminShell() {
         items: [
           { href: '/admin/users', label: 'Kullanıcılar', show: canManageUsers(role) },
           { href: '/admin/reports', label: 'Şikayetler', show: canModerate(role) },
-          { href: '/admin/moderasyon', label: 'Moderasyon', show: canModerate(role) },
-          { href: '/admin/sanal-ogrenciler', label: 'Sanal Öğrenciler', show: canManageUsers(role) },
-          { href: '/admin/notifications', label: 'Bildirimler', show: canManageUsers(role) },
+          { href: '/admin/duyurular', label: 'Duyurular', show: canManageUsers(role) },
+          { href: '/admin/surumler', label: 'Sürümler', show: isSuperAdmin(role) },
         ],
       },
       {
         id: 'mgmt',
         label: 'YÖNETİM',
         items: [
-          { href: '/admin/team', label: 'Yönetim Ekibi', show: isSuperAdmin(role) },
-          { href: '/admin/ai-ayarlari', label: 'AI Ayarları', show: allowed },
-          { href: '/admin/stats', label: 'İstatistikler', show: allowed },
+          { href: '/admin/team', label: 'Ekip', show: isSuperAdmin(role) },
+          { href: '/admin/stats', label: 'İstatistik', show: allowed },
           { href: '/admin/settings', label: 'Ayarlar', show: allowed },
         ],
       },
@@ -125,7 +140,9 @@ export function AdminShell() {
             ) : null}
             {items.map((link) => {
               const active =
-                pathname === link.href || (link.href !== '/admin' && pathname.startsWith(link.href));
+                pathname === link.href ||
+                (link.href !== '/admin' && pathname.startsWith(`${link.href}/`)) ||
+                (link.href === '/admin/mufredat' && pathname.startsWith('/admin/hafiza-dersleri'));
               return (
                 <Pressable
                   key={link.href}
@@ -163,7 +180,13 @@ export function AdminShell() {
             alignItems: 'center',
             justifyContent: 'space-between',
           }}>
-          <AppText variant="subtitle">{APP_NAME} Admin</AppText>
+          {onLessonEditor ? (
+            <Pressable onPress={goEditorBack} hitSlop={12}>
+              <AppText tone="accent">← Geri</AppText>
+            </Pressable>
+          ) : (
+            <AppText variant="subtitle">{APP_NAME} Admin</AppText>
+          )}
           <Pressable onPress={() => setMenuOpen((open) => !open)} style={{ padding: 8 }}>
             <AppText tone="accent">{menuOpen ? 'Kapat' : 'Menü'}</AppText>
           </Pressable>
@@ -188,9 +211,16 @@ export function AdminShell() {
               borderBottomColor: '#E4DDD0',
               justifyContent: 'center',
             }}>
-            <AppText variant="caption" tone="muted">
-              {profile.display_name} · {role}
-            </AppText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+              {onLessonEditor ? (
+                <Pressable onPress={goEditorBack} hitSlop={12}>
+                  <AppText tone="accent">← Geri</AppText>
+                </Pressable>
+              ) : null}
+              <AppText variant="caption" tone="muted">
+                {profile.display_name} · {role}
+              </AppText>
+            </View>
           </View>
         ) : null}
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: wide ? 28 : 16, gap: 16, minHeight: 600, maxWidth: 1120, width: '100%', alignSelf: 'center' }}>

@@ -153,7 +153,7 @@ export function SettingsScreen() {
 
   return (
     <Screen scroll>
-      <View style={{ gap: spacing.md, paddingBottom: 24 }}>
+      <View style={{ gap: spacing.md, paddingBottom: 24, width: '100%' }}>
         <PageHeader title="Ayarlar" />
         {isDesktop ? null : (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

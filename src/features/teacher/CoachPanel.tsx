@@ -125,7 +125,10 @@ export function CoachPanel() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
         contentContainerStyle={{
-          paddingHorizontal: spacing.md,
+          width: '100%',
+          maxWidth: 760,
+          alignSelf: 'center',
+          paddingHorizontal: spacing[16],
           paddingVertical: spacing.sm,
           gap: spacing.sm,
         }}
@@ -170,10 +173,13 @@ export function CoachPanel() {
           borderTopWidth: 1,
           borderTopColor: colors.border,
           backgroundColor: colors.surface,
-          paddingHorizontal: spacing.md,
+          paddingHorizontal: spacing[16],
           paddingTop: spacing.sm,
           paddingBottom: spacing.sm,
           gap: spacing.sm,
+          width: '100%',
+          maxWidth: 760,
+          alignSelf: 'center',
         }}>
         <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
           {AI_MODES.map((item) => (

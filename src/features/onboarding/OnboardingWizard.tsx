@@ -4,10 +4,8 @@ import { Animated, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
 import { Button } from '@/src/components/ui/Button';
-import {
-  OnboardingShell,
-  onboardingCardWidth,
-} from '@/src/features/onboarding/OnboardingShell';
+import { CardGrid } from '@/src/components/ui/CardGrid';
+import { OnboardingShell } from '@/src/features/onboarding/OnboardingShell';
 import { OnboardingSelectionCard } from '@/src/features/onboarding/OnboardingSelectionCard';
 import {
   assessFeasibility,
@@ -16,20 +14,15 @@ import {
 } from '@/src/features/onboarding/feasibility';
 import { onboardingSchema, type OnboardingValues } from '@/src/features/onboarding/schema';
 import { saveOnboarding } from '@/src/features/onboarding/saveOnboarding';
-import { useExamSessions, useExams, useSubjects } from '@/src/features/onboarding/useCatalog';
+import { useExamSessions, useExams } from '@/src/features/onboarding/useCatalog';
 import { nativeDriver } from '@/src/lib/animation/nativeDriver';
 import { useReducedMotion } from '@/src/lib/animation/useReducedMotion';
-import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
 import type { Exam, ExamKind, ExamSession } from '@/src/lib/supabase/types';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 import { fetchAuthExtras } from '@/src/features/auth/useAuth';
 import { useAuthStore } from '@/src/stores/authStore';
 
-const TOTAL_STEPS = 6;
-
-function toggleExclusive(list: string[], id: string): string[] {
-  return list.includes(id) ? list.filter((item) => item !== id) : [...list, id];
-}
+const TOTAL_STEPS = 5;
 
 export function OnboardingWizard() {
   const examsQuery = useExams();
@@ -43,15 +36,12 @@ export function OnboardingWizard() {
   const [examDate, setExamDate] = useState<string | null>(null);
   const [examYear, setExamYear] = useState<number | null>(null);
   const [dailyMinutes, setDailyMinutes] = useState(90);
-  const [strongSubjectIds, setStrongSubjectIds] = useState<string[]>([]);
-  const [weakSubjectIds, setWeakSubjectIds] = useState<string[]>([]);
   const reduced = useReducedMotion();
 
   const selectedExam = useMemo(
     () => examsQuery.data?.find((exam) => exam.id === examId) ?? null,
     [examId, examsQuery.data],
   );
-  const subjectsQuery = useSubjects(selectedExam);
   const sessionsQuery = useExamSessions(selectedExam);
   const sessions = sessionsQuery.data ?? [];
   const resolvedYear = examYear ?? (sessions.length === 1 ? sessions[0].session_year : null);
@@ -71,7 +61,7 @@ export function OnboardingWizard() {
   const canContinue = (): boolean => {
     if (step === 1) return Boolean(examId);
     if (step === 2) return resolvedYear != null;
-    if (step === 4) return targetScore != null;
+    if (step === 3) return targetScore != null;
     return true;
   };
 
@@ -86,8 +76,6 @@ export function OnboardingWizard() {
       examDate: resolvedDate,
       examYear: resolvedYear ?? 0,
       dailyMinutes,
-      strongSubjectIds,
-      weakSubjectIds,
     });
   };
 
@@ -125,7 +113,7 @@ export function OnboardingWizard() {
     }
   };
 
-  const copy = stepCopy(step, selectedExam?.kind, selectedExam?.name, feasibility?.status === 'unrealistic');
+  const copy = stepCopy(step, selectedExam?.name);
 
   return (
     <OnboardingShell
@@ -171,8 +159,7 @@ export function OnboardingWizard() {
           }}
         />
       ) : null}
-      {step === 3 ? <MinutesStep value={dailyMinutes} onChange={setDailyMinutes} /> : null}
-      {step === 4 && selectedExam ? (
+      {step === 3 && selectedExam ? (
         <GoalStep
           kind={selectedExam.kind}
           selected={targetScore}
@@ -180,28 +167,14 @@ export function OnboardingWizard() {
           feasibility={feasibility}
         />
       ) : null}
-      {step === 5 ? (
-        <SubjectsStep
-          subjects={(subjectsQuery.data ?? []).map((item) => ({ id: item.id, name: item.name }))}
-          strongIds={strongSubjectIds}
-          weakIds={weakSubjectIds}
-          onToggleStrong={(id) => {
-            setWeakSubjectIds((list) => list.filter((item) => item !== id));
-            setStrongSubjectIds((list) => toggleExclusive(list, id));
-          }}
-          onToggleWeak={(id) => {
-            setStrongSubjectIds((list) => list.filter((item) => item !== id));
-            setWeakSubjectIds((list) => toggleExclusive(list, id));
-          }}
-        />
-      ) : null}
+      {step === 4 ? <MinutesStep value={dailyMinutes} onChange={setDailyMinutes} /> : null}
     </OnboardingShell>
   );
 }
 
-function stepCopy(step: number, kind?: ExamKind, examName?: string, tight?: boolean) {
+function stepCopy(step: number, examName?: string) {
   if (step === 0) {
-    return { title: 'Koçun hazır.', subtitle: 'Sınavını ve günde kaç dakika çalışabileceğini söyle. Plan ona göre kurulur.' };
+    return { title: 'Koçun hazır.', subtitle: 'Sınavını, hedefini ve günlük süreni söyle. Plan ona göre kurulur.' };
   }
   if (step === 1) {
     return { title: 'Hangi sınava hazırlanıyorsun?', subtitle: 'Kartlardan birini seç. Sonra yıl ve hedefin gelir.' };
@@ -213,15 +186,9 @@ function stepCopy(step: number, kind?: ExamKind, examName?: string, tight?: bool
     };
   }
   if (step === 3) {
-    return { title: 'Günde kaç dakika çalışabilirsin?', subtitle: 'Gerçekçi bir tempo seç. Plan buna göre sıkılaşır veya rahatlar.' };
-  }
-  if (step === 4) {
     return { title: 'Hedefin ne?', subtitle: 'Kartlardan bir hedef seç. Tempo uygunsa planı ona göre kurarız.' };
   }
-  return {
-    title: tight ? 'Çıkmışlarda net getiren dersler hangisi?' : 'Güçlü ve zayıf derslerin',
-    subtitle: tight ? 'Zaman dar. Çıkmış / net getiren dersleri işaretle.' : 'İstersen boş bırak. Aynı ders iki listede durmaz.',
-  };
+  return { title: 'Günde kaç dakika çalışabilirsin?', subtitle: 'Gerçekçi bir tempo seç. Plan buna göre sıkılaşır veya rahatlar.' };
 }
 
 function WelcomeStep() {
@@ -232,7 +199,7 @@ function WelcomeStep() {
     { icon: 'trending-up-outline' as const, label: 'İlerleme takibi' },
   ];
   return (
-    <View style={{ gap: 14, maxWidth: 560 }}>
+    <View style={{ gap: 14, width: '100%', maxWidth: 560, alignSelf: 'center' }}>
       <View
         style={{
           backgroundColor: colors.navy,
@@ -242,7 +209,7 @@ function WelcomeStep() {
         }}>
         <AppText style={{ color: '#F4F1EA' }}>TYT, AYT veya KPSS. Aynı hesap telefonda ve web’de.</AppText>
         <AppText variant="caption" style={{ color: '#D7E3F0' }}>
-          Sonraki adımlarda sınav, yıl, süre ve hedefi seçeceksin.
+          Sonraki adımlarda sınav, yıl, hedef ve günlük süreyi seçeceksin.
         </AppText>
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -282,26 +249,22 @@ function ExamStep({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
-  const { width } = useBreakpoint();
-  const cols = width >= 768 ? 3 : 2;
-  const cardWidth = onboardingCardWidth(width, cols, 12, width < 768);
   return (
-    <View style={{ gap: 12 }}>
+    <View style={{ gap: 12, width: '100%' }}>
       {loading ? <AppText tone="muted">Sınavlar yükleniyor…</AppText> : null}
       {error ? <AppText tone="danger">{error}</AppText> : null}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' }}>
+      <CardGrid gap={12}>
         {exams.map((exam) => (
-          <View key={exam.id} style={{ width: cardWidth, alignSelf: 'stretch' }}>
-            <OnboardingSelectionCard
-              title={exam.name}
-              subtitle={examSubtitle(exam)}
-              icon={examIcon(exam.kind, exam.slug)}
-              selected={selectedId === exam.id}
-              onPress={() => onSelect(exam.id)}
-            />
-          </View>
+          <OnboardingSelectionCard
+            key={exam.id}
+            title={exam.name}
+            subtitle={examSubtitle(exam)}
+            icon={examIcon(exam.kind, exam.slug)}
+            selected={selectedId === exam.id}
+            onPress={() => onSelect(exam.id)}
+          />
         ))}
-      </View>
+      </CardGrid>
     </View>
   );
 }
@@ -320,55 +283,47 @@ function DateStep({
   examYear: number | null;
   onSelect: (session: ExamSession) => void;
 }) {
-  const { width } = useBreakpoint();
-  const cols = width >= 768 ? 2 : 1;
-  const cardWidth = onboardingCardWidth(width, cols, 12, width < 768);
   return (
-    <View style={{ gap: 12 }}>
+    <View style={{ gap: 12, width: '100%' }}>
       {loading ? <AppText tone="muted">Oturumlar yükleniyor…</AppText> : null}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' }}>
+      <CardGrid gap={12} singleMaxWidth={420}>
         {sessions.map((session) => (
-          <View key={session.id} style={{ width: cardWidth, alignSelf: 'stretch' }}>
-            <OnboardingSelectionCard
-              title={String(session.session_year)}
-              subtitle={
-                session.exam_date
-                  ? `${examName} · ${session.exam_date}`
-                  : `${examName}\nÖSYM tarihi henüz yok`
-              }
-              icon="calendar-outline"
-              minHeight={120}
-              selected={examYear === session.session_year}
-              onPress={() => onSelect(session)}
-            />
-          </View>
+          <OnboardingSelectionCard
+            key={session.id}
+            title={String(session.session_year)}
+            subtitle={
+              session.exam_date
+                ? `${examName} · ${session.exam_date}`
+                : `${examName}\nÖSYM tarihi henüz yok`
+            }
+            icon="calendar-outline"
+            minHeight={120}
+            selected={examYear === session.session_year}
+            onPress={() => onSelect(session)}
+          />
         ))}
-      </View>
+      </CardGrid>
     </View>
   );
 }
 
 function MinutesStep({ value, onChange }: { value: number; onChange: (value: number) => void }) {
-  const { width } = useBreakpoint();
   const options = [45, 60, 90, 120, 180];
-  const cols = width >= 1100 ? 5 : width >= 768 ? 3 : 2;
-  const cardWidth = onboardingCardWidth(width, cols, 12, width < 768);
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' }}>
+    <CardGrid gap={12}>
       {options.map((option) => (
-        <View key={option} style={{ width: cardWidth, alignSelf: 'stretch' }}>
-          <OnboardingSelectionCard
-            title={`${option} dk`}
-            subtitle={minutesHint(option)}
-            icon="time-outline"
-            layout="stack"
-            minHeight={118}
-            selected={value === option}
-            onPress={() => onChange(option)}
-          />
-        </View>
+        <OnboardingSelectionCard
+          key={option}
+          title={`${option} dk`}
+          subtitle={minutesHint(option)}
+          icon="time-outline"
+          layout="stack"
+          minHeight={118}
+          selected={value === option}
+          onPress={() => onChange(option)}
+        />
       ))}
-    </View>
+    </CardGrid>
   );
 }
 
@@ -384,33 +339,31 @@ function GoalStep({
   feasibility: ReturnType<typeof assessFeasibility> | null;
 }) {
   const { colors, radius } = useAppTheme();
-  const { width } = useBreakpoint();
   const options = goalOptions(kind);
-  const cols = width >= 768 ? 3 : 1;
-  const cardWidth = onboardingCardWidth(width, cols, 12, width < 768);
   const showAlt =
     feasibility && feasibility.status === 'unrealistic' && feasibility.suggested !== feasibility.chosen;
 
   return (
-    <View style={{ gap: 14 }}>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' }}>
+    <View style={{ gap: 14, width: '100%' }}>
+      <CardGrid gap={12}>
         {options.map((option) => (
-          <View key={option} style={{ width: cardWidth, alignSelf: 'stretch' }}>
-            <OnboardingSelectionCard
-              title={formatGoal(option)}
-              subtitle={goalHint(option)}
-              icon="flag-outline"
-              minHeight={112}
-              selected={selected === option}
-              onPress={() => onSelect(option)}
-            />
-          </View>
+          <OnboardingSelectionCard
+            key={option}
+            title={formatGoal(option)}
+            subtitle={goalHint(option)}
+            icon="flag-outline"
+            minHeight={112}
+            selected={selected === option}
+            onPress={() => onSelect(option)}
+          />
         ))}
-      </View>
+      </CardGrid>
       {feasibility && selected != null ? (
         <View
           style={{
+            width: '100%',
             maxWidth: 480,
+            alignSelf: 'center',
             padding: 14,
             borderRadius: radius[16],
             borderWidth: 1,
@@ -437,60 +390,6 @@ function GoalStep({
           ) : null}
         </View>
       ) : null}
-    </View>
-  );
-}
-
-function SubjectsStep({
-  subjects,
-  strongIds,
-  weakIds,
-  onToggleStrong,
-  onToggleWeak,
-}: {
-  subjects: { id: string; name: string }[];
-  strongIds: string[];
-  weakIds: string[];
-  onToggleStrong: (id: string) => void;
-  onToggleWeak: (id: string) => void;
-}) {
-  const { width } = useBreakpoint();
-  const cols = width >= 768 ? 3 : 2;
-  const cardWidth = onboardingCardWidth(width, cols, 10, width < 768);
-  return (
-    <View style={{ gap: 20 }}>
-      <View style={{ gap: 10 }}>
-        <AppText variant="label">Zayıf olduğum dersler</AppText>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'stretch' }}>
-          {subjects.map((subject) => (
-            <View key={`w-${subject.id}`} style={{ width: cardWidth, alignSelf: 'stretch' }}>
-              <OnboardingSelectionCard
-                title={subject.name}
-                accent="weak"
-                minHeight={72}
-                selected={weakIds.includes(subject.id)}
-                onPress={() => onToggleWeak(subject.id)}
-              />
-            </View>
-          ))}
-        </View>
-      </View>
-      <View style={{ gap: 10 }}>
-        <AppText variant="label">Güçlü olduğum dersler</AppText>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'stretch' }}>
-          {subjects.map((subject) => (
-            <View key={`s-${subject.id}`} style={{ width: cardWidth, alignSelf: 'stretch' }}>
-              <OnboardingSelectionCard
-                title={subject.name}
-                accent="strong"
-                minHeight={72}
-                selected={strongIds.includes(subject.id)}
-                onPress={() => onToggleStrong(subject.id)}
-              />
-            </View>
-          ))}
-        </View>
-      </View>
     </View>
   );
 }

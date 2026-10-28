@@ -21,9 +21,13 @@ export default function RootIndex() {
   const onboarded = Boolean(profile?.onboarding_completed_at);
   const verified = isEmailVerified(session);
 
+  if (Platform.OS === 'web' && hasAuthRedirectPayload()) {
+    return <Redirect href={'/email-confirmed' as never} />;
+  }
+
   if (Platform.OS === 'web' && !initialized) {
-    if (hasAuthRedirectPayload() || emailLinkError) {
-      return <StartupLoading />;
+    if (emailLinkError) {
+      return <Redirect href={'/email-confirmed' as never} />;
     }
     return <LandingScreen />;
   }
@@ -32,7 +36,11 @@ export default function RootIndex() {
     return <StartupLoading />;
   }
 
-  if (emailLinkError || (session && !verified)) {
+  if (emailLinkError) {
+    return <Redirect href={'/email-confirmed' as never} />;
+  }
+
+  if (session && !verified) {
     return <Redirect href={'/verify-email' as never} />;
   }
 

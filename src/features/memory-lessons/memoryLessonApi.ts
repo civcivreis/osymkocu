@@ -62,7 +62,7 @@ export async function getMemoryLessonQuestions(lessonId: string): Promise<Memory
 export async function listAdminMemoryLessons(): Promise<MemoryLesson[]> {
   const { data, error } = await getSupabase()
     .from('memory_lessons')
-    .select('id, title, subject, topic, exam_type, unit, version, status, created_at, updated_at, slug, generation_status, generation_error, media_generation_status, media_generation_error, pedagogy_score, lesson_scope')
+    .select('id, title, subject, topic, exam_type, unit, version, status, created_at, updated_at, slug, generation_status, generation_error, media_generation_status, media_generation_error, pedagogy_score, lesson_scope, delivery_mode')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as MemoryLesson[];
@@ -126,8 +126,8 @@ export async function generateMemoryLesson(lessonId: string): Promise<MemoryLess
 
 export async function saveMemoryLessonReview(input: {
   lesson: Partial<MemoryLesson> & { id: string };
-  scenes: Array<Partial<MemoryLessonScene> & { id: string }>;
-  questions: Array<Partial<MemoryLessonQuestion> & { id: string }>;
+  scenes?: Array<Partial<MemoryLessonScene> & { id: string }>;
+      questions: Array<Partial<MemoryLessonQuestion> & { id?: string }>;
 }) {
   const supabase = getSupabase();
   const { error: lessonError } = await supabase
@@ -146,11 +146,16 @@ export async function saveMemoryLessonReview(input: {
       minimum_theory: input.lesson.minimum_theory ?? null,
       fast_rule: input.lesson.fast_rule ?? null,
       exam_technique: input.lesson.exam_technique ?? {},
+      delivery_mode: input.lesson.delivery_mode ?? undefined,
+      hook: input.lesson.hook ?? undefined,
+      hap_blocks: input.lesson.hap_blocks ?? undefined,
+      detailed_explanation: input.lesson.detailed_explanation ?? undefined,
+      study_minutes: input.lesson.study_minutes ?? undefined,
     })
     .eq('id', input.lesson.id);
   if (lessonError) throw lessonError;
 
-  for (const scene of input.scenes) {
+  for (const scene of input.scenes ?? []) {
     const { error } = await supabase
       .from('memory_lesson_scenes')
       .update({
@@ -170,16 +175,26 @@ export async function saveMemoryLessonReview(input: {
   }
 
   for (const question of input.questions) {
-    const { error } = await supabase
-      .from('memory_lesson_questions')
-      .update({
-        question_text: question.question_text,
-        options: question.options,
-        correct_answer: question.correct_answer,
-        explanation: question.explanation,
-        question_strategy: question.question_strategy ?? null,
-      })
-      .eq('id', question.id);
+    const body = {
+      question_text: question.question_text,
+      options: question.options,
+      correct_answer: question.correct_answer,
+      explanation: question.explanation,
+      wrong_feedback: question.wrong_feedback ?? 'detail',
+      correct_feedback: question.correct_feedback ?? null,
+      question_strategy: question.question_strategy ?? null,
+      question_type: question.question_type ?? 'checkpoint',
+      question_order: question.question_order ?? 0,
+    };
+    if (!question.id || String(question.id).startsWith('new-')) {
+      const { error } = await supabase.from('memory_lesson_questions').insert({
+        lesson_id: input.lesson.id,
+        ...body,
+      });
+      if (error) throw error;
+      continue;
+    }
+    const { error } = await supabase.from('memory_lesson_questions').update(body).eq('id', question.id);
     if (error) throw error;
   }
 
@@ -241,8 +256,29 @@ export async function approveMemoryLesson(id: string) {
 }
 
 export async function publishMemoryLesson(id: string) {
+  const cms = await getSupabase().rpc('admin_cms_publish_lesson', { p_id: id });
+  if (!cms.error) return;
   const { error } = await getSupabase().rpc('admin_publish_memory_lesson', { p_id: id });
   if (error) throw error;
+}
+
+export async function mapLessonExams(lessonId: string, examCodes: string[]) {
+  const { error } = await getSupabase().rpc('admin_map_lesson_exams', {
+    p_lesson: lessonId,
+    p_exam_codes: examCodes,
+  });
+  if (error) throw error;
+}
+
+export async function signLessonVideoUpload(lessonId: string, contentType = 'video/mp4') {
+  const invoked = await getSupabase().functions.invoke('memory-lesson-media-url', {
+    body: { lesson_id: lessonId, action: 'sign_put', content_type: contentType },
+  });
+  const payload = invoked.data as { put_url?: string; key?: string; error?: { message?: string } } | null;
+  if (invoked.error || payload?.error || !payload?.put_url || !payload.key) {
+    throw new Error(payload?.error?.message ?? 'Video yükleme bağlantısı alınamadı.');
+  }
+  return payload as { put_url: string; key: string };
 }
 
 export async function deleteMemoryLesson(id: string) {

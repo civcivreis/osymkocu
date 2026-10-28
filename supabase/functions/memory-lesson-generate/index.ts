@@ -1,6 +1,7 @@
 import { json, mapHttpError, preflight, requireFactoryCaller, serviceClient } from "../_shared/lessonHttp.ts";
 import { generateStructured, generationMeta, friendlyAiError } from "../_shared/aiRouter.ts";
 import {
+  HAP_CARD_TYPES,
   MEMORY_LESSON_JSON_SCHEMA,
   MEMORY_LESSON_PROMPT_VERSION,
   MEMORY_PEDAGOGY_VERSION,
@@ -17,6 +18,11 @@ type GenQuestion = {
   correct_answer: string;
   explanation: string;
   question_strategy: string;
+  related_scene_order?: number;
+  checkpoint_intro?: string;
+  correct_feedback?: string;
+  wrong_feedback?: string;
+  retry_question_text?: string;
 };
 type GenScene = {
   order: number;
@@ -31,6 +37,14 @@ type GenScene = {
   visual_description: string;
   estimated_duration_sec: number;
   journey_step: string;
+  cards: {
+    card_type: string;
+    short_text: string;
+    semantic_key: string;
+    start_frac: number;
+    end_frac: number;
+    narration_segment_id: string;
+  }[];
 };
 type CoreFact = {
   fact: string;
@@ -78,6 +92,8 @@ function asStringArray(value: unknown) {
 
 const TECHNIQUE_SET = new Set<string>(MEMORY_TECHNIQUES);
 const STRATEGY_SET = new Set<string>(QUESTION_STRATEGIES);
+const CARD_SET = new Set<string>(HAP_CARD_TYPES);
+const INTRO_HINT = /soracağ|kaptın mı|sen uygula|sen çöz|sıra sende/i;
 
 function asTechnique(value: unknown) {
   const key = String(value ?? "").trim();
@@ -162,24 +178,45 @@ function parsePackage(raw: string): Package {
   }
 
   if (!parsed.title) throw new PackageError("MISSING_TITLE");
-  if (!parsed.narration || wordCount(parsed.narration) < 80) {
+  if (!parsed.narration || wordCount(parsed.narration) < 120 || wordCount(parsed.narration) > 480) {
     throw new PackageError("EMPTY_NARRATION", [`words=${wordCount(String(parsed.narration ?? ""))}`]);
   }
   if ((parsed.learning_objectives as string[]).length < 1) throw new PackageError("NO_LEARNING_OBJECTIVES");
-  if (scenes.length < 6) throw new PackageError("NO_SCENES", [`count=${scenes.length}`]);
-  if (scenes.length > 10) throw new PackageError("INVALID_SCENE_TIMING", [`count=${scenes.length}`]);
+  if (scenes.length < 5) throw new PackageError("NO_SCENES", [`count=${scenes.length}`]);
+  if (scenes.length > 8) throw new PackageError("INVALID_SCENE_TIMING", [`count=${scenes.length}`]);
   for (const scene of scenes) {
     const row = scene as Record<string, unknown>;
     const duration = Number(row.estimated_duration_sec);
-    if (!Number.isFinite(duration) || duration < 5 || duration > 90) {
+    if (!Number.isFinite(duration) || duration < 20 || duration > 70) {
       throw new PackageError("INVALID_SCENE_TIMING", [`duration=${row.estimated_duration_sec}`]);
     }
     row.estimated_duration_sec = Math.round(duration);
     row.narration_text = String(row.narration_text ?? "").trim();
     if (!row.narration_text) throw new PackageError("EMPTY_NARRATION", ["scene_narration_empty"]);
+    const cards = Array.isArray(row.cards) ? row.cards as Record<string, unknown>[] : [];
+    if (!cards.length) throw new PackageError("CARD_NARRATION_MISMATCH", [`scene=${row.order}_no_cards`]);
+    const ranges: { a: number; b: number }[] = [];
+    for (const card of cards) {
+      const short = String(card.short_text ?? "").trim();
+      if (wordCount(short) > 8) throw new PackageError("CARD_TOO_LONG", [short.slice(0, 40)]);
+      if (!CARD_SET.has(String(card.card_type ?? ""))) throw new PackageError("INVALID_ENUM", [`card_type=${card.card_type}`]);
+      if (!String(card.narration_segment_id ?? "").trim() || !String(card.semantic_key ?? "").trim()) {
+        throw new PackageError("CARD_NARRATION_MISMATCH", [`scene=${row.order}_unlinked_card`]);
+      }
+      const a = Number(card.start_frac);
+      const b = Number(card.end_frac);
+      if (!Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b > 1 || b <= a) {
+        throw new PackageError("INVALID_SCENE_TIMING", [`card_frac=${a}-${b}`]);
+      }
+      if (ranges.some((item) => a < item.b && b > item.a)) {
+        throw new PackageError("CARD_OVERLAP", [`scene=${row.order}`]);
+      }
+      ranges.push({ a, b });
+    }
+    row.cards = cards;
   }
   if (finals.length !== 10) throw new PackageError("INVALID_QUESTION_PATTERN", [`finals=${finals.length}`]);
-  if (checkpoints.length < 2 || checkpoints.length > 4) {
+  if (checkpoints.length < 1 || checkpoints.length > 3) {
     throw new PackageError("INVALID_CHECKPOINT_COUNT", [`count=${checkpoints.length}`]);
   }
   if (facts.length < 5 || facts.length > 12) {
@@ -204,13 +241,30 @@ function parsePackage(raw: string): Package {
   if (techMoves.length < 1) {
     throw new PackageError("INVALID_QUESTION_PATTERN", ["checkpoint_missing_first_move_or_pattern_or_elimination"]);
   }
+  const sceneOrders = new Set(scenes.map((item) => Number((item as GenScene).order)));
+  for (const raw of checkpoints) {
+    const row = raw as GenQuestion;
+    row.checkpoint_intro = String(row.checkpoint_intro ?? "").trim();
+    row.correct_feedback = String(row.correct_feedback ?? "").trim();
+    row.wrong_feedback = String(row.wrong_feedback ?? "").trim();
+    row.retry_question_text = String(row.retry_question_text ?? row.question_text ?? "").trim();
+    row.related_scene_order = Number(row.related_scene_order) || Number(row.order) * 2;
+    if (!row.checkpoint_intro) throw new PackageError("CHECKPOINT_NO_INTRO", [`order=${row.order}`]);
+    if (!INTRO_HINT.test(row.checkpoint_intro) && row.checkpoint_intro.split(/\s+/).length < 4) {
+      throw new PackageError("CHECKPOINT_NO_INTRO", [`weak_intro=${row.order}`]);
+    }
+    if (!row.wrong_feedback) throw new PackageError("CHECKPOINT_NO_CORRECTION", [`order=${row.order}`]);
+    if (!sceneOrders.has(row.related_scene_order) && scenes[Math.max(0, row.related_scene_order - 1)]) {
+      row.related_scene_order = Number((scenes[Math.min(scenes.length - 1, Math.max(0, row.related_scene_order - 1))] as GenScene).order);
+    }
+  }
   return parsed as unknown as Package;
 }
 
 type StructuredGen = Awaited<ReturnType<typeof generateStructured>>;
 
 function packageFeedback(error: PackageError) {
-  return `The previous package is invalid because ${error.code}${error.details.length ? `: ${error.details.join("; ")}` : ""}. scenes must be 6-10, checkpoint_questions 2-4, final_questions exactly 10, core_facts 5-12, learning_objectives nonempty, narration long enough, exam_technique.aaa_bu_suydu true, at least 3 distinct final question_strategy values, and one checkpoint using first_move or pattern_recognition or elimination. Do not omit required arrays.`;
+  return `The previous package is invalid because ${error.code}${error.details.length ? `: ${error.details.join("; ")}` : ""}. Each scene needs 1-3 non-overlapping cards (short_text ≤8 words, linked narration_segment_id). Each checkpoint needs checkpoint_intro spoken at a sentence boundary, wrong_feedback, retry of the SAME skill, and related_scene_order. Cards must not teach unspoken facts.`;
 }
 
 async function tryGenerate(
@@ -374,6 +428,9 @@ Deno.serve(async (req) => {
     if (!lesson) {
       return json({ error: { code: "INVALID_INPUT", message: "Ders bulunamadı." } }, 404);
     }
+    if (lesson.lock_authored === true && payload.allow_rewrite !== true) {
+      return json({ error: { code: "AUTHORED_LOCKED", message: "İçe aktarılmış ders sessizce yeniden yazılmaz." } }, 409);
+    }
     previousStatus = String(lesson.status ?? "draft");
     if (previousStatus === "published") {
       return json({ error: { code: "INVALID_INPUT", message: "Yayındaki ders yeniden üretilemez." } }, 400);
@@ -435,11 +492,34 @@ Deno.serve(async (req) => {
     await admin.from("memory_lesson_scenes").delete().eq("lesson_id", lessonId);
 
     const scenes = [...pkg.scenes].sort((a, b) => a.order - b.order);
+    const checkpointByScene = new Map<number, GenQuestion>();
+    for (const item of pkg.checkpoint_questions) {
+      checkpointByScene.set(Number(item.related_scene_order) || item.order * 2, item);
+    }
     let cursor = 0;
     const sceneRows = scenes.map((scene, index) => {
-      const duration = Math.max(5, Math.min(90, Number(scene.estimated_duration_sec) || 30));
+      const linked = checkpointByScene.get(scene.order) ?? checkpointByScene.get(index + 1);
+      let narration = String(scene.narration_text ?? "").trim();
+      let duration = Math.max(5, Math.min(90, Number(scene.estimated_duration_sec) || 30));
+      if (linked?.checkpoint_intro && !INTRO_HINT.test(narration)) {
+        narration = `${narration.replace(/[.!?]?$/, ".")} ${linked.checkpoint_intro}`.trim();
+        duration += 4;
+      }
       const start = cursor;
       cursor += duration * 1000;
+      const span = cursor - start;
+      const overlay = (scene.cards ?? []).map((card, cardIndex) => {
+        const a = Math.min(0.86, Math.max(0, Number(card.start_frac) || cardIndex * 0.3));
+        const b = Math.min(0.88, Math.max(a + 0.08, Number(card.end_frac) || a + 0.28));
+        return {
+          card_type: CARD_SET.has(card.card_type) ? card.card_type : "HAP BİLGİ",
+          short_text: String(card.short_text ?? "").trim(),
+          semantic_key: String(card.semantic_key ?? `s${index + 1}-${cardIndex}`),
+          narration_segment_id: String(card.narration_segment_id ?? `s${index + 1}-${cardIndex}`),
+          start_ms: start + Math.round(a * span),
+          end_ms: start + Math.round(b * span),
+        };
+      });
       return {
         lesson_id: lessonId,
         scene_order: index + 1,
@@ -447,7 +527,7 @@ Deno.serve(async (req) => {
         end_ms: cursor,
         asset_type: "image",
         caption: String(scene.caption ?? "").slice(0, 500),
-        narration_text: String(scene.narration_text ?? ""),
+        narration_text: narration,
         memory_hook: String(scene.memory_hook ?? ""),
         visual_description: String(scene.visual_description ?? ""),
         memory_technique: asTechnique(scene.memory_technique),
@@ -456,6 +536,7 @@ Deno.serve(async (req) => {
         recall_prompt: String(scene.recall_prompt ?? "").slice(0, 300),
         reinforcement_note: String(scene.reinforcement_note ?? "").slice(0, 400),
         journey_step: String(scene.journey_step ?? "").slice(0, 160),
+        overlay_cards: overlay,
         visual_priority: index === 0 ? "premium" : String(scene.visual_anchor ?? "").trim().length > 12 ? "key_anchor" : "standard",
       };
     });
@@ -474,6 +555,10 @@ Deno.serve(async (req) => {
         correct_answer: String(item.correct_answer ?? "A").slice(0, 1).toUpperCase(),
         explanation: String(item.explanation ?? ""),
         question_strategy: asStrategy(item.question_strategy),
+        checkpoint_intro: String(item.checkpoint_intro ?? ""),
+        correct_feedback: String(item.correct_feedback ?? "Aynen, bu."),
+        wrong_feedback: String(item.wrong_feedback ?? item.explanation ?? ""),
+        retry_question_text: String(item.retry_question_text ?? item.question_text ?? ""),
         difficulty: "medium",
         canonical_topic_id: lesson.canonical_topic_id ?? null,
         technique_role: asStrategy(item.question_strategy),
@@ -541,6 +626,7 @@ Deno.serve(async (req) => {
       await admin.from("topic_catalog").update({ content_status: "pending_validation" }).eq("id", lesson.topic_id);
     }
 
+    await admin.rpc("rebuild_lesson_pedagogy_timeline", { p_lesson: lessonId }).then(() => undefined, () => undefined);
     await admin.rpc("refresh_memory_lesson_pedagogy", { p_id: lessonId });
     const { data: scored } = await admin.from("memory_lessons").select("*").eq("id", lessonId).maybeSingle();
 

@@ -2,6 +2,7 @@ import { Redirect, Stack } from 'expo-router';
 import { Platform, View } from 'react-native';
 
 import { StartupLoading } from '@/src/features/auth/StartupLoading';
+import { AppRuntimeHost } from '@/src/features/runtime/AppRuntimeHost';
 import { CoachHost } from '@/src/features/teacher/CoachHost';
 import { MatchInviteHost } from '@/src/features/study/MatchInviteHost';
 import { PairChatHost } from '@/src/features/study/PairChatHost';
@@ -33,7 +34,7 @@ export default function AppGroupLayout() {
   }
 
   const stack = (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack screenOptions={{ headerShown: false, animation: Platform.OS === 'web' ? 'none' : 'default' }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="teacher" />
       <Stack.Screen name="practice" />
@@ -67,6 +68,7 @@ export default function AppGroupLayout() {
       <CoachHost />
       <PairChatHost />
       <MatchInviteHost />
+      <AppRuntimeHost />
     </View>
   );
 }

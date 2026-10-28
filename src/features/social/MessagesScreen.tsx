@@ -15,6 +15,7 @@ import { InboxRow } from '@/src/features/social/InboxRow';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
 import { PersonRow } from '@/src/features/social/SocialScreen';
 import { taggedName } from '@/src/features/social/identity';
+import { prefetchProfileCard } from '@/src/features/social/useFollows';
 import {
   useHideThread,
   useInbox,
@@ -38,6 +39,8 @@ function matchesQuery(haystack: string, query: string) {
 }
 
 function groupPreview(group: InboxGroup, me?: string) {
+  if (group.is_hidden) return 'Gizli · dokununca geri gelir';
+  if (group.is_member === false) return 'Ayrıldın · dokununca yeniden katılırsın';
   if (!group.last_body) return 'Henüz mesaj yok';
   const mine = Boolean(me && group.last_sender_id === me);
   const who = mine ? 'Sen' : (group.last_sender_name ?? 'Öğrenci');
@@ -214,7 +217,7 @@ export function MessagesScreen() {
                 time={group.last_at}
                 unread={group.unread}
                 pinned={group.is_pinned}
-                muted={group.is_muted}
+                muted={group.is_muted || group.is_hidden}
                 live={live(group.last_at)}
                 avatarId={group.slug}
                 avatarName={group.name}
@@ -255,7 +258,10 @@ export function MessagesScreen() {
                 live={live(item.last_at)}
                 avatarId={item.other_id}
                 avatarName={item.other_name}
-                onAvatarPress={() => router.push({ pathname: '/user', params: { userId: item.other_id } })}
+                onAvatarPress={() => {
+                  void prefetchProfileCard(item.other_id);
+                  router.push({ pathname: '/user', params: { userId: item.other_id } });
+                }}
                 onPress={() => {
                   if (isDesktop) {
                     setTab('dms');
@@ -346,11 +352,15 @@ export function MessagesScreen() {
               <AppText variant="label" tone="accent">
                 ÜYELER
               </AppText>
-              {(groupMembers.data ?? []).slice(0, 8).map((member) => (
+              {(groupMembers.data ?? []).slice(0, 16).map((member) => (
                 <Pressable
                   key={member.user_id}
                   onPress={() => router.push({ pathname: '/user', params: { userId: member.user_id } })}>
-                  <AppText numberOfLines={1}>{taggedName(member.display_name, member.display_tag)}</AppText>
+                  <AppText numberOfLines={1}>
+                    {member.user_id === me
+                      ? `Sen · ${taggedName(member.display_name, member.display_tag)}`
+                      : taggedName(member.display_name, member.display_tag)}
+                  </AppText>
                 </Pressable>
               ))}
               <AppText variant="caption" tone="muted">
@@ -409,12 +419,21 @@ export function MessagesScreen() {
         }}
         onLeave={() => {
           if (!sheet) return;
+          const official = ['tyt', 'ayt', 'kpss'].includes(sheet.thread);
           askConfirm({
-            title: 'Gruptan ayrıl',
-            subtitle: 'Üyeliğin kalkar. Mesajlar silinmez.',
-            confirmLabel: 'Ayrıl',
-            danger: true,
-            onConfirm: () => run(leaveGroup.mutateAsync(sheet.thread)),
+            title: official ? 'Sohbeti gizle' : 'Gruptan ayrıl',
+            subtitle: official
+              ? 'TYT, AYT ve KPSS topluluk kanallarından çıkılmaz. Sadece listen gizlenir.'
+              : 'Üyeliğin kalkar. Mesajlar silinmez.',
+            confirmLabel: official ? 'Gizle' : 'Ayrıl',
+            danger: !official,
+            onConfirm: () =>
+              official
+                ? void hide.mutateAsync({ kind: 'group', thread: sheet.thread }).then(
+                    () => toastSuccess('Sohbet gizlendi. Mesajlar’dan tekrar açabilirsin.'),
+                    (error: unknown) => toastError(error),
+                  )
+                : run(leaveGroup.mutateAsync(sheet.thread)),
           });
         }}
         onBlock={() => {

@@ -14,14 +14,16 @@ export function PrivacySettingsScreen() {
   const { colors, spacing } = useAppTheme();
   const profile = useAuthStore((s) => s.profile);
   const privateOn = Boolean(profile?.is_private);
+  const studyOn = profile?.show_study_status_social !== false;
 
-  const onToggle = async (value: boolean) => {
+  const patch = async (next: { is_private?: boolean; show_study_status_social?: boolean }) => {
     if (!profile) return;
-    useAuthStore.getState().setProfile({ ...profile, is_private: value });
-    const { error } = await getSupabase().from('profiles').update({ is_private: value }).eq('id', profile.id);
+    const previous = profile;
+    useAuthStore.getState().setProfile({ ...profile, ...next });
+    const { error } = await getSupabase().from('profiles').update(next).eq('id', profile.id);
     if (error) {
-      useAuthStore.getState().setProfile({ ...profile, is_private: !value });
-      toastError('Gizlilik için supabase/migrations/0021_follows.sql dosyasını SQL Editor’da çalıştır.');
+      useAuthStore.getState().setProfile(previous);
+      toastError('Gizlilik ayarı kaydedilemedi.');
     }
   };
 
@@ -44,7 +46,23 @@ export function PrivacySettingsScreen() {
             </View>
             <Switch
               value={privateOn}
-              onValueChange={(value) => void onToggle(value)}
+              onValueChange={(value) => void patch({ is_private: value })}
+              trackColor={{ false: colors.border, true: colors.accent }}
+              thumbColor={colors.surface}
+            />
+          </View>
+        </Card>
+        <Card>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+            <View style={{ flex: 1, gap: 4 }}>
+              <AppText variant="subtitle">Çalışma durumumu Sosyal'de göster</AppText>
+              <AppText tone="muted">
+                Açıkken diğerleri hangi ders ve konuda çalıştığını görebilir. Kapalıyken canlı durum paylaşılmaz.
+              </AppText>
+            </View>
+            <Switch
+              value={studyOn}
+              onValueChange={(value) => void patch({ show_study_status_social: value })}
               trackColor={{ false: colors.border, true: colors.accent }}
               thumbColor={colors.surface}
             />

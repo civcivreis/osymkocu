@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
 import type { Session, User } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
@@ -6,7 +7,7 @@ import { APP_URL } from '@/src/lib/brand';
 import { useAuthStore } from '@/src/stores/authStore';
 
 const PENDING_EMAIL_KEY = 'osymkocu.pendingVerifyEmail';
-const CALLBACK_PATH = '/auth/callback';
+const CONFIRM_PATH = '/email-confirmed';
 
 export function isEmailVerified(session: Session | null | undefined): boolean {
   return isUserEmailVerified(session?.user);
@@ -22,21 +23,30 @@ function productionWebOrigin() {
   return APP_URL.replace(/\/$/, '') || 'https://osymkocu.com';
 }
 
-/** Web confirmation always lands on /auth/callback. Native uses the app scheme, never a web localhost URL. */
+/**
+ * Confirmation emails must never point at localhost in production.
+ * Local hosts are only used while Metro/Expo is running in __DEV__.
+ */
 export function emailRedirectTo(): string {
+  const origin = productionWebOrigin();
   if (Platform.OS === 'web') {
-    const origin =
-      typeof window !== 'undefined' && window.location?.origin
-        ? window.location.origin
-        : productionWebOrigin();
-    return `${origin}${CALLBACK_PATH}`;
+    if (__DEV__ && typeof window !== 'undefined') {
+      const host = window.location.hostname;
+      const local = host === 'localhost' || host === '127.0.0.1';
+      if (local && process.env.EXPO_PUBLIC_ALLOW_LOCAL_AUTH_REDIRECT === '1') {
+        return `${window.location.origin}${CONFIRM_PATH}`;
+      }
+    }
+    return `${origin}${CONFIRM_PATH}`;
   }
-  return Linking.createURL('auth/callback');
+  if (__DEV__) return Linking.createURL('email-confirmed');
+  return `${origin}${CONFIRM_PATH}`;
 }
 
 export function persistPendingVerifyEmail(email: string) {
   const value = email.trim().toLowerCase();
   useAuthStore.getState().setPendingVerifyEmail(value);
+  void AsyncStorage.setItem(PENDING_EMAIL_KEY, value);
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     try {
       window.sessionStorage.setItem(PENDING_EMAIL_KEY, value);
@@ -59,8 +69,15 @@ export function readPendingVerifyEmail(): string | null {
   return null;
 }
 
+export async function hydratePendingVerifyEmail() {
+  if (useAuthStore.getState().pendingVerifyEmail) return;
+  const value = await AsyncStorage.getItem(PENDING_EMAIL_KEY);
+  if (value) useAuthStore.getState().setPendingVerifyEmail(value);
+}
+
 export function clearPendingVerifyEmail() {
   useAuthStore.getState().setPendingVerifyEmail(null);
+  void AsyncStorage.removeItem(PENDING_EMAIL_KEY);
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     try {
       window.sessionStorage.removeItem(PENDING_EMAIL_KEY);
@@ -78,16 +95,23 @@ export function hasAuthRedirectPayload(): boolean {
   );
 }
 
-export function paramsFromLocation(): URLSearchParams {
+export function paramsFromHref(href: string | null | undefined): URLSearchParams {
   const params = new URLSearchParams();
-  if (typeof window === 'undefined') return params;
-  const hash = window.location.hash.replace(/^#/, '');
-  const search = window.location.search.replace(/^\?/, '');
-  const fromHash = new URLSearchParams(hash);
-  const fromSearch = new URLSearchParams(search);
-  fromHash.forEach((value, key) => params.set(key, value));
-  fromSearch.forEach((value, key) => params.set(key, value));
+  if (!href) return params;
+  const hashAt = href.indexOf('#');
+  const queryAt = href.indexOf('?');
+  const hash = hashAt >= 0 ? href.slice(hashAt + 1) : '';
+  const query = queryAt >= 0 ? href.slice(queryAt + 1, hashAt >= 0 ? hashAt : undefined) : '';
+  new URLSearchParams(hash).forEach((value, key) => params.set(key, value));
+  new URLSearchParams(query).forEach((value, key) => params.set(key, value));
   return params;
+}
+
+export function paramsFromLocation(): URLSearchParams {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return paramsFromHref(window.location.href);
+  }
+  return new URLSearchParams();
 }
 
 export function consumeAuthLinkError(): boolean {

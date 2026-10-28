@@ -1,52 +1,59 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
-import {
-  Image,
-  Modal,
-  Pressable,
-  ScrollView,
-  View,
-} from 'react-native';
+import { Image, Modal, Pressable, ScrollView, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
 import { RemoteImage } from '@/src/components/ui/RemoteImage';
-import { taggedName } from '@/src/features/social/identity';
+import { toastError, toastSuccess } from '@/src/components/ui/feedbackStore';
 import { pickDeviceImage } from '@/src/features/media/pickDeviceImage';
-import { usePublishStory, useStories, type StoryItem } from '@/src/features/social/useSocial';
+import { taggedName } from '@/src/features/social/identity';
+import { StoryViewer } from '@/src/features/social/StoryViewer';
+import { useDeleteStory, usePublishStory, useReportUser, useStories, type StoryItem } from '@/src/features/social/useSocial';
+import type { ReportReasonId } from '@/src/features/social/ReportSheet';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 import { useAuthStore } from '@/src/stores/authStore';
-import { toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
 
 export function StoriesRail() {
   const { colors } = useAppTheme();
   const me = useAuthStore((s) => s.session?.user.id);
   const stories = useStories();
   const publish = usePublishStory();
-  const [open, setOpen] = useState<StoryItem | null>(null);
+  const remove = useDeleteStory();
+  const reportUser = useReportUser();
+  const [startId, setStartId] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ uri: string; base64: string } | null>(null);
 
+  const items = stories.data ?? [];
   const rings = useMemo(() => {
     const seen = new Set<string>();
     const list: StoryItem[] = [];
-    for (const item of stories.data ?? []) {
+    for (const item of items) {
       if (seen.has(item.user_id)) continue;
       seen.add(item.user_id);
       list.push(item);
     }
     return list;
-  }, [stories.data]);
+  }, [items]);
 
   const addStory = async () => {
     const asset = await pickDeviceImage({ source: 'library', quality: 0.55, aspect: [9, 16], allowsEditing: true });
     if (!asset) return;
+    setPending({ uri: asset.uri, base64: asset.base64 });
+  };
+
+  const sharePending = async () => {
+    if (!pending) return;
     try {
-      await publish.mutateAsync({ base64: asset.base64 });
+      await publish.mutateAsync({ base64: pending.base64 });
+      setPending(null);
+      toastSuccess('Story paylaşıldı.');
     } catch (error) {
       toastError(error);
     }
   };
 
   return (
-    <View style={{ width: '100%', alignSelf: 'stretch', minWidth: 0 }}>
+    <View style={{ width: '100%', alignSelf: 'stretch', minWidth: 0, gap: 8 }}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -72,7 +79,10 @@ export function StoriesRail() {
           </AppText>
         </Pressable>
         {rings.map((item) => (
-          <Pressable key={item.user_id} onPress={() => setOpen(item)} style={{ alignItems: 'center', width: 72 }}>
+          <Pressable
+            key={item.user_id}
+            onPress={() => setStartId(item.id)}
+            style={{ alignItems: 'center', width: 72 }}>
             <View
               style={{
                 width: 68,
@@ -100,30 +110,64 @@ export function StoriesRail() {
           </Pressable>
         ))}
       </ScrollView>
+      {rings.length === 0 ? (
+        <AppText variant="caption" tone="muted">
+          Henüz story yok. 24 saat görünen bir fotoğraf paylaşabilirsin.
+        </AppText>
+      ) : null}
 
-      <Modal visible={Boolean(open)} animationType="fade" onRequestClose={() => setOpen(null)}>
-        <Pressable
-          onPress={() => setOpen(null)}
-          style={{ flex: 1, backgroundColor: '#0E1520', justifyContent: 'center' }}>
-          {open ? (
-            <View style={{ flex: 1 }}>
-              {open.image_url.startsWith('media:') ? (
-                <RemoteImage mediaId={open.image_url.slice(6)} style={{ flex: 1 }} />
-              ) : (
-                <Image source={{ uri: open.image_url }} style={{ flex: 1 }} resizeMode="contain" />
-              )}
-              <View style={{ position: 'absolute', top: 54, left: 20, right: 20 }}>
-                <AppText variant="subtitle" style={{ color: '#F4F1EA' }}>
-                  {open.user_id === me ? 'Sen' : taggedName(open.display_name, open.display_tag)}
-                </AppText>
-                {open.caption ? (
-                  <AppText style={{ color: '#F4F1EA', marginTop: 6 }}>{open.caption}</AppText>
-                ) : null}
+      <Modal visible={Boolean(pending)} animationType="fade" transparent onRequestClose={() => setPending(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(14,21,32,0.86)', justifyContent: 'center', padding: 24 }}>
+          {pending ? (
+            <View style={{ backgroundColor: colors.surface, borderRadius: 20, padding: 16, gap: 12 }}>
+              <AppText variant="subtitle">Story paylaş</AppText>
+              <Image source={{ uri: pending.uri }} style={{ width: '100%', height: 280, borderRadius: 16 }} resizeMode="cover" />
+              <AppText>Seçilen fotoğrafı story olarak paylaşmak istiyor musunuz?</AppText>
+              <AppText variant="caption" tone="muted">
+                Story 24 saat sonra otomatik silinecek.
+              </AppText>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Pressable
+                  onPress={() => setPending(null)}
+                  style={{ flex: 1, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border }}>
+                  <AppText>Vazgeç</AppText>
+                </Pressable>
+                <Pressable
+                  onPress={() => void sharePending()}
+                  disabled={publish.isPending}
+                  style={{ flex: 1, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent }}>
+                  <AppText tone="inverse">{publish.isPending ? '…' : 'Paylaş'}</AppText>
+                </Pressable>
               </View>
             </View>
           ) : null}
-        </Pressable>
+        </View>
       </Modal>
+
+      <StoryViewer
+        visible={Boolean(startId) && items.length > 0}
+        stories={items}
+        startId={startId}
+        onClose={() => setStartId(null)}
+        onDelete={async (id) => {
+          try {
+            await remove.mutateAsync(id);
+            toastSuccess('Story silindi.');
+          } catch (error) {
+            toastError(error);
+            throw error;
+          }
+        }}
+        onReport={async (story, reason: ReportReasonId) => {
+          try {
+            await reportUser.mutateAsync({ otherId: story.user_id, reason });
+            toastSuccess('Şikayetin alındı.');
+          } catch (error) {
+            toastError(error);
+            throw error;
+          }
+        }}
+      />
     </View>
   );
 }

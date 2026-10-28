@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
+import { ContentColumn } from '@/src/components/ui/ContentColumn';
 import { Screen } from '@/src/components/ui/Screen';
 import { toastSuccess } from '@/src/components/ui/feedbackStore';
 import { useXpFeedbackStore } from '@/src/features/progress/xpFeedbackStore';
@@ -103,7 +104,7 @@ export function GuidedStudyScreen() {
 
   return (
     <Screen>
-      <View style={{ gap: 16, paddingBottom: 40 }}>
+      <ContentColumn maxWidth={720} style={{ gap: 16, paddingBottom: 40 }}>
         <Pressable onPress={() => router.back()}>
           <AppText tone="accent">← Ana sayfa</AppText>
         </Pressable>
@@ -317,7 +318,7 @@ export function GuidedStudyScreen() {
             </Pressable>
           </View>
         ) : null}
-      </View>
+      </ContentColumn>
     </Screen>
   );
 }

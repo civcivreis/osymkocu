@@ -1,5 +1,5 @@
-import { AdminVirtualStudentsScreen } from '@/src/features/admin/AdminVirtualStudentsScreen';
+import { Redirect } from 'expo-router';
 
-export default function AdminVirtualStudentsRoute() {
-  return <AdminVirtualStudentsScreen />;
+export default function Page() {
+  return <Redirect href={'/admin' as never} />;
 }

@@ -20,7 +20,9 @@ export function HiddenChatsScreen() {
           <AppText tone="accent">← Mesajlar</AppText>
         </Pressable>
         <AppText variant="title">Gizlenen sohbetler</AppText>
-        <AppText tone="muted">Gizlemek gruptan ayırmaz. Mesajlar silinmez.</AppText>
+        <AppText tone="muted">
+          TYT, AYT ve KPSS gizlenince kaybolmaz. Listede yoksa aşağıdan geri getir.
+        </AppText>
         {hidden.isLoading ? <AppText tone="muted">Yükleniyor…</AppText> : null}
         {!hidden.isLoading && rows.length === 0 ? (
           <AppText tone="muted">Gizlenmiş sohbet yok.</AppText>
@@ -46,7 +48,12 @@ export function HiddenChatsScreen() {
             <Pressable
               onPress={() =>
                 void restore.mutateAsync({ kind: row.kind, thread: row.thread_key }).then(
-                  () => toastSuccess('Sohbet geri getirildi.'),
+                  async () => {
+                    toastSuccess('Sohbet geri getirildi.');
+                    if (row.kind === 'group') {
+                      router.push({ pathname: '/group-chat', params: { slug: row.thread_key, name: row.title } });
+                    }
+                  },
                   (error: unknown) => toastError(error),
                 )
               }

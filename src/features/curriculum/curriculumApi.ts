@@ -142,6 +142,48 @@ export async function setCatalogActive(
   if (error) throw error;
 }
 
+export async function deleteCatalogRow(table: 'subject_catalog' | 'unit_catalog' | 'topic_catalog', id: string) {
+  const supabase = getSupabase();
+  if (table === 'topic_catalog') {
+    const { error } = await supabase.from('topic_catalog').delete().eq('id', id);
+    if (error) throw error;
+    return;
+  }
+  if (table === 'unit_catalog') {
+    const { error: topicsError } = await supabase.from('topic_catalog').delete().eq('unit_id', id);
+    if (topicsError) throw topicsError;
+    const { error } = await supabase.from('unit_catalog').delete().eq('id', id);
+    if (error) throw error;
+    return;
+  }
+  const { data: units, error: unitsError } = await supabase.from('unit_catalog').select('id').eq('subject_id', id);
+  if (unitsError) throw unitsError;
+  const unitIds = (units ?? []).map((row) => row.id);
+  if (unitIds.length) {
+    const { error: topicsError } = await supabase.from('topic_catalog').delete().in('unit_id', unitIds);
+    if (topicsError) throw topicsError;
+    const { error: deleteUnits } = await supabase.from('unit_catalog').delete().eq('subject_id', id);
+    if (deleteUnits) throw deleteUnits;
+  }
+  const { error } = await supabase.from('subject_catalog').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function swapCatalogSort(
+  table: 'subject_catalog' | 'unit_catalog' | 'topic_catalog',
+  first: { id: string; sort_order: number },
+  second: { id: string; sort_order: number },
+) {
+  const supabase = getSupabase();
+  const temp = -(Math.abs(first.sort_order) + 1_000_000);
+  const { error: park } = await supabase.from(table).update({ sort_order: temp }).eq('id', first.id);
+  if (park) throw park;
+  const { error: moveSecond } = await supabase.from(table).update({ sort_order: first.sort_order }).eq('id', second.id);
+  if (moveSecond) throw moveSecond;
+  const { error: moveFirst } = await supabase.from(table).update({ sort_order: second.sort_order }).eq('id', first.id);
+  if (moveFirst) throw moveFirst;
+}
+
 export async function syncCurriculum(examId?: string | null, force = false) {
   const { data, error } = await getSupabase().rpc('admin_curriculum_sync', {
     p_exam_id: examId ?? null,

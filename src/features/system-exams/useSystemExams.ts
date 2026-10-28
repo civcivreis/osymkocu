@@ -152,6 +152,8 @@ export function useSystemExamLeaderboard(examId: string | null) {
       if (error) throw error;
       return data as {
         ready: boolean;
+        label?: string;
+        count?: number;
         mine?: number | null;
         top: { rank: number; display_name: string; display_tag?: number | null; score: number; is_me: boolean }[];
         nearby: { rank: number; display_name: string; display_tag?: number | null; score: number; is_me: boolean }[];
@@ -190,6 +192,7 @@ export function useSetExamReminders() {
 
 export function mapExamError(message: string) {
   if (message.includes('EXAM_NOT_LIVE')) return 'Sınav henüz başlamadı veya süresi doldu.';
+  if (message.includes('EXAM_CANCELLED')) return 'Bu sınav iptal edildi.';
   if (message.includes('ATTEMPT_ACTIVE_ELSEWHERE')) return 'Bu sınav başka bir cihazda açık.';
   if (message.includes('ATTEMPT_LOCKED')) return 'Sınav kaydı kilitlendi.';
   if (message.includes('EXAM_TIME_UP')) return 'Süre doldu, sınav gönderildi.';

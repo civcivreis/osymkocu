@@ -17,6 +17,11 @@ type Overview = {
     activity_intensity?: string;
     max_virtual_in_top5?: number;
     target_virtual_share?: number;
+    virtual_social_enabled?: boolean;
+    deterministic_social_only?: boolean;
+    social_post_interval_minutes?: number;
+    social_comment_interval_minutes?: number;
+    social_like_interval_minutes?: number;
   };
   enabled_profiles?: number;
   online?: number;
@@ -66,6 +71,22 @@ export function AdminVirtualStudentsScreen() {
       const { data, error } = await getSupabase().rpc('admin_virtual_students_overview');
       if (error) throw new Error(mapAdminError(error.message));
       return data as Overview;
+    },
+  });
+  const budget = useQuery({
+    queryKey: ['admin-virtual-ai-budget'],
+    enabled: canManageUsers(role),
+    queryFn: async () => {
+      const { data, error } = await getSupabase().rpc('admin_virtual_ai_budget');
+      if (error) throw new Error(mapAdminError(error.message));
+      return data as {
+        ai_calls_today?: number;
+        estimated_tokens_today?: number;
+        queued_ai?: number;
+        policy?: { global_daily_ai_calls?: number; per_profile_daily_ai_calls?: number };
+        tier_mix_today?: { t1?: number; t2?: number; t3?: number };
+        ai_calls_by_activity?: Record<string, number>;
+      };
     },
   });
 
@@ -158,6 +179,57 @@ export function AdminVirtualStudentsScreen() {
       </View>
 
       <View style={adminCard}>
+        <AppText variant="subtitle">AI'siz sosyal mod</AppText>
+        <AppText variant="caption" tone="muted">
+          Açıkken sanal öğrenciler gönderi / beğeni / yorumu şablondan üretir. LLM bütçesi sıfır olsa da Sosyal durmaz.
+        </AppText>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <Pressable
+            onPress={() =>
+              void getSupabase()
+                .rpc('admin_set_virtual_social', {
+                  p_enabled: !(settings.virtual_social_enabled !== false),
+                })
+                .then(({ error }) => {
+                  if (error) toastError(mapAdminError(error.message));
+                  else {
+                    toastSuccess('Sosyal motor güncellendi');
+                    void overview.refetch();
+                  }
+                })
+            }
+            style={settings.virtual_social_enabled === false ? adminBtn : adminGhost}>
+            <AppText variant="caption" style={settings.virtual_social_enabled === false ? { color: '#fff' } : undefined}>
+              {settings.virtual_social_enabled === false ? 'Sanal sosyal kapalı' : 'Sanal sosyal açık'}
+            </AppText>
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              void getSupabase()
+                .rpc('admin_set_virtual_social', {
+                  p_deterministic_only: !settings.deterministic_social_only,
+                })
+                .then(({ error }) => {
+                  if (error) toastError(mapAdminError(error.message));
+                  else {
+                    toastSuccess("AI'siz sosyal güncellendi");
+                    void overview.refetch();
+                  }
+                })
+            }
+            style={settings.deterministic_social_only ? adminBtn : adminGhost}>
+            <AppText variant="caption" style={settings.deterministic_social_only ? { color: '#fff' } : undefined}>
+              {settings.deterministic_social_only ? "AI'siz sosyal açık" : "AI'siz sosyal kapalı"}
+            </AppText>
+          </Pressable>
+        </View>
+        <AppText variant="caption" tone="muted">
+          Gönderi {settings.social_post_interval_minutes ?? 18} dk · yorum {settings.social_comment_interval_minutes ?? 25} dk ·
+          beğeni {settings.social_like_interval_minutes ?? 12} dk
+        </AppText>
+      </View>
+
+      <View style={adminCard}>
         <AppText variant="subtitle">Durum</AppText>
         {row.stall ? (
           <AppText tone="danger">{String(row.stall_message ?? 'Sanal öğrenci motorunda ilerleme yok.')}</AppText>
@@ -180,6 +252,15 @@ export function AdminVirtualStudentsScreen() {
         <AppText variant="caption" tone="muted">
           Son aktivite {row.last_virtual_activity ? String(row.last_virtual_activity) : 'yok'} · son tik{' '}
           {row.last_tick_at ? String(row.last_tick_at) : 'yok'}
+        </AppText>
+        <AppText variant="caption">
+          AI bugün {budget.data?.ai_calls_today ?? 0}/{budget.data?.policy?.global_daily_ai_calls ?? 24} · token{' '}
+          {budget.data?.estimated_tokens_today ?? 0} · kuyruk {budget.data?.queued_ai ?? 0} · T1{' '}
+          {budget.data?.tier_mix_today?.t1 ?? 0} / T2 {budget.data?.tier_mix_today?.t2 ?? 0} / T3{' '}
+          {budget.data?.tier_mix_today?.t3 ?? 0}
+        </AppText>
+        <AppText variant="caption" tone="muted">
+          Cap dolunca sanal öğrenciler susmaz, şablonla devam eder. Test / oda / like / XP AI kullanmaz.
         </AppText>
       </View>
 

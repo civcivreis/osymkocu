@@ -1,12 +1,16 @@
-select count(*)::int as visible_now
-from social_posts p
-join profiles a on a.id = p.user_id
-where (p.expires_at is null or p.expires_at > now())
-  and coalesce(a.profile_type::text, 'human') not in ('system');
+select tgname, pg_get_triggerdef(t.oid) as def
+from pg_trigger t
+join pg_class c on c.oid = t.tgrelid
+join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and c.relname = 'exam_chat_messages' and not t.tgisinternal;
 
-select p.body, pr.display_name, p.expires_at
-from social_posts p
-join profiles pr on pr.id = p.user_id
-where p.body like '%Bugünkü hedef 38%'
-order by p.created_at desc
-limit 1;
+select body, created_at, slug,
+  public.exam_chat_skeleton(body) as sk
+from exam_chat_messages
+where body ilike '%aklıma geldi%' or body ilike '%aklima geldi%'
+order by created_at desc
+limit 20;
+
+select body from exam_chat_line_bank
+where body ilike '%aklıma%' or body ilike '%anlatınca%'
+limit 20;

@@ -72,6 +72,7 @@ function ExamTakeInner({ attemptId, play }: { attemptId: string; play: SystemExa
   useEffect(() => {
     if (remain !== 0 || play.attempt.status !== 'in_progress') return;
     void submit.mutateAsync(attemptId).then(() => {
+      toastInfo('Süren doldu. Sınavın otomatik olarak gönderildi.');
       router.replace({ pathname: '/system-exam-result', params: { attemptId, examId: play.exam.id } });
     });
   }, [attemptId, play.attempt.status, play.exam.id, remain, submit]);

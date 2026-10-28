@@ -57,3 +57,18 @@ export const adminChip = {
 export const adminChipOn = {
   backgroundColor: '#F3E0D4',
 } as const;
+
+export function queryParam(value?: string | string[] | null) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const trimmed = raw?.trim();
+  return trimmed ? trimmed : null;
+}
+
+export function mufredatHref(exam?: string | null, subject?: string | null, unit?: string | null) {
+  const q = new URLSearchParams();
+  if (exam) q.set('exam', exam);
+  if (subject) q.set('subject', subject);
+  if (unit) q.set('unit', unit);
+  const qs = q.toString();
+  return qs ? `/admin/mufredat?${qs}` : '/admin/mufredat';
+}

@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { applyXpAward } from '@/src/features/progress/xp';
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
 import { useAuthStore } from '@/src/stores/authStore';
 
@@ -104,10 +103,10 @@ export function useCompleteNarration() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: completeNarration,
-    onSuccess: async (data, lessonId) => {
-      applyXpAward(data.xp, 'Ders tamamlandı');
+    onSuccess: async (_data, lessonId) => {
       await client.invalidateQueries({ queryKey: ['memory-lesson-player', lessonId] });
       await client.invalidateQueries({ queryKey: ['student-lesson-cards'] });
+      await client.invalidateQueries({ queryKey: ['study-hub'] });
     },
   });
 }
@@ -128,9 +127,8 @@ export function useCompleteReview() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: completeReview,
-    onSuccess: async (data) => {
+    onSuccess: async () => {
       AnalyticsProvider.track('review_completed');
-      applyXpAward(data.xp, 'Tekrar tamamlandı');
       await client.invalidateQueries({ queryKey: ['memory-review-queue'] });
       await client.invalidateQueries({ queryKey: ['student-lesson-cards'] });
     },

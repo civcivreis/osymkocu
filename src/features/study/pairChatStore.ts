@@ -6,6 +6,7 @@ export type PairChatSession = {
   otherId?: string;
   unread: number;
   expanded: boolean;
+  solo?: boolean;
 };
 
 type PairChatState = {
@@ -14,6 +15,7 @@ type PairChatState = {
   bumpUnread: () => void;
   clearUnread: () => void;
   setExpanded: (expanded: boolean) => void;
+  markSolo: () => void;
   end: () => void;
 };
 
@@ -27,6 +29,7 @@ export const usePairChatStore = create<PairChatState>((set, get) => ({
         otherId: input.otherId,
         unread: 0,
         expanded: false,
+        solo: false,
       },
     }),
   bumpUnread: () => {
@@ -43,6 +46,11 @@ export const usePairChatStore = create<PairChatState>((set, get) => ({
     const current = get().session;
     if (!current) return;
     set({ session: { ...current, expanded, unread: expanded ? 0 : current.unread } });
+  },
+  markSolo: () => {
+    const current = get().session;
+    if (!current) return;
+    set({ session: { ...current, solo: true } });
   },
   end: () => set({ session: null }),
 }));

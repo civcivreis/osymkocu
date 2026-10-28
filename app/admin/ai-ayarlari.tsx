@@ -1,5 +1,5 @@
-import { AdminAiSettingsScreen } from '@/src/features/admin/AdminAiSettingsScreen';
+import { Redirect } from 'expo-router';
 
-export default function AdminAiSettingsRoute() {
-  return <AdminAiSettingsScreen />;
+export default function Page() {
+  return <Redirect href={'/admin' as never} />;
 }

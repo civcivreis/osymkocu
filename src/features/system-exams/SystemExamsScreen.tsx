@@ -5,6 +5,7 @@ import { Pressable, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
 import { EmptyState } from '@/src/components/ui/EmptyState';
+import { CardGrid } from '@/src/components/ui/CardGrid';
 import { PageHeader } from '@/src/components/ui/PageHeader';
 import { toastError } from '@/src/components/ui/feedbackStore';
 import { Screen } from '@/src/components/ui/Screen';
@@ -57,12 +58,12 @@ export function SystemExamsScreen() {
         />
         {list.isLoading ? <AppText tone="muted">Yükleniyor…</AppText> : null}
         {list.isError ? <AppText tone="danger">Sınav listesi alınamadı. 0031 SQL’ini çalıştır.</AppText> : null}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16 }}>
+        <CardGrid>
         {(list.data ?? [])
           .filter((exam) => (tab === 'past' ? Boolean(exam.attempt_id) : true))
           .map((exam) => (
-          <View key={exam.id} style={{ width: isDesktop ? '31.5%' : '100%', flexGrow: 1, minWidth: isDesktop ? 260 : undefined }}>
           <ExamCard
+            key={exam.id}
             exam={exam}
             onRemind={() =>
               void signup.mutateAsync(exam.id).catch((error: unknown) =>
@@ -85,9 +86,8 @@ export function SystemExamsScreen() {
               }
             }}
           />
-          </View>
         ))}
-        </View>
+        </CardGrid>
         {!list.isLoading &&
         (tab === 'past' ? (list.data ?? []).filter((exam) => exam.attempt_id) : list.data ?? []).length === 0 ? (
           <EmptyState
@@ -118,7 +118,7 @@ function ExamCard({
   return (
     <View style={{ backgroundColor: colors.surface, borderRadius: 20, padding: 16, gap: 8 }}>
       <AppText variant="caption" tone="accent">
-        {examTypeLabel(exam.exam_type)} Sistem Sınavı
+        Sistem Sınavı · {examTypeLabel(exam.exam_type)}
       </AppText>
       <AppText variant="subtitle">{exam.title}</AppText>
       <AppText variant="caption" tone="muted">
@@ -179,7 +179,7 @@ function ExamCard({
               backgroundColor: colors.accent,
             }}>
             <AppText variant="label" tone="inverse">
-              {exam.attempt_status === 'in_progress' ? 'Devam et' : exam.attempt_id ? 'Sonuç' : 'Başla'}
+              {exam.attempt_status === 'in_progress' ? 'Devam et' : exam.attempt_id ? 'Sonuç' : 'Sınava Başla'}
             </AppText>
           </Pressable>
         ) : null}

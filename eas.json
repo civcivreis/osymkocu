@@ -1,0 +1,37 @@
+{
+  "cli": {
+    "version": ">= 27.1.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_APP_DOMAIN": "osymkocu.com",
+        "EXPO_PUBLIC_ADMIN_DOMAIN": "admin.osymkocu.com"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_APP_DOMAIN": "osymkocu.com",
+        "EXPO_PUBLIC_ADMIN_DOMAIN": "admin.osymkocu.com"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "distribution": "store",
+      "env": {
+        "EXPO_PUBLIC_APP_DOMAIN": "osymkocu.com",
+        "EXPO_PUBLIC_ADMIN_DOMAIN": "admin.osymkocu.com"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

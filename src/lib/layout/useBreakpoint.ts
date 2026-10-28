@@ -36,7 +36,7 @@ export function useBreakpoint() {
     compactSidebar: isTablet,
     showBottomNav: isMobileWeb,
     showTopBar: isWeb && width >= BREAKPOINTS.tablet,
-    contentMaxWidth: 1400,
-    contentPad: width >= BREAKPOINTS.desktop ? 32 : width >= BREAKPOINTS.tablet ? 24 : 16,
+    contentMaxWidth: 1240,
+    contentPad: width >= BREAKPOINTS.desktop ? 24 : width >= BREAKPOINTS.tablet ? 20 : 16,
   };
 }

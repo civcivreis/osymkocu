@@ -2,6 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
+import { useOrientation } from '@/src/lib/layout/useOrientation';
+import { StudySplitLayout } from '@/src/features/study/StudySplitLayout';
 
 import { AppText } from '@/src/components/ui/AppText';
 import { Button } from '@/src/components/ui/Button';
@@ -10,7 +12,8 @@ import { Screen } from '@/src/components/ui/Screen';
 import { askConfirm, toastInfo } from '@/src/components/ui/feedbackStore';
 import { sortedChoices } from '@/src/features/study/usePractice';
 import { useStartExamLobby, useStudyRoom } from '@/src/features/study/useStudyTogether';
-import { RoomChat } from '@/src/features/study/RoomChat';
+import { LetterAvatar } from '@/src/features/social/LetterAvatar';
+import { RoomChatSheet } from '@/src/features/study/RoomChatSheet';
 import { useCoachStore } from '@/src/features/teacher/coachStore';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 
@@ -20,6 +23,7 @@ function rankXp(players: number, rank: number) {
 
 export function StudyRoomScreen() {
   const { colors, spacing, radius } = useAppTheme();
+  const { landscape } = useOrientation();
   const { sessionId } = useLocalSearchParams<{ sessionId?: string }>();
   const id = String(sessionId ?? '');
   const room = useStudyRoom(id || null);
@@ -116,162 +120,204 @@ export function StudyRoomScreen() {
           ? `${state?.subject_name ?? 'Ders'} test odası`
           : `${state?.subject_name ?? 'Ders'} ders odası`);
 
+  const topicLine = [state?.subject_name, title].filter(Boolean).join(' · ');
+  const chatOn = Boolean(state && state.status !== 'countdown' && state.chat_enabled !== false && id);
+  const live = Boolean(question && (state?.status === 'active' || state?.status === 'reveal'));
+  const waiting = state?.status === 'waiting';
+
+  const chat = chatOn ? (
+    <RoomChatSheet sessionId={id} me={me} members={state?.members ?? []} landscape={landscape && !waiting} />
+  ) : undefined;
+
+  const questionStage =
+    live && state && question ? (
+      <View style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: 16, overflow: 'hidden', backgroundColor: '#1A2433', padding: 16, justifyContent: 'center' }}>
+        <AppText variant="caption" style={{ color: 'rgba(244,241,234,0.7)', marginBottom: 8 }}>
+          {(state.current_index ?? 0) + 1} / {state.total}
+          {mode === 'exam' ? ` · ${questionLeft} sn` : ''}
+        </AppText>
+        <AppText variant="title" style={{ color: '#F4F1EA' }} numberOfLines={8}>
+          {question.stem}
+        </AppText>
+      </View>
+    ) : null;
+
+  const questionControls =
+    live && state && question ? (
+      <View style={{ gap: spacing.sm }}>
+        {state.status === 'active' ? (
+          <AppText variant="caption" tone={otherAnswered ? 'accent' : 'muted'}>
+            {waitingForOthers
+              ? 'Cevabın kilitlendi. Karşı taraf bekleniyor…'
+              : otherAnswered
+                ? 'Karşı taraf cevapladı. Senin cevabın bekleniyor.'
+                : 'Cevap bekleniyor…'}
+          </AppText>
+        ) : null}
+        {sortedChoices(question.choices).map((choice) => {
+          const mine = (selected ?? myAnswer?.selected_choice) === choice.key;
+          const reveal = state.status === 'reveal' && collaborative;
+          const correct = reveal && question.correct_choice === choice.key;
+          const wrongPick = reveal && (state.answers ?? []).some((item) => item.selected_choice === choice.key && item.is_correct === false);
+          const partnerPick = (state.answers ?? []).find(
+            (item) => item.user_id !== me && item.selected_choice === choice.key,
+          );
+          return (
+            <Pressable
+              key={choice.key}
+              disabled={Boolean(myAnswer) || room.submit.isPending || reveal || (competitive && state.status !== 'active')}
+              onPress={() => setPicked({ key: questionKey, choice: choice.key })}
+              style={{
+                padding: spacing.md,
+                borderRadius: radius.md,
+                borderWidth: 1,
+                borderColor: correct
+                  ? colors.success
+                  : wrongPick
+                    ? colors.danger
+                    : mine
+                      ? colors.accent
+                      : colors.border,
+                backgroundColor: correct
+                  ? colors.accentMuted
+                  : wrongPick
+                    ? colors.surfaceMuted
+                    : mine
+                      ? colors.surfaceMuted
+                      : colors.surface,
+              }}>
+              <AppText>
+                {choice.key}) {choice.label}
+                {reveal && partnerPick ? ` · ${memberName(partnerPick.user_id)}` : ''}
+              </AppText>
+            </Pressable>
+          );
+        })}
+        {state.status === 'reveal' && collaborative ? (
+          <Card>
+            <View style={{ gap: spacing.sm }}>
+              <AppText tone="accent">Doğru şık: {question.correct_choice}</AppText>
+              {question.explanation ? <AppText tone="muted">{question.explanation}</AppText> : null}
+              <Button
+                label={(state.current_index ?? 0) + 1 >= state.total ? 'Bitir' : 'Sonraki soru'}
+                loading={room.advance.isPending}
+                onPress={() => void room.advance.mutateAsync()}
+              />
+            </View>
+          </Card>
+        ) : (
+          <Button
+            label="Cevabı kilitle"
+            disabled={!selected || Boolean(myAnswer)}
+            loading={room.submit.isPending}
+            onPress={() => selected && void room.submit.mutateAsync(selected)}
+          />
+        )}
+      </View>
+    ) : null;
+
+  const waitingPanel =
+    waiting && state ? (
+      <Card>
+        <View style={{ gap: 14 }}>
+          <View style={{ gap: 4 }}>
+            <AppText variant="title">{title}</AppText>
+            {state.subject_name ? <AppText tone="muted">{state.subject_name}</AppText> : null}
+            <AppText variant="subtitle">
+              {state.member_count}/{state.capacity} kişi
+            </AppText>
+          </View>
+          <View style={{ gap: 8 }}>
+            <AppText variant="label" tone="accent">
+              KATILIMCILAR
+            </AppText>
+            {(state.members ?? []).map((member) => (
+              <View key={member.user_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <LetterAvatar id={member.user_id} name={member.display_name} size={36} />
+                <AppText>
+                  {member.user_id === me ? 'Sen' : member.display_name}
+                  {member.user_id === state.host_id ? ' · Kurucu' : ''}
+                </AppText>
+              </View>
+            ))}
+          </View>
+          <AppText tone="muted">
+            Aynı soru herkese aynı anda düşer. Kurucu başlatınca 10’dan geri sayılır.
+          </AppText>
+          {state.host_id === me && state.member_count >= 2 ? (
+            <Button label="Odayı başlat" loading={startExam.isPending} onPress={() => void startExam.mutateAsync(id)} />
+          ) : (
+            <AppText tone="muted">Kurucunun başlatması bekleniyor.</AppText>
+          )}
+        </View>
+      </Card>
+    ) : null;
+
   return (
-    <Screen scroll>
-      <View style={{ gap: spacing.md }}>
+    <Screen scroll={!landscape} style={landscape ? { maxWidth: 1600, flex: 1 } : undefined}>
+      <View style={{ gap: spacing.md, flex: landscape ? 1 : undefined, paddingBottom: 24 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <Pressable onPress={onLeave} hitSlop={12} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Ionicons name="chevron-back" size={22} color={colors.accent} />
             <AppText tone="accent">Çık</AppText>
           </Pressable>
           <AppText variant="caption" tone="muted" numberOfLines={1} style={{ flex: 1, textAlign: 'right' }}>
-            {state
-              ? `${state.subject_name ?? 'Ders'} • ${state.member_count}/${state.capacity} kişi`
-              : title}
+            {state ? `${topicLine} · ${state.member_count}/${state.capacity}` : title}
           </AppText>
         </View>
 
         {room.isLoading ? <AppText tone="muted">Oda yükleniyor…</AppText> : null}
         {room.isError ? <AppText tone="danger">Oda alınamadı. 0009 SQL çalıştı mı?</AppText> : null}
 
-        {state?.status === 'waiting' ? (
-          <Card>
-            <View style={{ gap: spacing.sm }}>
-              <AppText variant="title">
-                {state.subject_name} · {state.member_count}/{state.capacity}
-              </AppText>
-              <AppText tone="muted">
-                Aynı soru herkese aynı anda düşer. Beklerken sohbet edebilirsin.
-              </AppText>
-              {state.host_id === me && state.member_count >= 2 ? (
-                <Button
-                  label="Odayı başlat"
-                  loading={startExam.isPending}
-                  onPress={() => void startExam.mutateAsync(id)}
-                />
-              ) : (
-                <AppText tone="muted">Kurucu başlatınca 10’dan geri sayılır.</AppText>
-              )}
-            </View>
-          </Card>
-        ) : null}
-
-        {state?.status === 'countdown' ? (
-          <Card>
-            <View style={{ alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.lg }}>
-              <AppText variant="title">
-                {mode === 'race'
-                  ? `${partner?.display_name ?? 'Kullanıcı'} ile ${state.subject_name} yarışması başlıyor`
-                  : `${state.subject_name} ${mode === 'exam' ? 'sınavı' : 'odası'} başlıyor`}
-              </AppText>
-              <AppText variant="display">{remaining}</AppText>
-            </View>
-          </Card>
-        ) : null}
-
-        {state?.status === 'ended' ? (
-          <Card>
-            <View style={{ gap: spacing.sm }}>
-              <AppText variant="title">{competitive ? 'Sıralama' : 'Oda bitti'}</AppText>
-              {competitive
-                ? [...(state.scores ?? [])]
-                    .sort((a, b) => b.correct - a.correct)
-                    .map((row, index) => (
-                      <AppText key={row.user_id}>
-                        {index + 1}. {row.user_id === me ? 'Sen' : row.display_name} · {row.correct} doğru · +
-                        {rankXp(state.scores.length || state.member_count, index + 1)} XP
-                      </AppText>
-                    ))
-                : (
-                  <AppText tone="muted">İstersen Sosyal’den yeniden davet et.</AppText>
-                )}
-              <Button label="Kapat" onPress={() => router.back()} />
-            </View>
-          </Card>
-        ) : null}
-
-        {question && (state?.status === 'active' || state?.status === 'reveal') ? (
-          <View style={{ gap: spacing.sm }}>
-            <AppText variant="caption" tone="muted">
-              {(state.current_index ?? 0) + 1} / {state.total}
-              {mode === 'exam' ? ` · ${questionLeft} sn` : ''}
-            </AppText>
-            {state.status === 'active' ? (
-              <AppText variant="caption" tone={otherAnswered ? 'accent' : 'muted'}>
-                {waitingForOthers
-                  ? 'Cevabın kilitlendi. Karşı taraf bekleniyor…'
-                  : otherAnswered
-                    ? 'Karşı taraf cevapladı. Senin cevabın bekleniyor.'
-                    : 'Cevap bekleniyor…'}
-              </AppText>
-            ) : null}
-            <AppText variant="title">{question.stem}</AppText>
-            {sortedChoices(question.choices).map((choice) => {
-              const mine = (selected ?? myAnswer?.selected_choice) === choice.key;
-              const reveal = state.status === 'reveal' && collaborative;
-              const correct = reveal && question.correct_choice === choice.key;
-              const wrongPick = reveal && (state.answers ?? []).some((item) => item.selected_choice === choice.key && item.is_correct === false);
-              const partnerPick = (state.answers ?? []).find(
-                (item) => item.user_id !== me && item.selected_choice === choice.key,
-              );
-              return (
-                <Pressable
-                  key={choice.key}
-                  disabled={Boolean(myAnswer) || room.submit.isPending || reveal || (competitive && state.status !== 'active')}
-                      onPress={() => setPicked({ key: questionKey, choice: choice.key })}
-                  style={{
-                    padding: spacing.md,
-                    borderRadius: radius.md,
-                    borderWidth: 1,
-                    borderColor: correct
-                      ? colors.success
-                      : wrongPick
-                        ? colors.danger
-                        : mine
-                          ? colors.accent
-                          : colors.border,
-                    backgroundColor: correct
-                      ? colors.accentMuted
-                      : wrongPick
-                        ? colors.surfaceMuted
-                        : mine
-                          ? colors.surfaceMuted
-                          : colors.surface,
-                  }}>
-                  <AppText>
-                    {choice.key}) {choice.label}
-                    {reveal && partnerPick ? ` · ${memberName(partnerPick.user_id)}` : ''}
-                  </AppText>
-                </Pressable>
-              );
-            })}
-
-            {state.status === 'reveal' && collaborative ? (
-              <Card>
-                <View style={{ gap: spacing.sm }}>
-                  <AppText tone="accent">Doğru şık: {question.correct_choice}</AppText>
-                  {question.explanation ? <AppText tone="muted">{question.explanation}</AppText> : null}
-                  <Button
-                    label={(state.current_index ?? 0) + 1 >= state.total ? 'Bitir' : 'Sonraki soru'}
-                    loading={room.advance.isPending}
-                    onPress={() => void room.advance.mutateAsync()}
-                  />
-                </View>
-              </Card>
-            ) : (
-              <Button
-                label="Cevabı kilitle"
-                disabled={!selected || Boolean(myAnswer)}
-                loading={room.submit.isPending}
-                onPress={() => selected && void room.submit.mutateAsync(selected)}
-              />
-            )}
+        {waiting ? (
+          <View style={{ gap: 12 }}>
+            {waitingPanel}
+            {chat}
           </View>
-        ) : null}
-
-        {state && state.status !== 'countdown' && state.chat_enabled !== false && id ? (
-          <RoomChat sessionId={id} me={me} members={state.members ?? []} />
-        ) : null}
+        ) : (
+          <StudySplitLayout
+            landscape={landscape}
+            media={
+              <View style={{ gap: 12, flex: landscape ? 1 : undefined, minHeight: 0 }}>
+                {state?.status === 'countdown' ? (
+                  <View style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: 16, overflow: 'hidden', backgroundColor: '#1A2433', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                    <AppText variant="title" style={{ color: '#F4F1EA', textAlign: 'center' }}>
+                      {mode === 'race'
+                        ? `${partner?.display_name ?? 'Kullanıcı'} ile ${state.subject_name ?? 'ders'} yarışması başlıyor`
+                        : `${state.subject_name ?? 'Ders'} ${mode === 'exam' ? 'sınavı' : 'odası'} başlıyor`}
+                    </AppText>
+                    <AppText variant="display" style={{ color: '#F4F1EA', marginTop: 8 }}>
+                      {remaining}
+                    </AppText>
+                  </View>
+                ) : null}
+                {state?.status === 'ended' ? (
+                  <Card>
+                    <View style={{ gap: spacing.sm }}>
+                      <AppText variant="title">{competitive ? 'Sıralama' : 'Oda bitti'}</AppText>
+                      {competitive
+                        ? [...(state.scores ?? [])]
+                            .sort((a, b) => b.correct - a.correct)
+                            .map((row, index) => (
+                              <AppText key={row.user_id}>
+                                {index + 1}. {row.user_id === me ? 'Sen' : row.display_name} · {row.correct} doğru · +
+                                {rankXp((state.scores ?? []).length || state.member_count, index + 1)} XP
+                              </AppText>
+                            ))
+                        : (
+                          <AppText tone="muted">İstersen Sosyal’den yeniden davet et.</AppText>
+                        )}
+                      <Button label="Kapat" onPress={() => router.back()} />
+                    </View>
+                  </Card>
+                ) : null}
+                {questionStage}
+                {questionControls}
+              </View>
+            }
+            chat={chat}
+          />
+        )}
       </View>
     </Screen>
   );

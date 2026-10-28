@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { mapSocialError } from '@/src/features/social/useSocial';
+import { queryClient } from '@/src/lib/query/client';
 import { retainChannel } from '@/src/lib/realtime/retainChannel';
 import { getSupabase } from '@/src/lib/supabase/client';
 import { useAuthStore } from '@/src/stores/authStore';
@@ -44,6 +45,13 @@ export type ProfileCard = {
   top_subject?: string | null;
   subjects: { id: string; name: string }[];
   posts: ProfilePost[];
+  live_study?: {
+    presence_state?: string | null;
+    subject_name?: string | null;
+    topic_name?: string | null;
+    subject_id?: string | null;
+    topic_id?: string | null;
+  } | null;
 };
 
 export type FollowRow = {
@@ -72,28 +80,37 @@ export function formatStudyDuration(ms: number) {
   return `${hours} sa ${mins} dk`;
 }
 
+export async function fetchProfileCard(userId: string): Promise<ProfileCard> {
+  const [{ data, error }, extra] = await Promise.all([
+    getSupabase().rpc('get_profile_card', { p_user: userId }),
+    getSupabase().from('profiles').select('avatar_url').eq('id', userId).maybeSingle(),
+  ]);
+  if (error) throw error;
+  const row = data as ProfileCard;
+  return {
+    ...row,
+    avatar_url: (extra.data as { avatar_url?: string | null } | null)?.avatar_url ?? row.avatar_url ?? null,
+    subjects: row.subjects ?? [],
+    posts: row.posts ?? [],
+  };
+}
+
+export function prefetchProfileCard(userId: string) {
+  return queryClient.prefetchQuery({
+    queryKey: ['profile-card', userId],
+    queryFn: () => fetchProfileCard(userId),
+    staleTime: 60_000,
+  });
+}
+
 export function useProfileCard(userId: string | null) {
   const me = useAuthStore((s) => s.session?.user.id);
   const client = useQueryClient();
   const query = useQuery({
     queryKey: ['profile-card', userId],
     enabled: Boolean(userId),
-    queryFn: async () => {
-      const { data, error } = await getSupabase().rpc('get_profile_card', { p_user: userId });
-      if (error) throw error;
-      const row = data as ProfileCard;
-      const extra = await getSupabase()
-        .from('profiles')
-        .select('avatar_url')
-        .eq('id', userId!)
-        .maybeSingle();
-      return {
-        ...row,
-        avatar_url: (extra.data as { avatar_url?: string | null } | null)?.avatar_url ?? row.avatar_url ?? null,
-        subjects: row.subjects ?? [],
-        posts: row.posts ?? [],
-      };
-    },
+    staleTime: 60_000,
+    queryFn: () => fetchProfileCard(userId!),
   });
 
   useEffect(() => {

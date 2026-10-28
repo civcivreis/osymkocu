@@ -1,212 +1,309 @@
-import { useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
-import { RemoteImage } from '@/src/components/ui/RemoteImage';
+import { askConfirm, toastError, toastSuccess } from '@/src/components/ui/feedbackStore';
+import { AdminExamWizard } from '@/src/features/admin/AdminExamWizard';
+import { adminBtn, adminCard, adminChip, adminChipOn, adminField, adminGhost } from '@/src/features/admin/adminUi';
 import { mapAdminError } from '@/src/features/admin/roles';
-import { getSupabase } from '@/src/lib/supabase/client';
-import {
-  DEFAULT_EXAM_SLOT,
-  EXAM_TIME_SLOTS,
-  buildIstanbulStart,
-  defaultDuration,
-  examTypeLabel,
-  formatIstanbulDateTime,
-} from '@/src/features/system-exams/examTime';
-import { useAdminExams, useAdminUpsertExam } from '@/src/features/admin/useAdmin';
+import { useAdminExams } from '@/src/features/admin/useAdmin';
 import { useExamCatalog } from '@/src/features/curriculum/useCurriculum';
-import { todayIsoIstanbul } from '@/src/lib/time/istanbul';
-import { toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
+import { formatIstanbulDateTime } from '@/src/features/system-exams/examTime';
+import { getSupabase } from '@/src/lib/supabase/client';
+
+const STATUS_TR: Record<string, string> = {
+  draft: 'Taslak',
+  scheduled: 'Planlandı',
+  live: 'Canlı',
+  finished: 'Tamamlandı',
+  cancelled: 'İptal',
+};
+
+type ExamRow = Record<string, unknown> & {
+  id: string;
+  title: string;
+  status: string;
+  start_at: string;
+  duration_minutes: number;
+  question_count: number;
+};
+
+function sectionOf(status: string) {
+  if (status === 'live') return 'live';
+  if (status === 'finished') return 'finished';
+  if (status === 'cancelled') return 'cancelled';
+  return 'upcoming';
+}
 
 export function AdminExamsScreen() {
   const exams = useAdminExams();
   const catalog = useExamCatalog();
-  const save = useAdminUpsertExam();
-  const [title, setTitle] = useState('');
-  const [mode, setMode] = useState<'motor' | 'manual'>('motor');
-  const [questionCount, setQuestionCount] = useState('20');
-  const [catalogExamId, setCatalogExamId] = useState<string | null>(null);
-  const [type, setType] = useState<'tyt' | 'ayt' | 'kpss'>('tyt');
-  const [date, setDate] = useState(todayIsoIstanbul());
-  const [slot, setSlot] = useState(DEFAULT_EXAM_SLOT);
-  const [duration, setDuration] = useState(String(defaultDuration('tyt')));
-  const [status, setStatus] = useState<'draft' | 'scheduled' | 'live' | 'finished' | 'cancelled'>('draft');
-  const [description, setDescription] = useState('');
-  const [search, setSearch] = useState('');
-  const [hits, setHits] = useState<{
-    id: string;
-    stem: string;
-    subject: string;
-    choices?: Record<string, string> | null;
-    correct_choice?: string | null;
-    explanation?: string | null;
-    image_url?: string | null;
-  }[]>([]);
-  const [picked, setPicked] = useState<string[]>([]);
-  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [wizard, setWizard] = useState<ExamRow | null | undefined>(undefined);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [monitor, setMonitor] = useState<Record<string, unknown> | null>(null);
+  const [analytics, setAnalytics] = useState<Record<string, unknown> | null>(null);
+  const [extendMins, setExtendMins] = useState('10');
 
-  const create = () => {
-    void save
-      .mutateAsync({
-        title,
-        exam_type: type,
-        description,
-        start_at: buildIstanbulStart(date, slot),
-        duration_minutes: Number(duration),
-        status,
-      })
-      .then(async (row) => {
-        if (mode === 'motor') {
-          const { data, error } = await getSupabase().rpc('admin_auto_fill_system_exam', {
-            p_exam: row.id,
-            p_count: Number(questionCount) || 20,
-            p_exam_catalog_id: catalogExamId,
-          });
-          if (error) throw error;
-          const filled = (data as { filled?: number; reason?: string } | null)?.filled ?? 0;
-          toastSuccess(filled ? `${filled} soru seçildi` : 'Yayınlı soru yok; sınav taslak kaldı');
-        } else if (picked.length) {
-          const { error } = await getSupabase().rpc('admin_set_exam_questions', {
-            p_exam: row.id,
-            p_question_ids: picked,
-          });
-          if (error) throw error;
-          toastSuccess('Kaydedildi');
-        } else {
-          toastSuccess('Kaydedildi');
+  const groups = useMemo(() => {
+    const rows = (exams.data ?? []) as ExamRow[];
+    return {
+      upcoming: rows.filter((row) => sectionOf(String(row.status)) === 'upcoming'),
+      live: rows.filter((row) => sectionOf(String(row.status)) === 'live'),
+      finished: rows.filter((row) => sectionOf(String(row.status)) === 'finished'),
+      cancelled: rows.filter((row) => sectionOf(String(row.status)) === 'cancelled'),
+    };
+  }, [exams.data]);
+
+  const fail = (error: unknown) => toastError(mapAdminError(error instanceof Error ? error.message : 'İşlem başarısız.'));
+
+  const control = (id: string, action: string, minutes = 0) => {
+    void getSupabase()
+      .rpc('admin_exam_control', { p_exam: id, p_action: action, p_minutes: minutes })
+      .then(({ error }) => {
+        if (error) fail(error);
+        else {
+          toastSuccess('Güncellendi');
+          void exams.refetch();
         }
-        setTitle('');
-        setDescription('');
-        setPicked([]);
-      })
-      .catch((error: unknown) => toastError(error));
+      });
   };
 
-  const searchQs = () => {
+  const openMonitor = (id: string) => {
     void getSupabase()
-      .rpc('admin_search_questions', { p_exam_type: type, p_search: search, p_limit: 30 })
+      .rpc('admin_exam_monitor', { p_exam: id })
       .then(({ data, error }) => {
-        if (error) {
-          toastError(mapAdminError(error.message));
-          return;
-        }
-        setHits((data as typeof hits) ?? []);
+        if (error) fail(error);
+        else setMonitor(data as Record<string, unknown>);
       });
+  };
+
+  const openResults = (id: string) => {
+    void getSupabase()
+      .rpc('admin_exam_analytics', { p_exam: id })
+      .then(({ data, error }) => {
+        if (error) fail(error);
+        else setAnalytics({ ...(data as object), exam_id: id });
+      });
+  };
+
+  const renderCard = (exam: ExamRow) => {
+    const when = formatIstanbulDateTime(String(exam.start_at));
+    const status = String(exam.status);
+    return (
+      <View key={exam.id} style={adminCard}>
+        <AppText variant="subtitle">{exam.title}</AppText>
+        <AppText variant="caption" tone="muted">
+          {when.label}
+        </AppText>
+        <AppText variant="caption">
+          {exam.question_count} soru · {exam.duration_minutes} dakika
+        </AppText>
+        <View style={[adminChip, status === 'live' && adminChipOn, { alignSelf: 'flex-start' }]}>
+          <AppText variant="caption">{STATUS_TR[status] ?? 'Planlandı'}</AppText>
+        </View>
+        {status === 'live' ? (
+          <>
+            <AppText>Katılan: {Number(exam.participant_count ?? 0)}</AppText>
+            <AppText>Bitiren: {Number(exam.finished_count ?? 0)}</AppText>
+            <Pressable onPress={() => openMonitor(exam.id)} style={adminBtn}>
+              <AppText tone="inverse">Canlı İzle</AppText>
+            </Pressable>
+          </>
+        ) : null}
+        {status === 'finished' ? (
+          <>
+            <AppText>{Number(exam.participant_count ?? 0)} katılımcı</AppText>
+            <AppText>Ortalama net: {exam.avg_net == null ? '—' : String(exam.avg_net)}</AppText>
+            <Pressable onPress={() => openResults(exam.id)} style={adminBtn}>
+              <AppText tone="inverse">Sonuçlar</AppText>
+            </Pressable>
+          </>
+        ) : null}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          <Pressable onPress={() => setWizard(exam)} style={adminGhost}>
+            <AppText>Düzenle</AppText>
+          </Pressable>
+          <Pressable onPress={() => setMenuId(menuId === exam.id ? null : exam.id)} style={adminGhost}>
+            <AppText>⋯</AppText>
+          </Pressable>
+        </View>
+        {menuId === exam.id ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {status === 'live' ? (
+              <>
+                <TextInput value={extendMins} onChangeText={setExtendMins} style={[adminField, { width: 72 }]} />
+                <Pressable
+                  onPress={() =>
+                    askConfirm({
+                      title: 'Süre uzatılsın mı?',
+                      confirmLabel: 'Uzat',
+                      onConfirm: () => control(exam.id, 'extend', Number(extendMins) || 10),
+                    })
+                  }
+                  style={adminGhost}>
+                  <AppText>Sınavı uzat</AppText>
+                </Pressable>
+                <Pressable
+                  onPress={() =>
+                    askConfirm({
+                      title: 'Sınav erken bitsin mi?',
+                      confirmLabel: 'Bitir',
+                      danger: true,
+                      onConfirm: () => control(exam.id, 'finish_early'),
+                    })
+                  }
+                  style={adminGhost}>
+                  <AppText>Erken bitir</AppText>
+                </Pressable>
+              </>
+            ) : null}
+            {status !== 'cancelled' && status !== 'finished' ? (
+              <Pressable
+                onPress={() =>
+                  askConfirm({
+                    title: 'Sınav iptal edilsin mi?',
+                    confirmLabel: 'İptal et',
+                    danger: true,
+                    onConfirm: () => control(exam.id, 'cancel'),
+                  })
+                }
+                style={adminGhost}>
+                <AppText>İptal et</AppText>
+              </Pressable>
+            ) : null}
+            {status === 'finished' ? (
+              <Pressable onPress={() => control(exam.id, 'release')} style={adminGhost}>
+                <AppText>Sonuçları Açıkla</AppText>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    );
   };
 
   return (
     <View style={{ gap: 16 }}>
-      <AppText variant="title">Sistem Sınavları</AppText>
-      <View style={{ backgroundColor: '#FFFcf7', borderRadius: 16, padding: 16, gap: 10 }}>
-        <AppText variant="subtitle">Yeni sınav</AppText>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          <Pressable onPress={() => setMode('motor')} style={[chip, mode === 'motor' && chipOn]}>
-            <AppText>Motor Oluştursun</AppText>
-          </Pressable>
-          <Pressable onPress={() => setMode('manual')} style={[chip, mode === 'manual' && chipOn]}>
-            <AppText>Manuel</AppText>
-          </Pressable>
-        </View>
-        <TextInput value={title} onChangeText={setTitle} placeholder="Başlık" style={field} />
-        <TextInput value={description} onChangeText={setDescription} placeholder="Açıklama (isteğe bağlı)" style={field} />
-        <AppText variant="caption">Sınav ailesi</AppText>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {(catalog.data ?? []).filter((row) => row.is_active).map((row) => (
-            <Pressable
-              key={row.id}
-              onPress={() => {
-                setCatalogExamId(row.id);
-                const next = row.code === 'AYT' ? 'ayt' : row.code === 'TYT' ? 'tyt' : 'kpss';
-                setType(next);
-                setDuration(String(defaultDuration(next)));
-              }}
-              style={[chip, catalogExamId === row.id && chipOn]}>
-              <AppText>{row.name}</AppText>
-            </Pressable>
-          ))}
-        </View>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          {(['tyt', 'ayt', 'kpss'] as const).map((item) => (
-            <Pressable key={item} onPress={() => { setType(item); setDuration(String(defaultDuration(item))); }} style={[chip, type === item && chipOn]}>
-              <AppText>{examTypeLabel(item)}</AppText>
-            </Pressable>
-          ))}
-        </View>
-        {mode === 'motor' ? (
-          <TextInput value={questionCount} onChangeText={setQuestionCount} placeholder="Soru sayısı" keyboardType="number-pad" style={field} />
-        ) : null}
-        <TextInput value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" style={field} />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {EXAM_TIME_SLOTS.map((item) => (
-            <Pressable key={item} onPress={() => setSlot(item)} style={[chip, slot === item && chipOn]}>
-              <AppText>{item}</AppText>
-            </Pressable>
-          ))}
-        </View>
-        <TextInput value={duration} onChangeText={setDuration} placeholder="Süre (dk)" keyboardType="number-pad" style={field} />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {(['draft', 'scheduled', 'live', 'finished', 'cancelled'] as const).map((item) => (
-            <Pressable key={item} onPress={() => setStatus(item)} style={[chip, status === item && chipOn]}>
-              <AppText>{item}</AppText>
-            </Pressable>
-          ))}
-        </View>
-        <AppText variant="caption" tone="muted">Saat rastgele üretilmez. Timezone: Europe/Istanbul.</AppText>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <TextInput value={search} onChangeText={setSearch} placeholder="Soru ara" style={[field, { flex: 1 }]} />
-          <Pressable onPress={searchQs} style={btn}><AppText tone="inverse">Ara</AppText></Pressable>
-        </View>
-        {hits.map((hit) => (
-          <View key={hit.id} style={{ paddingVertical: 6, gap: 4 }}>
-            <Pressable
-              onPress={() => setPicked((cur) => (cur.includes(hit.id) ? cur.filter((id) => id !== hit.id) : [...cur, hit.id]))}>
-              <AppText variant="caption">
-                {picked.includes(hit.id) ? '✓ ' : ''}{hit.subject}: {hit.stem}
-              </AppText>
-            </Pressable>
-            <Pressable onPress={() => setPreviewId((cur) => (cur === hit.id ? null : hit.id))}>
-              <AppText variant="caption" tone="accent">{previewId === hit.id ? 'Gizle' : 'Önizle'}</AppText>
-            </Pressable>
-            {previewId === hit.id ? (
-              <View style={{ gap: 4 }}>
-                {hit.image_url ? <RemoteImage uri={hit.image_url} style={{ width: 200, height: 120 }} resizeMode="contain" /> : null}
-                {hit.choices
-                  ? Object.entries(hit.choices).map(([key, value]) => (
-                      <AppText key={key} variant="caption">{key}) {value}</AppText>
-                    ))
-                  : null}
-                <AppText variant="caption" tone="accent">Doğru: {hit.correct_choice ?? '—'}</AppText>
-                {hit.explanation ? <AppText variant="caption" tone="muted">{hit.explanation}</AppText> : null}
-              </View>
-            ) : null}
-          </View>
-        ))}
-        <AppText variant="caption" tone="muted">{picked.length} soru seçildi</AppText>
-        <Pressable onPress={create} style={btn}><AppText tone="inverse">Kaydet</AppText></Pressable>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
+        <AppText variant="title">Sistem Sınavları</AppText>
+        <Pressable onPress={() => setWizard(null)} style={adminBtn}>
+          <AppText tone="inverse">+ Yeni Sınav</AppText>
+        </Pressable>
       </View>
-      {(exams.data ?? []).map((exam) => {
-        const when = formatIstanbulDateTime(String(exam.start_at));
-        return (
-          <View key={String(exam.id)} style={{ backgroundColor: '#FFFcf7', borderRadius: 16, padding: 14, gap: 4 }}>
-            <AppText variant="subtitle">{String(exam.title)}</AppText>
-            <AppText variant="caption" tone="muted">
-              {examTypeLabel(String(exam.exam_type))} · {when.label} · {String(exam.status)} · {String(exam.question_count)} soru
-            </AppText>
-            <Pressable
-              onPress={() =>
-                void save.mutateAsync({ id: exam.id, title: exam.title, exam_type: exam.exam_type, start_at: exam.start_at, duration_minutes: exam.duration_minutes, status: 'cancelled' })
-                  .catch((error: unknown) => toastError(error))
-              }>
-              <AppText tone="danger">İptal et</AppText>
+
+      {(exams.data ?? []).length === 0 && !exams.isLoading ? (
+        <View style={adminCard}>
+          <AppText>Henüz sistem sınavı oluşturulmamış.</AppText>
+          <Pressable onPress={() => setWizard(null)} style={adminBtn}>
+            <AppText tone="inverse">İlk sınavı oluştur</AppText>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {groups.live.length ? (
+        <>
+          <AppText variant="label">CANLI</AppText>
+          {groups.live.map(renderCard)}
+        </>
+      ) : null}
+      {groups.upcoming.length ? (
+        <>
+          <AppText variant="label">YAKLAŞAN</AppText>
+          {groups.upcoming.map(renderCard)}
+        </>
+      ) : null}
+      {groups.finished.length ? (
+        <>
+          <AppText variant="label">TAMAMLANAN</AppText>
+          {groups.finished.map(renderCard)}
+        </>
+      ) : null}
+      {groups.cancelled.length ? (
+        <>
+          <AppText variant="label">İPTAL EDİLEN</AppText>
+          {groups.cancelled.map(renderCard)}
+        </>
+      ) : null}
+
+      {wizard !== undefined ? (
+        <AdminExamWizard
+          catalog={catalog.data ?? []}
+          exam={wizard}
+          onClose={() => setWizard(undefined)}
+          onSaved={() => {
+            setWizard(undefined);
+            void exams.refetch();
+          }}
+        />
+      ) : null}
+
+      <Modal visible={Boolean(monitor)} animationType="fade" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(15,28,46,0.45)', justifyContent: 'center', padding: 16 }}>
+          <ScrollView style={{ maxHeight: '90%' }} contentContainerStyle={[adminCard, { gap: 8 }]}>
+            <AppText variant="title">Canlı izleme</AppText>
+            <AppText>Katılan: {Number(monitor?.joined ?? 0)}</AppText>
+            <AppText>Devam eden: {Number(monitor?.in_progress ?? 0)}</AppText>
+            <AppText>Bitiren: {Number(monitor?.finished ?? 0)}</AppText>
+            <AppText>Henüz başlamayan: {Number(monitor?.not_started ?? 0)}</AppText>
+            {Array.isArray(monitor?.sessions)
+              ? (monitor?.sessions as { id: string; name: string; status: string }[]).map((row) => (
+                  <AppText key={row.id} variant="caption">
+                    {row.name} · {row.status === 'in_progress' ? 'Devam' : 'Bitti'}
+                  </AppText>
+                ))
+              : null}
+            <Pressable onPress={() => setMonitor(null)} style={adminGhost}>
+              <AppText>Kapat</AppText>
             </Pressable>
-          </View>
-        );
-      })}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <Modal visible={Boolean(analytics)} animationType="fade" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(15,28,46,0.45)', justifyContent: 'center', padding: 16 }}>
+          <ScrollView style={{ maxHeight: '90%' }} contentContainerStyle={[adminCard, { gap: 8 }]}>
+            <AppText variant="title">Sonuçlar</AppText>
+            <AppText>Katılımcı: {String(analytics?.participants ?? '—')}</AppText>
+            <AppText>Ortalama net: {String(analytics?.avg_net ?? '—')}</AppText>
+            <AppText>Ort. doğru / yanlış / boş: {String(analytics?.avg_correct ?? '—')} / {String(analytics?.avg_wrong ?? '—')} / {String(analytics?.avg_blank ?? '—')}</AppText>
+            <AppText>Ort. süre: {String(analytics?.avg_minutes ?? '—')} dk</AppText>
+            <AppText variant="label">Dersler</AppText>
+            {Array.isArray(analytics?.subjects)
+              ? (analytics?.subjects as { name: string; success: number }[]).map((row) => (
+                  <AppText key={row.name} variant="caption">
+                    {row.name} — %{row.success}
+                  </AppText>
+                ))
+              : null}
+            <AppText variant="label">En çok zorlanılan konular</AppText>
+            {Array.isArray(analytics?.hard_topics)
+              ? (analytics?.hard_topics as { name: string; success: number }[]).map((row) => (
+                  <AppText key={row.name} variant="caption">
+                    {row.name} — %{row.success}
+                  </AppText>
+                ))
+              : null}
+            <AppText variant="label">En çok yanlış yapılan sorular</AppText>
+            {Array.isArray(analytics?.questions)
+              ? (analytics?.questions as { id: string; stem: string; wrong_pct: number; correct_pct: number; blank_pct: number }[])
+                  .slice(0, 8)
+                  .map((row) => (
+                    <AppText key={row.id} variant="caption">
+                      %{row.wrong_pct} yanlış · {row.stem}
+                    </AppText>
+                  ))
+              : null}
+            <Pressable
+              onPress={() => analytics?.exam_id && control(String(analytics.exam_id), 'release')}
+              style={adminBtn}>
+              <AppText tone="inverse">Sonuçları Açıkla</AppText>
+            </Pressable>
+            <Pressable onPress={() => setAnalytics(null)} style={adminGhost}>
+              <AppText>Kapat</AppText>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
-
-const field = { minHeight: 44, borderWidth: 1, borderColor: '#E4DDD0', borderRadius: 12, paddingHorizontal: 12, backgroundColor: '#fff' } as const;
-const chip = { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: '#E8E3D8' } as const;
-const chipOn = { backgroundColor: '#F3E0D4' } as const;
-const btn = { minHeight: 44, paddingHorizontal: 16, borderRadius: 12, backgroundColor: '#C45C26', alignItems: 'center' as const, justifyContent: 'center' as const };

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "KocumContentPack",
+  "type": "object",
+  "required": ["canonical_topic_id", "title", "teaching_blocks", "checkpoints", "final_questions"],
+  "properties": {
+    "canonical_topic_id": { "type": "string", "description": "UUID or canonical topic slug" },
+    "title": { "type": "string" },
+    "subject": { "type": "string" },
+    "exam_codes": { "type": "array", "items": { "type": "string" } },
+    "estimated_duration_sec": { "type": "integer", "minimum": 60 },
+    "learning_objective": { "type": "string" },
+    "hook": { "type": "string" },
+    "teaching_blocks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["narration", "card_text"],
+        "properties": {
+          "type": { "type": "string" },
+          "narration": { "type": "string" },
+          "card_type": { "type": "string" },
+          "card_text": { "type": "string" },
+          "semantic_key": { "type": "string" }
+        }
+      }
+    },
+    "checkpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["question", "choices", "correct_answer"],
+        "properties": {
+          "intro_narration": { "type": "string" },
+          "question": { "type": "string" },
+          "choices": {},
+          "correct_answer": { "type": "string" },
+          "wrong_explanation": { "type": "string" },
+          "retry_question": { "type": "string" }
+        }
+      }
+    },
+    "final_questions": { "type": "array", "minItems": 1 },
+    "memory_summary": { "type": "string" }
+  }
+}

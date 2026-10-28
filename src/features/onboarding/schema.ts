@@ -10,8 +10,6 @@ export const onboardingSchema = z.object({
     .nullable(),
   examYear: z.number().int().min(2026).max(2035),
   dailyMinutes: z.number().min(20).max(360),
-  strongSubjectIds: z.array(z.string().uuid()),
-  weakSubjectIds: z.array(z.string().uuid()),
 });
 
 export type OnboardingValues = z.infer<typeof onboardingSchema>;

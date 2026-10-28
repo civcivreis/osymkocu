@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  FlatList,
   Keyboard,
   Platform,
   Pressable,
@@ -14,6 +13,7 @@ import { ActionSheet } from '@/src/components/ui/ActionSheet';
 import { AppText } from '@/src/components/ui/AppText';
 import { askConfirm, toastError, toastInfo, toastSuccess } from '@/src/components/ui/feedbackStore';
 import { ChatDropZone } from '@/src/features/social/ChatDropZone';
+import { ChatThreadList } from '@/src/features/social/ChatThreadList';
 import { askCoachFromChat } from '@/src/features/social/askCoachFromChat';
 import { ChatActionSheet } from '@/src/features/social/ChatActionSheet';
 import { ChatBubble } from '@/src/features/social/ChatBubble';
@@ -71,13 +71,15 @@ export function GroupChatScreen({
   const [replyTo, setReplyTo] = useState<GroupMessage | null>(null);
 
   const group = inbox.data?.groups.find((item) => item.slug === slug);
-  const reversed = useMemo(() => [...(messagesQuery.data ?? [])].reverse(), [messagesQuery.data]);
-  const messageIds = useMemo(() => (messagesQuery.data ?? []).map((item) => item.id), [messagesQuery.data]);
+  const chronological = messagesQuery.data ?? [];
+  const messageIds = useMemo(() => chronological.map((item) => item.id), [chronological]);
   const reactions = useMessageReactions('group', messageIds);
 
   useEffect(() => {
     if (!slug) return;
-    void getSupabase().rpc('join_exam_group', { p_slug: slug });
+    const client = getSupabase();
+    void client.rpc('unhide_conversation', { p_kind: 'group', p_thread: slug });
+    void client.rpc('join_exam_group', { p_slug: slug });
   }, [slug]);
 
   const markGroupRead = markRead.mutate;
@@ -170,6 +172,44 @@ export function GroupChatScreen({
     setMenu(item);
   };
 
+  const renderBubble = (item: GroupMessage, older?: GroupMessage, newer?: GroupMessage) => {
+    const mine = item.sender_id === me;
+    const showHeader = !mine && !sameCluster(older, item);
+    const showAvatar = !mine && !sameCluster(newer, item);
+    const tight = sameCluster(newer, item);
+    const showImage = isImageMessage(item);
+    const label = taggedName(item.display_name, item.display_tag);
+    const stackedQuote = older?.id === item.reply_to_id;
+    return (
+      <ChatBubble
+        mine={mine}
+        name={label}
+        body={item.body}
+        time={item.created_at}
+        avatarId={item.sender_id}
+        showAvatar={showAvatar}
+        showHeader={showHeader || (mine && !sameCluster(older, item))}
+        showUsername={!mine}
+        tight={tight}
+        replyName={stackedQuote ? undefined : item.reply_name}
+        replyBody={stackedQuote ? undefined : item.reply_body}
+        mediaId={item.media_id}
+        imageUrl={chatImageUrl(item.image_path)}
+        imageWidth={item.image_width}
+        imageHeight={item.image_height}
+        onPressName={() => router.push({ pathname: '/user', params: { userId: item.sender_id } })}
+        onLongPress={() => openMessageMenu(item)}
+        onPressImage={showImage ? () => setViewer(item) : undefined}
+        reactions={reactions.grouped.get(item.id)}
+        onPressReaction={(emoji) =>
+          void reactions.toggle.mutateAsync({ messageId: item.id, emoji }).catch((error: unknown) =>
+            toastError(error),
+          )
+        }
+      />
+    );
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={embedded ? [] : ['top']}>
       <ChatDropZone onImage={setPending}>
@@ -200,60 +240,17 @@ export function GroupChatScreen({
         </Pressable>
       </View>
 
-      <FlatList
-        inverted
-        data={reversed}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingHorizontal: spacing.screen, paddingVertical: 12 }}
-        style={{ flex: 1 }}
-        initialNumToRender={12}
-        windowSize={8}
-        removeClippedSubviews
-        keyboardShouldPersistTaps="handled"
-        renderItem={({ item, index }) => {
-          const mine = item.sender_id === me;
-          const older = reversed[index + 1];
-          const newer = reversed[index - 1];
-          const showHeader = !mine && !sameCluster(older, item);
-          const showAvatar = !mine && !sameCluster(newer, item);
-          const tight = sameCluster(newer, item);
-          const showImage = isImageMessage(item);
-          const label = taggedName(item.display_name, item.display_tag);
-          return (
-            <ChatBubble
-              mine={mine}
-              name={label}
-              body={item.body}
-              time={item.created_at}
-              avatarId={item.sender_id}
-              showAvatar={showAvatar}
-              showHeader={showHeader || (mine && !sameCluster(older, item))}
-              showUsername={!mine}
-              tight={tight}
-              replyName={item.reply_name}
-              replyBody={item.reply_body}
-              mediaId={item.media_id}
-              imageUrl={chatImageUrl(item.image_path)}
-              imageWidth={item.image_width}
-              imageHeight={item.image_height}
-              onPressName={() => router.push({ pathname: '/user', params: { userId: item.sender_id } })}
-              onLongPress={() => openMessageMenu(item)}
-              onPressImage={showImage ? () => setViewer(item) : undefined}
-              reactions={reactions.grouped.get(item.id)}
-              onPressReaction={(emoji) =>
-                void reactions.toggle.mutateAsync({ messageId: item.id, emoji }).catch((error: unknown) =>
-                  toastError(error),
-                )
-              }
-            />
-          );
-        }}
-        ListEmptyComponent={
-          <AppText tone="muted" style={{ transform: [{ scaleY: -1 }] }}>
-            Gruba yaz. Mesajlar burada akar.
-          </AppText>
-        }
-      />
+      <ChatThreadList
+        threadKey={slug}
+        pad={spacing.screen}
+        itemCount={chronological.length}
+        empty={<AppText tone="muted">Gruba yaz. Mesajlar burada akar.</AppText>}>
+        {chronological.map((item, index) => (
+          <View key={item.id}>
+            {renderBubble(item, chronological[index - 1], chronological[index + 1])}
+          </View>
+        ))}
+      </ChatThreadList>
 
       {replyTo ? (
         <View

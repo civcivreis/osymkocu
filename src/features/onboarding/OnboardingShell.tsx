@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/src/components/ui/AppText';
 import { Button } from '@/src/components/ui/Button';
@@ -43,10 +43,11 @@ export function OnboardingShell({
   onPrimary,
 }: Props) {
   const { colors, radius, shadows } = useAppTheme();
-  const { width } = useBreakpoint();
+  const { width, contentPad } = useBreakpoint();
+  const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
   const compact = width < 768;
-  const pad = compact ? 16 : 24;
+  const pad = Math.max(compact ? 16 : 24, contentPad);
   const opacity = useRef(new Animated.Value(1)).current;
   const slide = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value((step + 1) / total)).current;
@@ -82,8 +83,10 @@ export function OnboardingShell({
           flexGrow: 0,
           width: '100%',
           maxWidth: 960,
+          marginHorizontal: 'auto',
           alignSelf: 'center',
-          paddingHorizontal: pad,
+          paddingLeft: Math.max(pad, insets.left),
+          paddingRight: Math.max(pad, insets.right),
           paddingTop: compact ? 8 : 28,
           paddingBottom: compact ? 16 : 32,
         }}>
@@ -166,7 +169,3 @@ export function OnboardingShell({
   );
 }
 
-export function onboardingCardWidth(totalWidth: number, cols: number, gap = 12, compact = false) {
-  const inner = Math.max(280, Math.min(904, totalWidth) - (compact ? 64 : 104));
-  return Math.floor((inner - gap * (cols - 1)) / cols);
-}

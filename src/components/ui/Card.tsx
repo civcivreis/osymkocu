@@ -27,7 +27,7 @@ export function Card({
           borderWidth: 1,
           borderRadius: radius.lg,
           padding: padded ? spacing[16] : 0,
-          gap: header ? spacing[12] : 0,
+          gap: header ? spacing[12] : spacing[8],
           ...shadows.sm,
         },
         style,

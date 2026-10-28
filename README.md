@@ -20,12 +20,16 @@ npx expo start
 4. Authentication > URL Configuration:
    - Site URL: `https://osymkocu.com`
    - Redirect URLs:
+     - `https://osymkocu.com/email-confirmed`
      - `https://osymkocu.com/auth/callback`
      - `https://osymkocu.com/**`
+     - `https://www.osymkocu.com/**`
+     - `https://admin.osymkocu.com/**`
+     - `kocum://email-confirmed`
      - `kocum://auth/callback`
      - `kocum://**`
    - Do not use `localhost` as Site URL in production.
-5. Authentication > Email Templates > Confirm signup: `supabase/templates/confirm-signup.html` gövdesini yapıştır (konu: `Koçum — e-postanı onayla`).
+5. Authentication > Email Templates > Confirm signup: `supabase/templates/confirm-signup.html` gövdesini yapıştır (konu: `ÖSYM Koçu — e-postanı onayla`). Production confirmation URL: `https://osymkocu.com/email-confirmed`.
 
 AI Öğretmen ve onay sayfası:
 

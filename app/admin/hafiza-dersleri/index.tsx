@@ -1,3 +1,5 @@
-import { AdminMemoryLessonsScreen } from '@/src/features/admin/AdminMemoryLessonsScreen';
+import { Redirect } from 'expo-router';
 
-export default AdminMemoryLessonsScreen;
+export default function Page() {
+  return <Redirect href={'/admin/mufredat' as never} />;
+}

@@ -3,59 +3,71 @@ import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
+import { CardGrid } from '@/src/components/ui/CardGrid';
 import { PageHeader } from '@/src/components/ui/PageHeader';
 import { Screen } from '@/src/components/ui/Screen';
-import { SegmentedTabs } from '@/src/components/ui/SegmentedTabs';
 import { SeoHead } from '@/src/features/seo/SeoHead';
 import { usePublicExamCatalog } from '@/src/features/curriculum/useCurriculum';
 import { APP_NAME } from '@/src/lib/brand';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
+import { useAuthStore } from '@/src/stores/authStore';
 
 import { useStudentLessonCards } from './useMemoryLessonPlayer';
+import type { StudentLessonCard } from './playerApi';
 
-type LessonMode = 'recommended' | 'official' | 'weak' | 'frequency';
-
-function statusLabel(row: { lesson_id: string | null; narration_completed?: boolean | null; last_position_ms?: number | null }) {
-  if (!row.lesson_id) return null;
-  if (row.narration_completed) return 'Tamamlandı';
-  if ((row.last_position_ms ?? 0) > 2000) return 'Devam Ediyor';
-  return 'Başlamadı';
-}
-
-function reasonLabel(code?: string | null) {
-  if (code === 'review_due') return 'Tekrar zamanı';
-  if (code === 'prerequisite') return 'Önce bunu tamamla';
-  if (code === 'resume') return 'Devam et';
-  if (code === 'weakness') return 'Zayıf olduğun konu';
-  return 'Sonraki konu';
+function unique(values: string[]) {
+  return [...new Set(values.filter(Boolean))];
 }
 
 export function MemoryLessonsScreen() {
   const { colors, radius, spacing } = useAppTheme();
   const exams = usePublicExamCatalog();
-  const [examId, setExamId] = useState<string | null>(null);
-  const [mode, setMode] = useState<LessonMode>('recommended');
-  const selected = useMemo(() => (exams.data ?? []).find((row) => row.id === examId) ?? null, [examId, exams.data]);
-  const cards = useStudentLessonCards(examId, mode);
-  const frequencyEmpty = mode === 'frequency' && !cards.isLoading && (cards.data ?? []).length === 0;
+  const profileExam = useAuthStore((s) => s.profile?.exam_id);
+  const [examId, setExamId] = useState<string | null>(profileExam ?? null);
+  const [subject, setSubject] = useState<string | null>(null);
+  const [unit, setUnit] = useState<string | null>(null);
+  const cards = useStudentLessonCards(examId, 'official');
   const rows = cards.data ?? [];
-  const emptyMapped = Boolean(examId) && !cards.isLoading && rows.length === 0;
+
+  const subjects = useMemo(() => unique(rows.map((row) => row.subject_name)), [rows]);
+  const units = useMemo(
+    () => unique(rows.filter((row) => row.subject_name === subject).map((row) => row.unit_name)),
+    [rows, subject],
+  );
+  const topics = useMemo(
+    () => rows.filter((row) => row.subject_name === subject && row.unit_name === unit),
+    [rows, subject, unit],
+  );
+
+  const openLesson = (row: StudentLessonCard) => {
+    if (!row.lesson_id || !examId) return;
+    router.push({
+      pathname: '/dersler/hafiza/[lessonId]',
+      params: { lessonId: row.lesson_id, examCatalogId: examId },
+    });
+  };
 
   return (
     <Screen scroll>
-      <SeoHead title={`Hafıza Dersleri | ${APP_NAME}`} path="/dersler/hafiza" index={false} />
+      <SeoHead title={`Dersler | ${APP_NAME}`} path="/dersler/hafiza" index={false} />
       <View style={{ gap: spacing.lg, paddingBottom: 48 }}>
-        <PageHeader title="Hafıza Dersleri" subtitle="Görsel anlatım ve hafıza teknikleriyle öğren." />
+        <PageHeader title="Ders" subtitle="Dersi ve konuyu seç. Kısa hap bilgiyle ilerle." />
         <Pressable onPress={() => router.back()} hitSlop={8}>
           <AppText tone="accent">Derslere dön</AppText>
         </Pressable>
 
-        <AppText variant="caption" tone="muted">Sınav</AppText>
+        <AppText variant="caption" tone="muted">
+          Sınav
+        </AppText>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           {(exams.data ?? []).map((row) => (
             <Pressable
               key={row.id}
-              onPress={() => setExamId(row.id)}
+              onPress={() => {
+                setExamId(row.id);
+                setSubject(null);
+                setUnit(null);
+              }}
               style={{
                 paddingHorizontal: 12,
                 paddingVertical: 8,
@@ -69,70 +81,93 @@ export function MemoryLessonsScreen() {
           ))}
         </View>
 
-        {selected ? null : <AppText tone="muted">Sınavını seç. Müfredat yılı seçmen gerekmez.</AppText>}
-        {selected ? (
-          <SegmentedTabs
-            value={mode}
-            onChange={setMode}
-            tabs={[
-              { value: 'recommended', label: 'Önerilen Sıra' },
-              { value: 'official', label: 'Müfredat Sırası' },
-              { value: 'weak', label: 'Zayıf Olduğum Konular' },
-              { value: 'frequency', label: 'En Çok Çıkanlar' },
-            ]}
-          />
-        ) : null}
         {cards.isLoading ? <AppText tone="muted">Yükleniyor…</AppText> : null}
         {cards.isError ? <AppText tone="danger">Müfredat alınamadı.</AppText> : null}
-        {frequencyEmpty ? <AppText tone="muted">Veri hazırlanıyor.</AppText> : null}
-        {emptyMapped && mode !== 'frequency' ? <AppText tone="muted">Bu müfredatta henüz konu eşlemesi yok.</AppText> : null}
+        {examId && !cards.isLoading && rows.length === 0 ? (
+          <AppText tone="muted">Bu bölüm hazırlanıyor.</AppText>
+        ) : null}
 
-        {rows.map((row) => {
-          const status = statusLabel(row);
-          return (
-            <View
-              key={`${row.canonical_topic_id}-${row.lesson_id ?? 'none'}`}
-              style={{
-                backgroundColor: colors.surface,
-                borderRadius: radius.lg,
-                borderWidth: 1,
-                borderColor: colors.border,
-                padding: spacing.lg,
-                gap: 4,
-              }}>
-              <AppText variant="subtitle">{row.lesson_title ?? row.topic_name}</AppText>
-              <AppText variant="caption" tone="muted">
-                {row.subject_name} · {row.unit_name} · {row.topic_name}
-              </AppText>
-              {status ? <AppText variant="caption">{status}</AppText> : <AppText variant="caption">Bu konu için ders henüz yayınlanmadı.</AppText>}
-              {row.prereq_title ? (
-                <AppText variant="caption" tone="muted">
-                  Önce: {row.prereq_title}
-                </AppText>
-              ) : row.reason_code ? (
-                <AppText variant="caption" tone="muted">{reasonLabel(row.reason_code)}</AppText>
-              ) : null}
-              {row.mastery_score != null ? (
-                <AppText variant="caption" tone="muted">
-                  Mastery: {Math.round(Number(row.mastery_score) * 100)}%
-                </AppText>
-              ) : null}
-              {row.review_due ? <AppText variant="caption">Tekrar: Bugün</AppText> : null}
-              {row.lesson_id && examId ? (
+        {examId && !subject ? (
+          <CardGrid>
+            {subjects.map((name) => (
+              <Pressable
+                key={name}
+                onPress={() => setSubject(name)}
+                style={{
+                  backgroundColor: colors.surface,
+                  borderRadius: radius.lg,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  padding: spacing.lg,
+                }}>
+                <AppText variant="subtitle">{name}</AppText>
+              </Pressable>
+            ))}
+          </CardGrid>
+        ) : null}
+
+        {subject && !unit ? (
+          <View style={{ gap: 10 }}>
+            <Pressable onPress={() => setSubject(null)}>
+              <AppText tone="accent">← {subject}</AppText>
+            </Pressable>
+            <CardGrid>
+              {units.map((name) => (
                 <Pressable
-                  onPress={() =>
-                    router.push({
-                      pathname: '/dersler/hafiza/[lessonId]',
-                      params: { lessonId: row.lesson_id!, examCatalogId: examId },
-                    })
-                  }
-                  style={{ marginTop: 8, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: '#C45C26' }}>
-                  <AppText tone="inverse">{(row.last_position_ms ?? 0) > 2000 && !row.narration_completed ? 'Devam et' : 'Dersi aç'}</AppText>
+                  key={name}
+                  onPress={() => setUnit(name)}
+                  style={{
+                    backgroundColor: colors.surface,
+                    borderRadius: radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    padding: spacing.lg,
+                  }}>
+                  <AppText variant="subtitle">{name}</AppText>
                 </Pressable>
-              ) : null}
-            </View>
-          );
-        })}
+              ))}
+            </CardGrid>
+            {units.length === 0 ? <AppText tone="muted">Bu bölüm hazırlanıyor.</AppText> : null}
+          </View>
+        ) : null}
+
+        {subject && unit ? (
+          <View style={{ gap: 10 }}>
+            <Pressable onPress={() => setUnit(null)}>
+              <AppText tone="accent">
+                ← {unit}
+              </AppText>
+            </Pressable>
+            <CardGrid>
+              {topics.map((row) => (
+                <View
+                  key={`${row.canonical_topic_id}-${row.lesson_id ?? 'none'}`}
+                  style={{
+                    backgroundColor: colors.surface,
+                    borderRadius: radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    padding: spacing.lg,
+                    gap: 8,
+                  }}>
+                  <AppText variant="subtitle">{row.topic_name}</AppText>
+                  {row.lesson_id ? (
+                    <Pressable
+                      onPress={() => openLesson(row)}
+                      style={{ alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: '#C45C26' }}>
+                      <AppText tone="inverse">{row.narration_completed ? 'Tekrar et' : 'Dersi aç'}</AppText>
+                    </Pressable>
+                  ) : (
+                    <AppText variant="caption" tone="muted">
+                      Bu bölüm hazırlanıyor.
+                    </AppText>
+                  )}
+                </View>
+              ))}
+            </CardGrid>
+            {topics.length === 0 ? <AppText tone="muted">Bu bölüm hazırlanıyor.</AppText> : null}
+          </View>
+        ) : null}
       </View>
     </Screen>
   );

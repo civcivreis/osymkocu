@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { Alert, Modal, Pressable, View } from 'react-native';
 
 import { ActionSheet } from '@/src/components/ui/ActionSheet';
 import { AppText } from '@/src/components/ui/AppText';
@@ -9,7 +9,8 @@ import { Card } from '@/src/components/ui/Card';
 import { CommentsSheet } from '@/src/features/social/CommentsSheet';
 import { LetterAvatar } from '@/src/features/social/LetterAvatar';
 import { EditPostSheet, ReportSheet, StudyInviteSheet } from '@/src/features/social/ReportSheet';
-import { postedAt, subjectGlyph, taggedName } from '@/src/features/social/identity';
+import { liveStudyLine, postedAt, subjectGlyph, taggedName } from '@/src/features/social/identity';
+import { prefetchProfileCard } from '@/src/features/social/useFollows';
 import {
   postAuthor,
   useBlockUser,
@@ -38,18 +39,20 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
   const [reportOpen, setReportOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [togetherOpen, setTogetherOpen] = useState(false);
+  const [togetherConfirm, setTogetherConfirm] = useState(false);
   const [menuKind, setMenuKind] = useState<'own' | 'other' | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const author = postAuthor(post);
   const name = taggedName(author?.display_name, author?.display_tag);
   const preview = (post.comment_preview ?? []).slice(0, 2);
-  const extra = Math.max(0, (post.comment_count ?? 0) - preview.length);
 
-  const goProfile = () =>
+  const goProfile = () => {
+    void prefetchProfileCard(post.user_id);
     router.push({
       pathname: '/user',
       params: { userId: post.user_id, postId: post.id, subjectId: post.subject_id ?? '' },
     });
+  };
 
   const mine = post.user_id === me;
   const showToast = (text: string) => {
@@ -145,6 +148,11 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
             <AppText variant="caption" tone="muted">
               {[postedAt(post.created_at), post.goal_label].filter(Boolean).join(' · ')}
             </AppText>
+            {post.live_presence_state === 'ACTIVE' || post.live_presence_state === 'BREAK' ? (
+              <AppText variant="caption" tone="accent" numberOfLines={2}>
+                {liveStudyLine(post.live_subject_name, post.live_topic_name, post.live_presence_state)}
+              </AppText>
+            ) : null}
           </View>
           {menu}
         </Pressable>
@@ -181,6 +189,11 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
           {post.user_id !== me ? (
             <Pressable
               onPress={() => {
+                const liveSubject = post.live_subject_id || post.subject_id;
+                if (post.live_presence_state === 'ACTIVE' && liveSubject) {
+                  setTogetherConfirm(true);
+                  return;
+                }
                 if (post.subject_id) {
                   void study
                     .mutateAsync({
@@ -200,7 +213,7 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
               hitSlop={8}
               style={{ minHeight: 44, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center' }}>
               <AppText variant="caption" tone="accent" style={{ fontWeight: '700' }}>
-                Birlikte Çalış
+                {post.live_presence_state === 'ACTIVE' ? '🟢 Birlikte Çalış' : 'Birlikte Çalış'}
               </AppText>
             </Pressable>
           ) : null}
@@ -210,7 +223,7 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
             {preview.map((item) => (
               <PreviewLine key={item.id} item={item} />
             ))}
-            {extra > 0 ? (
+            {preview.length > 0 ? (
               <Pressable onPress={() => setCommentsOpen(true)} style={{ minHeight: 36, justifyContent: 'center' }}>
                 <AppText variant="caption" tone="accent" style={{ fontWeight: '600' }}>
                   Tüm yorumları gör
@@ -222,6 +235,36 @@ export function FeedPostCard({ post, me }: { post: SocialPost; me?: string }) {
       </View>
       <CommentsSheet post={post} visible={commentsOpen} onClose={() => setCommentsOpen(false)} />
       <PostTogetherSheet visible={togetherOpen} post={post} onClose={() => setTogetherOpen(false)} />
+      <TogetherConfirmModal
+        visible={togetherConfirm}
+        name={name}
+        subject={post.live_subject_name ?? post.subject_name}
+        topic={post.live_topic_name ?? post.canonical_topic_name ?? post.topic_name}
+        sending={study.isPending}
+        onClose={() => setTogetherConfirm(false)}
+        onSend={() => {
+          const subjectId = post.live_subject_id || post.subject_id;
+          if (!subjectId) {
+            setTogetherConfirm(false);
+            setTogetherOpen(true);
+            return;
+          }
+          void study
+            .mutateAsync({
+              otherId: post.user_id,
+              subjectId,
+              postId: post.id,
+              topicId: post.live_topic_id || post.topic_id,
+            })
+            .then(
+              () => {
+                toastSuccess('İstek gitti. Kabul ederse aynı derse geçersiniz.');
+                setTogetherConfirm(false);
+              },
+              (error: unknown) => toastError(error),
+            );
+        }}
+      />
       <PostOverlays
         post={post}
         reportOpen={reportOpen}
@@ -356,6 +399,81 @@ function PostOverlays({
         </View>
       ) : null}
     </>
+  );
+}
+
+function TogetherConfirmModal({
+  visible,
+  name,
+  subject,
+  topic,
+  sending,
+  onClose,
+  onSend,
+}: {
+  visible: boolean;
+  name: string;
+  subject?: string | null;
+  topic?: string | null;
+  sending?: boolean;
+  onClose: () => void;
+  onSend: () => void;
+}) {
+  const { colors, radius } = useAppTheme();
+  const short = name.split(/[\s#]/)[0] || name;
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable
+        onPress={onClose}
+        style={{ flex: 1, backgroundColor: colors.overlay, justifyContent: 'center', padding: 24 }}>
+        <Pressable
+          onPress={() => undefined}
+          style={{
+            backgroundColor: colors.surface,
+            borderRadius: radius.lg,
+            padding: 20,
+            gap: 10,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}>
+          <AppText variant="subtitle">{short} şu an {subject ?? 'ders'} çalışıyor.</AppText>
+          {topic ? <AppText>{topic}</AppText> : null}
+          <AppText variant="caption" tone="muted">
+            {subject && topic ? `Aynı konudasınız:\n${subject} · ${topic}` : 'Aynı konuda çalışmak ister misin?'}
+          </AppText>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+            <Pressable
+              onPress={onClose}
+              style={{
+                flex: 1,
+                minHeight: 44,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 14,
+                backgroundColor: colors.surfaceMuted,
+              }}>
+              <AppText variant="label">İptal</AppText>
+            </Pressable>
+            <Pressable
+              disabled={sending}
+              onPress={onSend}
+              style={{
+                flex: 1,
+                minHeight: 44,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 14,
+                backgroundColor: colors.accent,
+                opacity: sending ? 0.6 : 1,
+              }}>
+              <AppText variant="label" tone="inverse">
+                İstek Gönder
+              </AppText>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 

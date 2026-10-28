@@ -13,6 +13,7 @@ import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
 import {
   consumeAuthLinkError,
   hasAuthRedirectPayload,
+  hydratePendingVerifyEmail,
   isUserEmailVerified,
   stripAuthHashFromUrl,
 } from '@/src/lib/auth/emailVerification';
@@ -43,6 +44,7 @@ function AuthBootstrap({ children }: { children: ReactNode }) {
       return;
     }
 
+    void hydratePendingVerifyEmail();
     const supabase = getSupabase();
     if (Platform.OS === 'web' && typeof window !== 'undefined' && hasAuthRedirectPayload()) {
       const path = window.location.pathname;

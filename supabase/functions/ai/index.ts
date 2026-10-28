@@ -3,9 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import {
   friendlyAiError,
-  generateImage,
   generateStructured,
-  generateText,
   type ChatMessage,
 } from "../_shared/aiRouter.ts";
 import { moderateImageBytes } from "../_shared/imageModeration.ts";
@@ -392,51 +390,31 @@ async function pulseBotStory() {
     },
   ];
   const picked = categories[Math.floor(Math.random() * categories.length)];
-  let caption = picked.caption;
-  const persona = `${bot.display_name ?? "Öğrenci"}${bot.bio ? ` · ${bot.bio}` : ""}`;
-  try {
-    const chat = await generateText(
-      "social_post_generation",
-      [
-        {
-          role: "system",
-          content: "ÖSYM öğrencisi story yazıyorsun. Tek kısa Türkçe cümle, en fazla 8 kelime. Hashtag yok, tırnak yok.",
-        },
-        {
-          role: "user",
-          content: `Persona: ${persona}. Kategori: ${picked.key}. Doğal bir story metni yaz.`,
-        },
-      ],
-      { cache: false },
-    );
-    const text = String(chat.text ?? "").replace(/["']/g, "").trim();
-    if (text.length >= 4 && text.length <= 80) caption = text;
-  } catch {
-    // caption fallback
-  }
+  const captions = [
+    picked.caption,
+    "selam millet",
+    "ben yeni başladım",
+    "napıyosunuz",
+    "kısa mola",
+    "hoş geldin",
+  ];
+  const caption = captions[Math.floor(Math.random() * captions.length)];
 
-  let bytes: Uint8Array;
-  try {
-    const img = await generateImage("image_generation", picked.prompt, { size: "256x256", cache: false });
-    bytes = img.bytes;
-  } catch (error) {
-    console.error("story image", error);
-    return { skipped: true };
+  const { data: prior } = await admin
+    .from("stories")
+    .select("image_url")
+    .not("image_url", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(40);
+  const urls = (prior ?? []).map((row: { image_url?: string }) => row.image_url).filter(Boolean) as string[];
+  const imageUrl = urls[Math.floor(Math.random() * Math.max(urls.length, 1))];
+  if (!imageUrl) {
+    await admin.from("bot_clock").update({ last_story_at: new Date().toISOString() }).eq("id", 1);
+    return { skipped: true, reason: "NO_STORY_ASSET", tier: 1 };
   }
-  if (!bytes?.length) return { skipped: true };
-  const path = `${bot.id}/${crypto.randomUUID()}.png`;
-  const upload = await admin.storage.from("stories").upload(path, bytes, {
-    contentType: "image/png",
-    upsert: false,
-  });
-  if (upload.error) {
-    console.error("story upload", upload.error.message);
-    return { skipped: true };
-  }
-  const pub = admin.storage.from("stories").getPublicUrl(path);
   const { error } = await admin.from("stories").insert({
     user_id: bot.id,
-    image_url: pub.data.publicUrl,
+    image_url: imageUrl,
     caption,
     expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
   });

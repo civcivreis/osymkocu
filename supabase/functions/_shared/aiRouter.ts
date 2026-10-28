@@ -243,13 +243,20 @@ export function parseRetryAfterHeader(headers: Headers, attempt = 0) {
 
 export function isRateLimitError(error: unknown) {
   return error instanceof ProviderRateLimitError ||
-    (error instanceof Error && (error.message.startsWith("AI_RETRYABLE:429") || error.message === "AI_RETRYABLE"));
+    (error instanceof Error && (
+      error.message.startsWith("AI_RETRYABLE:429") ||
+      error.message === "AI_RETRYABLE" ||
+      error.message.startsWith("RATE_LIMITED")
+    ));
 }
 
 export function retryAfterMsFromError(error: unknown, attempt = 0) {
   if (error instanceof ProviderRateLimitError) return error.retryAfterMs;
+  if (error && typeof error === "object" && "retryAfterMs" in error && Number.isFinite(Number((error as { retryAfterMs: number }).retryAfterMs))) {
+    return Number((error as { retryAfterMs: number }).retryAfterMs);
+  }
   if (error instanceof Error) {
-    const match = error.message.match(/AI_RETRYABLE:429:(\d+)/);
+    const match = error.message.match(/AI_RETRYABLE:429:(\d+)/) || error.message.match(/RATE_LIMITED:(\d+)/);
     if (match) return Number(match[1]);
   }
   return parseRetryAfterHeader(new Headers(), attempt);
@@ -564,16 +571,19 @@ const openaiAdapter: ProviderAdapter = {
     return { text, usage: parseUsage(payload), responseFormat, schemaError };
   },
   async generateImage(model, prompt, size = "1792x1024") {
+    const landscape = String(size || "1792x1024");
+    const [w, h] = landscape.split("x").map(Number);
+    const safeSize = Number(w) > 0 && Number(h) > Number(w) ? "1792x1024" : landscape || "1792x1024";
     const attempt = async (payload: Record<string, unknown>) => openaiFetch("images/generations", payload);
     let { response, raw, retryAfterMs } = await attempt({
       model,
       prompt,
       n: 1,
-      size,
+      size: safeSize,
       response_format: "b64_json",
     });
     if (response.status === 400) {
-      ({ response, raw, retryAfterMs } = await attempt({ model, prompt, n: 1, size }));
+      ({ response, raw, retryAfterMs } = await attempt({ model, prompt, n: 1, size: safeSize === "1792x1024" ? "1536x1024" : "1792x1024" }));
     }
     if (!response.ok) {
       throwIfProviderFailed(response, raw, retryAfterMs, "IMAGE_FAILED");

@@ -9,18 +9,18 @@ import { Screen } from '@/src/components/ui/Screen';
 import { SeoHead } from '@/src/features/seo/SeoHead';
 import { AnalyticsProvider } from '@/src/lib/analytics/AnalyticsProvider';
 import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
+import { useOrientation } from '@/src/lib/layout/useOrientation';
 import { APP_NAME } from '@/src/lib/brand';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 import { useAuthStore } from '@/src/stores/authStore';
 
 import { actGuided, fetchLessonTimeline, recordGuidedAttempt } from '@/src/features/guided-study/api';
-import { CoachEventCard } from '@/src/features/guided-study/CoachEventCard';
-import type { TimelineEvent } from '@/src/features/guided-study/types';
 import { CheckpointCard } from './CheckpointCard';
+import { HapLessonScreen } from './HapLessonScreen';
 import { SceneCanvas } from './SceneCanvas';
 import { checkpointQuestions } from './playerApi';
 import { logLessonStarted } from './playerApi';
-import { checkpointTriggers, formatMs, retryTriggerMs } from './playerUtils';
+import { checkpointTriggers, formatMs, speakCoachLine } from './playerUtils';
 import {
   useCompleteNarration,
   useCompleteReview,
@@ -36,150 +36,10 @@ import type { MemoryLessonQuestion, MemoryLessonScene } from './types';
 const RATES = [0.8, 1, 1.25, 1.5] as const;
 
 export function MemoryLessonPlayerScreen() {
-  const { colors, radius, spacing } = useAppTheme();
-  const { isDesktop } = useBreakpoint();
-  const params = useLocalSearchParams<{ lessonId?: string; examCatalogId?: string; mode?: string; queueId?: string; sessionId?: string }>();
+  const params = useLocalSearchParams<{ lessonId?: string; examCatalogId?: string }>();
   const lessonId = String(params.lessonId ?? '');
-  const sessionId = params.sessionId ? String(params.sessionId) : undefined;
   const examCatalogId = params.examCatalogId ? String(params.examCatalogId) : undefined;
-  const reviewMode = params.mode === 'review' || params.mode === 'tekrar';
-  const pack = useMemoryLessonPlayerPackage(lessonId || undefined);
-  const media = useStudentLessonMedia(lessonId || undefined, Boolean(pack.data?.lesson));
-  const completeNarration = useCompleteNarration();
-  const completeReview = useCompleteReview();
-  const nextLesson = useNextMemoryLesson(lessonId || undefined, examCatalogId);
-  const prereq = useLessonPrereqWarning(lessonId || undefined);
-  const [phase, setPhase] = useState<'play' | 'done'>('play');
-
-  const lesson = pack.data?.lesson;
-  const scenes = useMemo(() => {
-    const all = pack.data?.scenes ?? [];
-    if (!reviewMode) return all;
-    const key = all.filter((row) => row.visual_anchor || row.memory_target);
-    return (key.length ? key : all).slice(0, 4);
-  }, [pack.data?.scenes, reviewMode]);
-  const checks = useMemo(() => {
-    const all = checkpointQuestions(pack.data?.questions ?? []);
-    if (!reviewMode) return all.slice(0, 8);
-    const tech = all.filter((row) =>
-      ['first_move', 'pattern_recognition', 'elimination'].includes(String(row.question_strategy ?? '')),
-    );
-    return (tech.length ? tech : all).slice(0, 3);
-  }, [pack.data?.questions, reviewMode]);
-  const urls = media.data ?? {};
-  const narrationUrl = lesson?.narration_key ? urls[lesson.narration_key] : undefined;
-  const progress = pack.data?.progress;
-  const answeredIds = new Set((pack.data?.answers ?? []).filter((row) => row.correct).map((row) => row.checkpoint_question_id));
-  const anchors = pack.data?.anchors ?? [];
-
-  const finishNarration = () => {
-    setPhase('done');
-    AnalyticsProvider.track('lesson_completed', { lessonId, is_virtual: false });
-    if (reviewMode && params.queueId) {
-      void completeReview.mutateAsync(String(params.queueId)).catch(() => undefined);
-    } else if (!reviewMode) {
-      void completeNarration.mutateAsync(lessonId).catch(() => undefined);
-    }
-    if (sessionId) {
-      void actGuided(sessionId, 'lesson_done', { lesson_id: lessonId }).catch(() => undefined);
-    }
-  };
-
-  if (pack.isLoading) {
-    return (
-      <Screen>
-        <AppText tone="muted">Ders yükleniyor…</AppText>
-      </Screen>
-    );
-  }
-  if (!lesson) {
-    return (
-      <Screen>
-        <Pressable onPress={() => router.back()}>
-          <AppText tone="accent">Geri</AppText>
-        </Pressable>
-        <AppText variant="title">Ders bulunamadı</AppText>
-        <AppText tone="muted">Yalnızca yayınlanmış hafıza dersleri açılır.</AppText>
-      </Screen>
-    );
-  }
-
-  const checkpointCorrect = progress?.checkpoint_correct ?? pack.data?.answers.filter((row) => row.correct).length ?? 0;
-  const checkpointTotal = Math.max(progress?.checkpoint_total ?? 0, checks.length);
-  const canvas = (
-    <PlayerBody
-      lessonId={lessonId}
-      lessonTitle={lesson.title}
-      narrationUrl={narrationUrl}
-      urls={urls}
-      scenes={scenes}
-      checkpoints={checks}
-      durationHint={(lesson.duration_sec ?? 0) * 1000}
-      resumeMs={progress?.last_position_ms ?? 0}
-      reviewMode={reviewMode}
-      answeredIds={answeredIds}
-      phase={phase}
-      onComplete={finishNarration}
-      mediaError={media.isError}
-      onRetryMedia={() => void media.refetch()}
-      checkpointCorrect={checkpointCorrect}
-      checkpointTotal={checkpointTotal}
-      journey={scenes.map((row) => row.journey_step).filter(Boolean) as string[]}
-      anchors={anchors.map((row) => `${row.visual_anchor} = ${row.memory_target}`)}
-      examCatalogId={examCatalogId}
-      canonicalTopicId={lesson.canonical_topic_id ?? undefined}
-      next={nextLesson.data}
-      fastRule={lesson.fast_rule ?? null}
-      examTechnique={lesson.exam_technique ?? null}
-      memoryHooks={Array.isArray(lesson.memory_hooks) ? lesson.memory_hooks.map(String) : []}
-      sessionId={sessionId}
-    />
-  );
-
-  return (
-    <Screen scroll={phase === 'done'} style={isDesktop ? { maxWidth: 1100 } : undefined}>
-      <SeoHead title={`${lesson.title} | ${APP_NAME}`} path={`/dersler/hafiza/${lessonId}`} index={false} />
-      <View style={{ gap: spacing.md, paddingBottom: 32 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Pressable onPress={() => router.back()} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Ionicons name="chevron-back" size={20} color={colors.accent} />
-            <AppText tone="accent">Geri</AppText>
-          </Pressable>
-          <View style={{ flex: 1 }}>
-            <AppText variant="subtitle">{lesson.title}</AppText>
-            <AppText variant="caption" tone="muted">
-              {lesson.subject} · {lesson.topic}
-            </AppText>
-          </View>
-        </View>
-        {prereq.data?.prereq_title ? (
-          <AppText variant="caption">
-            Bu konuya geçmeden önce {prereq.data.prereq_title} konusunu tamamlaman önerilir.
-          </AppText>
-        ) : null}
-        {isDesktop ? (
-          <View style={{ flexDirection: 'row', gap: 16, alignItems: 'flex-start' }}>
-            <View style={{ flex: 1, maxWidth: 920 }}>{canvas}</View>
-            <View style={{ width: 240, gap: 10, padding: 14, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
-              <AppText variant="label">Ders Akışı</AppText>
-              {scenes.map((scene) => (
-                <AppText key={scene.id} variant="caption" tone="muted">
-                  {scene.scene_order}. {scene.memory_target || scene.caption || 'Sahne'}
-                </AppText>
-              ))}
-              {anchors.slice(0, 5).map((row) => (
-                <AppText key={row.id} variant="caption">
-                  {row.visual_anchor} → {row.memory_target}
-                </AppText>
-              ))}
-            </View>
-          </View>
-        ) : (
-          canvas
-        )}
-      </View>
-    </Screen>
-  );
+  return <HapLessonScreen lessonId={lessonId} examCatalogId={examCatalogId} />;
 }
 
 function PlayerBody(props: {
@@ -279,10 +139,10 @@ function AudioSession({
   sessionId?: string;
 }) {
   const { colors, radius } = useAppTheme();
+  const { landscape } = useOrientation();
   const player = useAudioPlayer(url);
-  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
-  const [card, setCard] = useState<TimelineEvent | null>(null);
-  const seenCards = useRef(new Set<string>());
+  const [introLine, setIntroLine] = useState<string | null>(null);
+  const introLock = useRef(false);
   const status = useAudioPlayerStatus(player);
   const barWidth = useRef(1);
   const lastSaved = useRef(0);
@@ -293,7 +153,6 @@ function AudioSession({
   const [resumePrompt, setResumePrompt] = useState(resumeMs > 4000 && !reviewMode);
   const [activeCheckpoint, setActiveCheckpoint] = useState<MemoryLessonQuestion | null>(null);
   const [answered, setAnswered] = useState<Set<string>>(answeredIds);
-  const [retries, setRetries] = useState<{ question: MemoryLessonQuestion; triggerMs: number }[]>([]);
   const [gateKey, setGateKey] = useState(0);
   const [mediaFail, setMediaFail] = useState(false);
   const touch = useTouchLessonProgress();
@@ -312,10 +171,10 @@ function AudioSession({
     return ordered.find((scene) => positionMs >= scene.start_ms && positionMs < scene.end_ms) ?? ordered[ordered.length - 1];
   }, [positionMs, scenes]);
   const imageUrl = current?.asset_key ? urls[current.asset_key] : undefined;
-  const triggers = useMemo(() => {
-    const base = checkpointTriggers(scenes, checkpoints, durationMs);
-    return [...base, ...retries].sort((a, b) => a.triggerMs - b.triggerMs);
-  }, [checkpoints, durationMs, retries, scenes]);
+  const triggers = useMemo(
+    () => checkpointTriggers(scenes, checkpoints, durationMs),
+    [checkpoints, durationMs, scenes],
+  );
 
   useEffect(() => {
     if (started.current) return;
@@ -329,7 +188,7 @@ function AudioSession({
   }, [player, rate]);
 
   useEffect(() => {
-    void fetchLessonTimeline(lessonId).then(setTimeline).catch(() => undefined);
+    void fetchLessonTimeline(lessonId).catch(() => undefined);
   }, [lessonId]);
 
   useEffect(() => {
@@ -344,58 +203,45 @@ function AudioSession({
   }, [lessonId, sessionId]);
 
   useEffect(() => {
-    if (card || activeCheckpoint || resumePrompt) return;
-    const hit = timeline.find(
-      (row) =>
-        row.event_type === 'card_show' &&
-        !seenCards.current.has(row.id) &&
-        positionMs >= row.appear_at_ms &&
-        positionMs <= row.appear_at_ms + 2500,
-    );
-    if (!hit) return;
-    seenCards.current.add(hit.id);
-    setCard(hit);
-    if (hit.pause_audio) player.pause();
-  }, [activeCheckpoint, card, player, positionMs, resumePrompt, timeline]);
-
-  useEffect(() => {
     const crossed = triggers.find(
       (row) =>
         !answered.has(row.question.id) &&
         !activeCheckpoint &&
+        !introLine &&
+        !introLock.current &&
         !resumePrompt &&
         prevMs.current < row.triggerMs &&
         positionMs >= row.triggerMs,
     );
     prevMs.current = positionMs;
-    if (crossed) {
-      player.pause();
-      setGateKey((n) => n + 1);
-      setActiveCheckpoint(crossed.question);
-    }
-  }, [activeCheckpoint, answered, player, positionMs, resumePrompt, reviewMode, triggers]);
+    if (!crossed) return;
+    introLock.current = true;
+    player.pause();
+    setIntroLine(crossed.intro);
+    void speakCoachLine(crossed.intro).then(() => {
+      setTimeout(() => {
+        setIntroLine(null);
+        setGateKey((n) => n + 1);
+        setActiveCheckpoint(crossed.question);
+        introLock.current = false;
+      }, 400);
+    });
+  }, [activeCheckpoint, answered, introLine, player, positionMs, resumePrompt, reviewMode, triggers]);
 
   useEffect(() => {
-    if (reviewMode || resumePrompt || activeCheckpoint) return;
+    if (reviewMode || resumePrompt || activeCheckpoint || introLine) return;
     if (Date.now() - lastSaved.current < 5000) return;
     lastSaved.current = Date.now();
     void touch.mutateAsync({ lessonId, positionMs, durationMs }).catch(() => undefined);
   }, [activeCheckpoint, durationMs, lessonId, positionMs, resumePrompt, reviewMode, touch]);
 
   useEffect(() => {
-    if (completed.current || phase === 'done' || activeCheckpoint) return;
+    if (completed.current || phase === 'done' || activeCheckpoint || introLine) return;
     const ended = Boolean((status as { didJustFinish?: boolean }).didJustFinish) || (durationMs > 1500 && positionMs >= durationMs - 400 && !playing && positionMs > 1200);
     if (!ended) return;
-    const pending = retries.find((row) => !answered.has(row.question.id));
-    if (pending) {
-      player.pause();
-      setActiveCheckpoint(pending.question);
-      setGateKey((n) => n + 1);
-      return;
-    }
     completed.current = true;
     onComplete();
-  }, [activeCheckpoint, answered, durationMs, onComplete, phase, player, playing, positionMs, retries, status]);
+  }, [activeCheckpoint, durationMs, introLine, onComplete, phase, player, playing, positionMs, status]);
 
   const seek = (ratio: number) => {
     if (activeCheckpoint) return;
@@ -421,8 +267,9 @@ function AudioSession({
   if (phase === 'done') {
     return (
       <View style={{ gap: 14, backgroundColor: colors.surface, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: 18 }}>
-        <AppText variant="title">Dersi tamamladın 🎯</AppText>
+        <AppText variant="title">Hızlıca pekiştirelim.</AppText>
         <AppText>{lessonTitle}</AppText>
+        <AppText variant="caption" tone="muted">İlerlemen kaydedildi.</AppText>
         {fastRule ? (
           <AppText>
             5 sn kural: {fastRule}
@@ -457,7 +304,7 @@ function AudioSession({
           </View>
         ) : null}
         <Pressable onPress={openFinal} style={{ minHeight: 48, borderRadius: 14, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' }}>
-          <AppText tone="inverse">10 Soruyla Pekiştir</AppText>
+          <AppText tone="inverse">Hızlıca pekiştirelim · 10 soru</AppText>
         </Pressable>
         <Pressable
           onPress={() =>
@@ -474,7 +321,7 @@ function AudioSession({
         </Pressable>
         {next?.lesson_id ? (
           <Pressable onPress={() => router.replace((sessionId ? '/koc' : `/dersler/hafiza/${next.lesson_id}?examCatalogId=${examCatalogId ?? ''}`) as never)}>
-            <AppText tone="accent">Sonraki Derse Geç · {next.lesson_title}</AppText>
+            <AppText tone="accent">Sıradaki derse geçiyoruz · {next.lesson_title}</AppText>
           </Pressable>
         ) : null}
       </View>
@@ -521,66 +368,78 @@ function AudioSession({
           {memoryHooks?.[0] ? <AppText variant="caption">Kanca: {memoryHooks[0]}</AppText> : null}
         </View>
       ) : null}
-      <View style={{ position: 'relative' }}>
-        <SceneCanvas scene={current} imageUrl={imageUrl} positionMs={positionMs} />
-        {card && !activeCheckpoint ? (
-          <CoachEventCard
-            title={String(card.payload.title ?? card.card_type ?? 'KOÇ')}
-            body={String(card.payload.body ?? '')}
-            pause={card.pause_audio}
-            onDismiss={() => {
-              setCard(null);
-              if (card.pause_audio) player.play();
-            }}
-          />
-        ) : null}
-        {activeCheckpoint ? (
-          <CheckpointCard
-            key={`${activeCheckpoint.id}-${gateKey}`}
-            question={activeCheckpoint}
-            reinforcement={current?.reinforcement_note}
-            submitting={submit.isPending}
-            onContinue={() => {
-              setActiveCheckpoint(null);
-              player.play();
-            }}
-            onSubmit={async (answer) => {
-              const result = await submit.mutateAsync({
-                lessonId,
-                questionId: activeCheckpoint.id,
-                answer,
-              });
-              if (result.correct) {
+      <View style={{ flexDirection: landscape ? 'row' : 'column', gap: 12, alignItems: 'stretch' }}>
+        <View style={{ flex: landscape ? 7 : undefined, minWidth: 0, position: 'relative' }}>
+          <SceneCanvas scene={current} imageUrl={imageUrl} positionMs={positionMs} />
+          {introLine ? (
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                left: 12,
+                right: 12,
+                bottom: 16,
+                zIndex: 9,
+                borderRadius: 16,
+                backgroundColor: 'rgba(15,28,46,0.94)',
+                padding: 14,
+                gap: 6,
+              }}>
+              <AppText variant="caption" style={{ color: '#E07A3D', fontWeight: '800' }}>
+                KOÇ
+              </AppText>
+              <AppText style={{ color: '#FFFFFF', fontWeight: '700' }}>{introLine}</AppText>
+            </View>
+          ) : null}
+        </View>
+        <View style={{ flex: landscape ? 3 : undefined, minWidth: landscape ? 240 : undefined, gap: 10 }}>
+          {landscape && current?.narration_text ? (
+            <View style={{ padding: 12, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+              <AppText variant="label">Metin</AppText>
+              <AppText variant="caption">{current.narration_text}</AppText>
+            </View>
+          ) : null}
+          {activeCheckpoint ? (
+            <CheckpointCard
+              key={`${activeCheckpoint.id}-${gateKey}`}
+              question={activeCheckpoint}
+              reinforcement={current?.reinforcement_note}
+              submitting={submit.isPending}
+              onContinue={(resolved) => {
                 setAnswered((prev) => new Set(prev).add(activeCheckpoint.id));
-                setRetries((prev) => prev.filter((row) => row.question.id !== activeCheckpoint.id));
-              } else {
-                const at = retryTriggerMs(scenes, positionMs, durationMs);
-                setRetries((prev) => [
-                  ...prev.filter((row) => row.question.id !== activeCheckpoint.id),
-                  { question: activeCheckpoint, triggerMs: at },
-                ]);
-                setGateKey((n) => n + 1);
-              }
-              AnalyticsProvider.track('checkpoint_answered', { lessonId, correct: result.correct, is_virtual: isVirtual });
-              if (sessionId) {
-                void recordGuidedAttempt({
-                  sessionId,
-                  selected: answer,
-                  correctAnswer: result.correct_answer,
-                  isCorrect: result.correct,
-                  memoryQuestionId: activeCheckpoint.id,
-                  lessonId,
-                  pattern: String(activeCheckpoint.question_strategy ?? 'checkpoint'),
-                }).catch(() => undefined);
-                const nextAnswered = result.correct ? new Set(answered).add(activeCheckpoint.id) : answered;
-                if (result.correct && checkpoints.length > 0 && nextAnswered.size >= checkpoints.length) {
-                  void actGuided(sessionId, 'checkpoint_set_done', { lesson_id: lessonId }).catch(() => undefined);
+                if (!resolved && sessionId) {
+                  void actGuided(sessionId, 'needs_review', { lesson_id: lessonId, question_id: activeCheckpoint.id }).catch(() => undefined);
                 }
-              }
-              return result;
-            }}
-          />
-        ) : null}
+                setActiveCheckpoint(null);
+                player.play();
+              }}
+              onSubmit={async (answer) => {
+                const result = await submit.mutateAsync({
+                  lessonId,
+                  questionId: activeCheckpoint.id,
+                  answer,
+                });
+                AnalyticsProvider.track('checkpoint_answered', { lessonId, correct: result.correct, is_virtual: isVirtual });
+                if (sessionId) {
+                  void recordGuidedAttempt({
+                    sessionId,
+                    selected: answer,
+                    correctAnswer: result.correct_answer,
+                    isCorrect: result.correct,
+                    memoryQuestionId: activeCheckpoint.id,
+                    lessonId,
+                    pattern: String(activeCheckpoint.question_strategy ?? 'checkpoint'),
+                  }).catch(() => undefined);
+                  const nextAnswered = result.correct ? new Set(answered).add(activeCheckpoint.id) : answered;
+                  if (result.correct && checkpoints.length > 0 && nextAnswered.size >= checkpoints.length) {
+                    void actGuided(sessionId, 'checkpoint_set_done', { lesson_id: lessonId }).catch(() => undefined);
+                  }
+                }
+                return result;
+              }}
+            />
+          ) : null}
+        </View>
       </View>
       <Pressable
         onLayout={(event) => {

@@ -1,8 +1,15 @@
-Konu: Koçum — e-postanı onayla
+Konu: ÖSYM Koçu — e-postanı onayla
 
 Supabase Dashboard → Authentication → Email Templates → Confirm signup
 içine yapıştır. Site URL: `https://osymkocu.com`
-Redirect URLs: `https://osymkocu.com/auth/callback` ve `kocum://auth/callback`
+Redirect URLs:
+- `https://osymkocu.com/email-confirmed`
+- `https://osymkocu.com/**`
+- `https://www.osymkocu.com/**`
+- `https://admin.osymkocu.com/**`
+- `kocum://email-confirmed`
+
+`{{ .ConfirmationURL }}` kullan; localhost yazma.
 
 ---
 
@@ -15,7 +22,7 @@ Redirect URLs: `https://osymkocu.com/auth/callback` ve `kocum://auth/callback`
           <table role="presentation" width="480" cellspacing="0" cellpadding="0" style="max-width:480px;background:#1B2B44;border-radius:22px;overflow:hidden;">
             <tr>
               <td style="padding:36px 28px 12px;text-align:center;color:#F4F1EA;font-size:13px;letter-spacing:0.12em;font-weight:600;">
-                KOÇUM
+                ÖSYM KOÇU
               </td>
             </tr>
             <tr>

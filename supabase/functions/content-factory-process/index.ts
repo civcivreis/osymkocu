@@ -34,8 +34,11 @@ async function gatePending(admin: ReturnType<typeof serviceClient>, job: Factory
   const lesson = await loadLesson(admin, lessonId);
   const questions = await questionCounts(admin, lessonId);
   const media = await mediaProgress(admin, lessonId, lesson?.narration_key ?? null);
-  const pedagogy = pedagogyOk(lesson);
-  const questionsOk = questions.finals === 10 && questions.checkpoints >= 2 && !questions.duplicateQuestions;
+  const authored = Boolean((lesson as { lock_authored?: boolean } | null)?.lock_authored);
+  const pedagogy = authored || pedagogyOk(lesson);
+  const questionsOk = authored
+    ? questions.finals >= 1
+    : questions.finals === 10 && questions.checkpoints >= 2 && !questions.duplicateQuestions;
   const mediaOk = job.job_type === "text_only" || job.job_type === "questions_only" || job.job_type === "pedagogy_refresh"
     ? true
     : media.done === media.total && media.total > 0;
@@ -127,13 +130,38 @@ async function advanceJob(admin: ReturnType<typeof serviceClient>, job: FactoryJ
       return await runMedia(admin, job, req);
     }
 
+    const settingsRow = await admin.from("content_factory_settings").select("autonomous_lesson_writing").eq("id", 1).maybeSingle();
+    const autonomous = Boolean(settingsRow.data?.autonomous_lesson_writing);
     let lessonId = job.memory_lesson_id;
     if (!lessonId) {
+      if (!autonomous) {
+        await saveJob(admin, job, {
+          status: "queued",
+          error_code: "AWAITING_CONTENT_PACK",
+          error_message: "Otonom ders yazımı kapalı. Content pack bekleniyor.",
+          locked_until: null,
+        });
+        return "queued";
+      }
       lessonId = await ensureLesson(job, req);
       await saveJob(admin, job, { memory_lesson_id: lessonId, status: "generating_text" });
     }
 
     const lesson = await loadLesson(admin, lessonId);
+    const authored = Boolean((lesson as { lock_authored?: boolean } | null)?.lock_authored);
+    if (!hasText(lesson) && !autonomous) {
+      await saveJob(admin, job, {
+        status: "queued",
+        error_code: "AWAITING_CONTENT_PACK",
+        error_message: "Otonom ders yazımı kapalı. Content pack bekleniyor.",
+        locked_until: null,
+      });
+      await appendEvent(admin, job, "AWAITING_CONTENT_PACK", "AI ile ders yazılmadı.");
+      return "queued";
+    }
+    if (authored && hasText(lesson)) {
+      await saveJob(admin, job, { stage_text_done: true, stage_pedagogy_done: true, stage_questions_done: true, factory_stage: "lesson_text_ready" });
+    }
     const hash = job.generation_hash;
     if (hash && lesson && !lesson.lesson_generation_hash) {
       await admin.from("memory_lessons").update({ lesson_generation_hash: hash }).eq("id", lessonId);
@@ -181,7 +209,7 @@ async function advanceJob(admin: ReturnType<typeof serviceClient>, job: FactoryJ
     }
     if (!job.stage_text_done) await saveJob(admin, job, { stage_text_done: true });
 
-    if (!pedagogyOk(lesson) || job.job_type === "pedagogy_refresh") {
+    if ((!pedagogyOk(lesson) || job.job_type === "pedagogy_refresh") && !authored) {
       await saveJob(admin, job, { status: "validating_pedagogy" });
       await admin.rpc("refresh_memory_lesson_pedagogy", { p_id: lessonId });
       const scored = await loadLesson(admin, lessonId);
@@ -200,7 +228,10 @@ async function advanceJob(admin: ReturnType<typeof serviceClient>, job: FactoryJ
     if (!job.stage_pedagogy_done) await saveJob(admin, job, { stage_pedagogy_done: true });
 
     const counts = await questionCounts(admin, lessonId);
-    if (counts.finals !== 10 || counts.checkpoints < 2 || job.job_type === "questions_only") {
+    if (authored) {
+      await saveJob(admin, job, { stage_questions_done: true, stage_pool_done: true });
+    }
+    if (!authored && (counts.finals !== 10 || counts.checkpoints < 2 || job.job_type === "questions_only")) {
       if (counts.finals !== 10 || counts.checkpoints < 2) {
         await saveJob(admin, job, { status: "generating_questions" });
         const gen = await invokeFunction("memory-lesson-generate", { lesson_id: lessonId }, req);
@@ -221,7 +252,7 @@ async function advanceJob(admin: ReturnType<typeof serviceClient>, job: FactoryJ
     }
     if (!job.stage_questions_done) await saveJob(admin, job, { stage_questions_done: true });
 
-    if (!job.stage_pool_done) {
+    if (!job.stage_pool_done && !authored) {
       const topicId = lesson?.canonical_topic_id ?? job.canonical_topic_id;
       if (topicId) {
         await invokeFunction("question-generate", { mode: "lesson_sync", memory_lesson_id: lessonId, canonical_topic_id: topicId }, req);
@@ -291,17 +322,19 @@ async function runMedia(admin: ReturnType<typeof serviceClient>, job: FactoryJob
   await saveJob(admin, job, { status: "generating_media", factory_stage: "media_ready", locked_until: new Date(Date.now() + 12 * 60_000).toISOString() });
   const mediaMode = existing?.narration_key ? "missing" : "narration";
   const media = await invokeFunction("memory-lesson-generate-media", { lesson_id: lessonId, mode: mediaMode }, req);
-  if (!media.ok) {
+    if (!media.ok) {
     const code = String((media.data as { error?: { code?: string } } | null)?.error?.code ?? "MEDIA_FAILED");
-    if (media.status === 429 || code === "RATE_LIMITED") {
+    if (media.status === 429 || code === "RATE_LIMITED" || code === "TTS_BUSY") {
       const wait = Number((media.data as { error?: { retry_after_ms?: number } } | null)?.error?.retry_after_ms ?? 20_000);
-      const next = new Date(Date.now() + Math.min(Math.max(wait, 5000), 90_000)).toISOString();
+      const next = (media.data as { error?: { next_retry_at?: string } } | null)?.error?.next_retry_at
+        ?? new Date(Date.now() + Math.min(Math.max(wait, 5000), 180_000)).toISOString();
       await saveJob(admin, job, { status: "queued", factory_stage: "media_ready", locked_until: next, error_code: "RATE_LIMITED", error_message: `429 ${code}` });
-      await appendEvent(admin, job, "RATE_LIMITED", `Provider 429, next ${next}`);
+      await appendEvent(admin, job, "WAITING_RETRY", `TTS bekliyor ${next}`);
       return "generating_media";
     }
-    await failJob(admin, job, code.slice(0, 40), "Medya üretilemedi.");
-    return "failed";
+    await saveJob(admin, job, { status: "queued", error_code: code.slice(0, 40), error_message: "Medya aşaması yarım; içerik korundu." });
+    await appendEvent(admin, job, "MEDIA_PARTIAL", code);
+    return "generating_media";
   }
   const lesson = await loadLesson(admin, lessonId);
   const progress = await mediaProgress(admin, lessonId, lesson?.narration_key ?? null);

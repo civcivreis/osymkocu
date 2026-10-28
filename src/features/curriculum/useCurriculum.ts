@@ -12,6 +12,7 @@ import {
   createSubjectCatalog,
   createTopicCatalog,
   createUnitCatalog,
+  deleteCatalogRow,
   duplicateCurriculumVersion,
   findReusableLessons,
   getActiveCurriculumVersion,
@@ -26,6 +27,7 @@ import {
   listUnitCatalog,
   scheduleCurriculumVersion,
   setCatalogActive,
+  swapCatalogSort,
   syncCurriculum,
   listCurriculumProposals,
   updateCatalogName,
@@ -115,6 +117,19 @@ export function useCurriculumMutations() {
         id: string;
         isActive: boolean;
       }) => setCatalogActive(input.table, input.id, input.isActive),
+      onSuccess: invalidate,
+    }),
+    swapSort: useMutation({
+      mutationFn: (input: {
+        table: 'subject_catalog' | 'unit_catalog' | 'topic_catalog';
+        first: { id: string; sort_order: number };
+        second: { id: string; sort_order: number };
+      }) => swapCatalogSort(input.table, input.first, input.second),
+      onSuccess: invalidate,
+    }),
+    removeRow: useMutation({
+      mutationFn: (input: { table: 'subject_catalog' | 'unit_catalog' | 'topic_catalog'; id: string }) =>
+        deleteCatalogRow(input.table, input.id),
       onSuccess: invalidate,
     }),
     importJson: useMutation({ mutationFn: importCurriculum, onSuccess: invalidate }),

@@ -31,6 +31,7 @@ import {
   suggestTopicBreakdown,
   tickFactoryProcess,
   updateSuggestion,
+  importContentPack,
 } from './factoryApi';
 
 function wrap<T>(fn: () => Promise<T>) {
@@ -191,6 +192,10 @@ export function useFactoryMutations() {
     }),
     addSuggestion: useMutation({
       mutationFn: ({ sessionId, name }: { sessionId: string; name: string }) => addBreakdownSuggestion(sessionId, name),
+      onSuccess: invalidate,
+    }),
+    importPack: useMutation({
+      mutationFn: importContentPack,
       onSuccess: invalidate,
     }),
   };

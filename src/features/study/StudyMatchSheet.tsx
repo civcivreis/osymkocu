@@ -71,14 +71,14 @@ export function StudyMatchSheet({
           <AppText variant="subtitle" style={{ textAlign: 'center' }}>
             {name}
           </AppText>
-          {auto ? (
+            {auto ? (
             <AppText variant="caption" tone="accent">
-              Birini buldum 👋
+              Seninle çalışmak isteyen biri bulundu.
             </AppText>
           ) : null}
           <AppText variant="caption" tone="muted" style={{ textAlign: 'center' }}>
             {auto
-              ? `${short} de şu anda seninle aynı ${topicName ? 'konuyu' : 'dersi'} çalışıyor.`
+              ? `${short} aynı konuda çalışıyor.`
               : `${short} seninle birlikte çalışmak istiyor.`}
           </AppText>
           {subjectName ? (
@@ -114,7 +114,7 @@ export function StudyMatchSheet({
                       opacity: busy ? 0.5 : 1,
                     },
                   ]}>
-                  <AppText variant="label">{auto ? 'Şimdi değil' : 'Reddet'}</AppText>
+                  <AppText variant="label">Reddet</AppText>
                 </Pressable>
                 <Pressable
                   disabled={busy}
@@ -128,7 +128,7 @@ export function StudyMatchSheet({
                     },
                   ]}>
                   <AppText variant="label" tone="inverse">
-                    {auto ? 'Birlikte çalış' : 'Kabul et'}
+                    Kabul Et
                   </AppText>
                 </Pressable>
               </View>

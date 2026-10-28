@@ -126,9 +126,12 @@ export function LessonScreen() {
               loading={finishLesson.isPending}
               onPress={() => {
                 if (!active) return;
-                void finishLesson.mutateAsync(active.id).catch((error: unknown) => {
-                  toastError(error);
-                });
+                void finishLesson
+                  .mutateAsync(active.id)
+                  .then(() => toastSuccess('Konu tamamlandı. Testi genel tekrara eklendi.'))
+                  .catch((error: unknown) => {
+                    toastError(error);
+                  });
               }}
             />
             <Button

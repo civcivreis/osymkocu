@@ -14,6 +14,7 @@ import { useProgressInsights } from '@/src/features/progress/useProgressInsights
 import { CurriculumPracticePicker } from '@/src/features/study/CurriculumPracticePicker';
 import { useStudyHub, useWrongAnswers } from '@/src/features/study/usePractice';
 import { useCoachStore } from '@/src/features/teacher/coachStore';
+import { CardGrid } from '@/src/components/ui/CardGrid';
 import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
 import { useAuthStore } from '@/src/stores/authStore';
@@ -36,7 +37,23 @@ function subjectIcon(slug: string, name: string): IonName {
   return 'book-outline';
 }
 
-function openLesson(subjectId: string, name: string, topicId?: string | null) {
+function openLesson(
+  subjectId: string,
+  name: string,
+  topicId?: string | null,
+  examCatalogId?: string | null,
+) {
+  if (examCatalogId && topicId) {
+    router.push({
+      pathname: '/dersler/hafiza/[lessonId]',
+      params: { lessonId: topicId, examCatalogId },
+    });
+    return;
+  }
+  if (examCatalogId) {
+    router.push('/dersler/hafiza' as never);
+    return;
+  }
   router.push({
     pathname: '/lesson',
     params: { subjectId, name, ...(topicId ? { topicId } : {}) },
@@ -123,9 +140,9 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
                 borderWidth: 1,
                 borderColor: colors.border,
               }}>
-              <AppText variant="subtitle">Hafıza Dersleri</AppText>
+              <AppText variant="subtitle">Dersi ve konuyu seç</AppText>
               <AppText variant="caption" tone="muted">
-                Görsel anlatım ve hafıza teknikleriyle öğren.
+                Kısa hap bilgi, soru ve alttan sohbet.
               </AppText>
             </Pressable>
 
@@ -153,7 +170,7 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
                   DEVAM ET
                 </AppText>
                 <Pressable
-                  onPress={() => openLesson(last.subjectId, last.subjectName, last.topicId)}
+                  onPress={() => openLesson(last.subjectId, last.subjectName, last.topicId, hub?.examCatalogId)}
                   style={{
                     backgroundColor: colors.accentMuted,
                     borderRadius: 20,
@@ -221,22 +238,21 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
             ) : filtered.length === 0 ? (
               <AppText tone="muted">Eşleşen ders veya konu yok.</AppText>
             ) : isDesktop || isTablet ? (
-              <View style={{ gap: 16 }}>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16 }}>
+              <View style={{ gap: 16, width: '100%' }}>
+                <CardGrid>
                   {filtered.map((subject) => (
-                    <View key={subject.id} style={{ width: isDesktop ? '31.5%' : '47%', minWidth: 220, flexGrow: 1, maxWidth: isDesktop ? '33%' : '48%' }}>
-                      <SubjectCard
-                        name={subject.name}
-                        slug={subject.slug}
-                        topicCount={subject.topicCount}
-                        completion={subject.completion}
-                        onPress={() => setSelectedId(subject.id)}
-                      />
-                    </View>
+                    <SubjectCard
+                      key={subject.id}
+                      name={subject.name}
+                      slug={subject.slug}
+                      topicCount={subject.topicCount}
+                      completion={subject.completion}
+                      onPress={() => setSelectedId(subject.id)}
+                    />
                   ))}
-                </View>
+                </CardGrid>
                 {selected ? (
-                  <View style={{ gap: 10 }}>
+                  <View style={{ gap: 10, width: '100%' }}>
                     <AppText variant="title">{selected.name}</AppText>
                     <AppText variant="caption" tone="muted">
                       {selected.completedTopics}/{selected.topicCount} konu tamamlandı
@@ -245,7 +261,7 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
                     {(selected.topics ?? []).map((topic) => (
                       <Pressable
                         key={topic.id}
-                        onPress={() => openLesson(selected.id, selected.name, topic.id)}
+                        onPress={() => openLesson(selected.id, selected.name, topic.id, hub?.examCatalogId)}
                         style={{
                           padding: 12,
                           borderRadius: 14,
@@ -260,25 +276,18 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
                 ) : null}
               </View>
             ) : (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  flexWrap: 'wrap',
-                  justifyContent: 'space-between',
-                  rowGap: 16,
-                }}>
+              <CardGrid columns={1}>
                 {filtered.map((subject) => (
-                  <View key={subject.id} style={{ width: '48%' }}>
-                    <SubjectCard
-                      name={subject.name}
-                      slug={subject.slug}
-                      topicCount={subject.topicCount}
-                      completion={subject.completion}
-                      onPress={() => openLesson(subject.id, subject.name)}
-                    />
-                  </View>
+                  <SubjectCard
+                    key={subject.id}
+                    name={subject.name}
+                    slug={subject.slug}
+                    topicCount={subject.topicCount}
+                    completion={subject.completion}
+                    onPress={() => openLesson(subject.id, subject.name, null, hub?.examCatalogId)}
+                  />
                 ))}
-              </View>
+              </CardGrid>
             )}
           </>
         ) : (
@@ -313,13 +322,20 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
               )}
             </View>
 
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+            <CardGrid>
               {[
                 {
                   icon: 'flash-outline' as const,
                   title: 'Hızlı Test',
                   hint: '10 soruluk hızlı çalışma',
                   onPress: () => {
+                    if (hub?.examCatalogId) {
+                      router.push({
+                        pathname: '/practice',
+                        params: { examCatalogId: hub.examCatalogId, setType: 'mixed', mode: 'mixed', count: '10' },
+                      });
+                      return;
+                    }
                     if (practiceSubject) {
                       router.push({ pathname: '/practice', params: { subjectId: practiceSubject.id } });
                       return;
@@ -332,19 +348,29 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
                   title: 'Konu Testi',
                   hint: 'Ders ve konu seç',
                   onPress: () => {
+                    if (hub?.examCatalogId) {
+                      router.push('/dersler/hafiza' as never);
+                      return;
+                    }
                     if (last) {
-                      openLesson(last.subjectId, last.subjectName, last.topicId);
+                      openLesson(last.subjectId, last.subjectName, last.topicId, hub?.examCatalogId);
                       return;
                     }
                     const first = subjects[0];
-                    if (first) openLesson(first.id, first.name);
+                    if (first) openLesson(first.id, first.name, null, hub?.examCatalogId);
                   },
                 },
                 {
                   icon: 'shuffle-outline' as const,
                   title: 'Karma Test',
                   hint: 'Farklı derslerden karışık test',
-                  onPress: () => router.push({ pathname: '/practice', params: { mode: 'mixed' } }),
+                  onPress: () =>
+                    router.push({
+                      pathname: '/practice',
+                      params: hub?.examCatalogId
+                        ? { examCatalogId: hub.examCatalogId, setType: 'mixed', mode: 'mixed', count: '10' }
+                        : { mode: 'mixed' },
+                    }),
                 },
                 {
                   icon: 'school-outline' as const,
@@ -353,17 +379,35 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
                   onPress: () => router.push('/system-exams'),
                 },
                 {
+                  icon: 'refresh-outline' as const,
+                  title: 'Genel tekrar',
+                  hint: 'Tamamladığın konuların soruları',
+                  onPress: () => {
+                    if (hub?.examCatalogId) {
+                      router.push({
+                        pathname: '/practice',
+                        params: {
+                          examCatalogId: hub.examCatalogId,
+                          setType: 'general_review',
+                          mode: 'review',
+                          count: '10',
+                        },
+                      });
+                      return;
+                    }
+                    router.push({ pathname: '/practice', params: { mode: 'review' } });
+                  },
+                },
+                {
                   icon: 'close-circle-outline' as const,
                   title: 'Yanlışlar',
                   hint: wrongCount > 0 ? `${wrongCount} açık yanlış` : 'Tekrar defteri',
                   onPress: () => router.push('/notebook'),
                 },
               ].map((item) => (
-                <View key={item.title} style={{ width: isDesktop ? '31.5%' : isTablet ? '47%' : '100%', flexGrow: 1, minWidth: isDesktop ? 220 : undefined }}>
-                  <TestEntry icon={item.icon} title={item.title} hint={item.hint} onPress={item.onPress} />
-                </View>
+                <TestEntry key={item.title} icon={item.icon} title={item.title} hint={item.hint} onPress={item.onPress} />
               ))}
-            </View>
+            </CardGrid>
 
             <CurriculumPracticePicker />
 
@@ -417,6 +461,21 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
                     <Pressable
                       key={subject.id}
                       onPress={() => {
+                        if (hub?.examCatalogId) {
+                          const lessonId = subject.topics?.[0]?.id;
+                          router.push({
+                            pathname: '/practice',
+                            params: lessonId
+                              ? {
+                                  examCatalogId: hub.examCatalogId,
+                                  lessonId,
+                                  setType: 'topic_pool',
+                                  count: '10',
+                                }
+                              : { examCatalogId: hub.examCatalogId, setType: 'mixed', count: '10' },
+                          });
+                          return;
+                        }
                         if (subject.questionCount > 0) {
                           router.push({ pathname: '/practice', params: { subjectId: subject.id } });
                         }
@@ -439,7 +498,7 @@ export function StudyHubScreen({ initialTab }: { initialTab?: 'lesson' | 'test' 
                             ? `${subject.questionCount} soru${
                                 subject.topicCount > 0 ? ` • %${Math.round(subject.completion * 100)}` : ''
                               }`
-                            : 'Bu derste henüz soru yok'}
+                            : 'Bu bölüm hazırlanıyor.'}
                         </AppText>
                       </View>
                       <Ionicons name="chevron-forward" size={18} color={colors.textSubtle} />

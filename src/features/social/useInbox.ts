@@ -19,6 +19,8 @@ export type InboxGroup = {
   last_at: string | null;
   unread: number;
   member_count: number;
+  is_member?: boolean;
+  is_hidden?: boolean;
   is_pinned: boolean;
   is_muted: boolean;
 };
@@ -99,11 +101,28 @@ function sortDms(rows: InboxDm[]) {
   });
 }
 
-const GROUPS: { slug: string; name: string }[] = [
+export const OFFICIAL_EXAM_GROUPS: { slug: string; name: string }[] = [
   { slug: 'tyt', name: 'TYT' },
   { slug: 'ayt', name: 'AYT' },
   { slug: 'kpss', name: 'KPSS' },
 ];
+const GROUPS = OFFICIAL_EXAM_GROUPS;
+const OFFICIAL_GROUPS = new Set(OFFICIAL_EXAM_GROUPS.map((row) => row.slug));
+
+function officialGroupName(slug: string) {
+  return OFFICIAL_EXAM_GROUPS.find((row) => row.slug === slug)?.name ?? slug.toUpperCase();
+}
+
+async function purgeOfficialLocalHidden(userId: string, meta: LocalMeta) {
+  const next = meta.hidden.filter((id) => {
+    const [kind, ...rest] = id.split(':');
+    return !(kind === 'group' && OFFICIAL_GROUPS.has(rest.join(':')));
+  });
+  if (next.length === meta.hidden.length) return meta;
+  const updated = { ...meta, hidden: next };
+  await saveMeta(userId, updated);
+  return updated;
+}
 
 async function fallbackInbox(userId: string): Promise<InboxPayload> {
   const supabase = getSupabase();
@@ -179,6 +198,8 @@ async function fallbackInbox(userId: string): Promise<InboxPayload> {
       last_at: last?.created_at ?? null,
       unread: unreadBySlug.get(group.slug) ?? 0,
       member_count: memberCount.get(group.slug) ?? 0,
+      is_member: (members ?? []).some((row) => row.slug === group.slug && row.user_id === userId),
+      is_hidden: seeded.hidden.includes(id),
       is_pinned: seeded.pins.includes(id),
       is_muted: seeded.mutes.includes(id),
     };
@@ -258,9 +279,34 @@ async function fallbackInbox(userId: string): Promise<InboxPayload> {
 function applyHidden(payload: InboxPayload, hidden: string[]): InboxPayload {
   const skip = new Set(hidden);
   return {
-    groups: payload.groups.filter((row) => !skip.has(threadId('group', row.slug))),
+    groups: payload.groups.filter((row) => OFFICIAL_GROUPS.has(row.slug) || !skip.has(threadId('group', row.slug))),
     dms: payload.dms.filter((row) => !skip.has(threadId('dm', row.conversation_id))),
   };
+}
+
+function stubOfficialGroup(slug: string, name: string): InboxGroup {
+  return {
+    slug,
+    name,
+    last_sender_id: null,
+    last_body: null,
+    last_sender_name: null,
+    last_at: null,
+    unread: 0,
+    member_count: 0,
+    is_member: false,
+    is_hidden: true,
+    is_pinned: false,
+    is_muted: false,
+  };
+}
+
+function ensureOfficialGroups(payload: InboxPayload): InboxPayload {
+  const bySlug = new Map(payload.groups.map((row) => [row.slug, row]));
+  for (const group of OFFICIAL_EXAM_GROUPS) {
+    if (!bySlug.has(group.slug)) bySlug.set(group.slug, stubOfficialGroup(group.slug, group.name));
+  }
+  return { groups: sortGroups([...bySlug.values()]), dms: payload.dms };
 }
 
 export function inboxUnreadTotal(inbox?: InboxPayload | null) {
@@ -277,19 +323,20 @@ export function useInbox() {
     queryKey: ['inbox', userId],
     enabled: Boolean(userId),
     retry: (count, error) => count < 1 && !rpcMissing(error as { message?: string }),
-    refetchInterval: isRpcMissing('get_inbox') ? false : 6000,
+    staleTime: 15_000,
+    refetchInterval: isRpcMissing('get_inbox') ? false : 30_000,
     queryFn: async () => {
       const supabase = getSupabase();
-      await supabase.rpc('pulse_exam_chats');
-      const meta = await loadMeta(userId!);
+      void supabase.rpc('pulse_exam_chats');
+      const meta = await purgeOfficialLocalHidden(userId!, await loadMeta(userId!));
       if (isRpcMissing('get_inbox')) {
-        return applyHidden(await fallbackInbox(userId!), meta.hidden);
+        return ensureOfficialGroups(applyHidden(await fallbackInbox(userId!), meta.hidden));
       }
       const { data, error } = await supabase.rpc('get_inbox');
       if (error) {
         if (rpcMissing(error)) {
           markRpcMissing('get_inbox');
-          return applyHidden(await fallbackInbox(userId!), meta.hidden);
+          return ensureOfficialGroups(applyHidden(await fallbackInbox(userId!), meta.hidden));
         }
         throw error;
       }
@@ -298,7 +345,7 @@ export function useInbox() {
         groups: sortGroups(payload.groups ?? []),
         dms: sortDms(payload.dms ?? []),
       };
-      return applyHidden(sorted, meta.hidden);
+      return ensureOfficialGroups(applyHidden(sorted, meta.hidden));
     },
   });
 
@@ -404,15 +451,29 @@ export function useUnhideThread() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (input: { kind: InboxKind; thread: string }) => {
-      const { error } = await getSupabase().rpc('unhide_conversation', {
+      const supabase = getSupabase();
+      const { error } = await supabase.rpc('unhide_conversation', {
         p_kind: input.kind,
         p_thread: input.thread,
       });
       if (error) throw error;
+      if (input.kind === 'group' && OFFICIAL_GROUPS.has(input.thread)) {
+        const join = await supabase.rpc('join_exam_group', { p_slug: input.thread });
+        if (join.error) throw join.error;
+      }
+      const userId = useAuthStore.getState().session?.user.id;
+      if (userId) {
+        const meta = await loadMeta(userId);
+        const id = threadId(input.kind, input.thread);
+        if (meta.hidden.includes(id)) {
+          await saveMeta(userId, { ...meta, hidden: meta.hidden.filter((item) => item !== id) });
+        }
+      }
     },
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['inbox'] });
       void client.invalidateQueries({ queryKey: ['hidden-conversations'] });
+      void client.invalidateQueries({ queryKey: ['exam-groups'] });
     },
   });
 }
@@ -424,7 +485,11 @@ export function useLeaveExamGroup() {
       const { error } = await getSupabase().rpc('leave_exam_group', { p_slug: slug });
       if (error) throw error;
     },
-    onSuccess: () => client.invalidateQueries({ queryKey: ['inbox'] }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['inbox'] });
+      void client.invalidateQueries({ queryKey: ['exam-groups'] });
+      void client.invalidateQueries({ queryKey: ['hidden-conversations'] });
+    },
   });
 }
 
@@ -444,7 +509,33 @@ export function useHiddenConversations() {
     queryFn: async () => {
       const { data, error } = await getSupabase().rpc('get_hidden_conversations');
       if (error) throw error;
-      return (Array.isArray(data) ? data : []) as HiddenConversation[];
+      const rows = (Array.isArray(data) ? data : []) as HiddenConversation[];
+      const byKey = new Map(rows.map((row) => [`${row.kind}:${row.thread_key}`, row]));
+      const meta = userId ? await loadMeta(userId) : { hidden: [] as string[] };
+      for (const id of meta.hidden) {
+        const [kind, ...rest] = id.split(':');
+        const thread = rest.join(':');
+        if (kind !== 'group' || !OFFICIAL_GROUPS.has(thread) || byKey.has(id)) continue;
+        byKey.set(id, {
+          kind: 'group',
+          thread_key: thread,
+          hidden_at: new Date().toISOString(),
+          title: officialGroupName(thread),
+          last_body: 'Topluluk kanalı · gizleme kaydı telefonda kalmış',
+        });
+      }
+      for (const group of OFFICIAL_EXAM_GROUPS) {
+        const id = threadId('group', group.slug);
+        if (byKey.has(id)) continue;
+        byKey.set(id, {
+          kind: 'group',
+          thread_key: group.slug,
+          hidden_at: new Date().toISOString(),
+          title: group.name,
+          last_body: 'Topluluk kanalı · kaybolduysa buradan aç',
+        });
+      }
+      return [...byKey.values()].sort((a, b) => Date.parse(b.hidden_at) - Date.parse(a.hidden_at));
     },
   });
 }

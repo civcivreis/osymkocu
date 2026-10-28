@@ -1,7 +1,17 @@
 import { buildExamTechniqueSystem, EXAM_TECHNIQUE_PROMPT_VERSION, HEURISTIC_KINDS, TECHNIQUE_QUESTION_STRATEGIES } from "./examTechnique.ts";
 
-export const MEMORY_LESSON_PROMPT_VERSION = "exam-technique-overlay-v3";
-export const MEMORY_PEDAGOGY_VERSION = "exam-technique-v1";
+export const MEMORY_LESSON_PROMPT_VERSION = "hap-bilgi-v2-sync";
+export const MEMORY_PEDAGOGY_VERSION = "narration-card-sync-v1";
+
+export const HAP_CARD_TYPES = [
+  "HAP BİLGİ",
+  "HATIRLA",
+  "HIZLI TEKNİK",
+  "TUZAK",
+  "KIYASLA",
+  "FORMÜL",
+  "ANAHTAR KELİME",
+] as const;
 
 export const MEMORY_TECHNIQUES = [
   "visual_association",
@@ -22,7 +32,19 @@ export const QUESTION_STRATEGIES = TECHNIQUE_QUESTION_STRATEGIES;
 const QUESTION_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["order", "question_text", "options", "correct_answer", "explanation", "question_strategy"],
+  required: [
+    "order",
+    "question_text",
+    "options",
+    "correct_answer",
+    "explanation",
+    "question_strategy",
+    "related_scene_order",
+    "checkpoint_intro",
+    "correct_feedback",
+    "wrong_feedback",
+    "retry_question_text",
+  ],
   properties: {
     order: { type: "integer" },
     question_text: { type: "string" },
@@ -41,6 +63,25 @@ const QUESTION_SCHEMA = {
     correct_answer: { type: "string", enum: ["A", "B", "C", "D", "E"] },
     explanation: { type: "string" },
     question_strategy: { type: "string", enum: [...QUESTION_STRATEGIES] },
+    related_scene_order: { type: "integer" },
+    checkpoint_intro: { type: "string" },
+    correct_feedback: { type: "string" },
+    wrong_feedback: { type: "string" },
+    retry_question_text: { type: "string" },
+  },
+} as const;
+
+const SCENE_CARD_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["card_type", "short_text", "semantic_key", "start_frac", "end_frac", "narration_segment_id"],
+  properties: {
+    card_type: { type: "string", enum: [...HAP_CARD_TYPES] },
+    short_text: { type: "string" },
+    semantic_key: { type: "string" },
+    start_frac: { type: "number" },
+    end_frac: { type: "number" },
+    narration_segment_id: { type: "string" },
   },
 } as const;
 
@@ -93,8 +134,8 @@ export const MEMORY_LESSON_JSON_SCHEMA = {
       core_facts: { type: "array", items: CORE_FACT_SCHEMA, minItems: 5, maxItems: 12 },
       scenes: {
         type: "array",
-        minItems: 6,
-        maxItems: 10,
+        minItems: 5,
+        maxItems: 8,
         items: {
           type: "object",
           additionalProperties: false,
@@ -111,6 +152,7 @@ export const MEMORY_LESSON_JSON_SCHEMA = {
             "visual_description",
             "estimated_duration_sec",
             "journey_step",
+            "cards",
           ],
           properties: {
             order: { type: "integer" },
@@ -125,10 +167,11 @@ export const MEMORY_LESSON_JSON_SCHEMA = {
             visual_description: { type: "string" },
             estimated_duration_sec: { type: "integer" },
             journey_step: { type: "string" },
+            cards: { type: "array", items: SCENE_CARD_SCHEMA, minItems: 1, maxItems: 3 },
           },
         },
       },
-      checkpoint_questions: { type: "array", items: QUESTION_SCHEMA, minItems: 2, maxItems: 4 },
+      checkpoint_questions: { type: "array", items: QUESTION_SCHEMA, minItems: 1, maxItems: 3 },
       final_questions: { type: "array", items: QUESTION_SCHEMA, minItems: 10, maxItems: 10 },
       minimum_theory: { type: "string" },
       fast_rule: { type: "string" },
@@ -185,22 +228,41 @@ Hafıza kancası (memory_hook) ile sınav tekniği AYRI:
 Anlatım örneği (iyi): "Bu soru gelince önce cümle başlarındaki 'bu / ancak / çünkü'ye bak. Bağlama bağlı olanı ele. Sonra anlamla doğrula. Altın taç = Kut kancası aklında dursun; soru 'kutsal yönetme yetkisi' deyince Kut zincirini aç."
 Kötü: yalnızca tanım paragrafı.
 
-Oyuncu videosu (altyazı yok): her sahnede 3 kısa kart sırayla gelir.
-- memory_hook: en fazla 8 kelime, görsel kanca
-- memory_target: en fazla 8 kelime, "bu neydi?"
-- recall_prompt: en fazla 12 kelime, hızlı kural
-- caption: 6-10 kelime, ekran yazısı; paragraf değil
+Bu bir HAP BİLGİ dersidir, konferans değil. Öğrenci "Haa bu muydu?" demeli.
+Süre 3-7 dakika. Gereksiz akademik tanım yok. Sadece tanı → kural → en hızlı teknik → tuzak → cevap.
 
-checkpoint_questions: 2-4 adet. En az biri first_move / pattern_recognition / elimination.
-final_questions: TAM 10, en az 3 farklı question_strategy.
+ANLATIM BİRİNCİL. Kart ikinci ders değildir.
+Üretim sırası: öğrenme hedefi → narration → sahne narration_text (cümle cümle) → semantic_key → kartlar (anlatımdan türet) → checkpoint_intro → soru → doğru/yanlış feedback → retry → resume.
+
+Kartlar (HAP BİLGİ, HATIRLA, HIZLI TEKNİK, TUZAK, KIYASLA, FORMÜL, ANAHTAR KELİME):
+- Sadece o anda söylenen cümlenin kısa çapası. Transkript değil.
+- short_text en fazla 8 kelime. Yeni bilgi kartta yok.
+- Aynı anda en fazla 1 kart. Kartlar overlap etmez.
+- start_frac/end_frac sahne içinde 0-1. Kart, ilgili cümle bitince kaybolur.
+- narration_segment_id dolu olmalı.
+
+Checkpoint asla cümle ortasında kesilmez. Sahne narration_text'in SON cümlesi checkpoint_intro olsun, çeşitlendir:
+"Tamam, şimdi bunu sana soracağım." / "Bunu kaptın mı hemen bakalım." / "Şimdi aynı mantığı sen uygula." / "Buraya kadar tamam. Bir tane sen çöz." / "Şimdi sıra sende."
+Aynı cümleyi her checkpoint'te tekrarlama.
+
+correct_feedback kısa: "Aynen, bu." / "Tamamdır, devam."
+wrong_feedback: kısa düzeltme (doğru kural) + sonra retry aynı bilgi.
+retry_question_text: aynı bilgi, ufak yeniden ifade veya aynı soru.
+
+- visual_anchor: tek kelime/kısa etiket
+- memory_target: tek cümle hap bilgi (kart short_text daha kısa)
+- caption: 6-10 kelime
+
+checkpoint_questions: 1-3. En az biri first_move / pattern_recognition / elimination.
+final_questions: TAM 10.
 
 Kurallar:
 - Uydurma yok.
 - Görsel üretme. visual_description sahne tarifi.
-- scenes: 6-10, HOOK ile başla. Boş dizi yasak.
-- narration: 350-800 kelime, koç tonu, asgari teori.
-- exam_technique.aaa_bu_suydu: true (öğrenci "aaa bu giriş/cümle tekniğiydi" desin).
-- JSON şemasına birebir uy. Eksik dizi veya eksik final_questions kabul edilmez.`;
+- scenes: 5-8. Boş dizi yasak.
+- narration: 180-420 kelime, koç tonu, asgari teori.
+- exam_technique.aaa_bu_suydu: true.
+- JSON şemasına birebir uy.`;
 
   const user = `Sınav tekniği + hafıza dersi paketi üret.
 Başlık: ${input.title}

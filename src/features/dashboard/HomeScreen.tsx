@@ -433,7 +433,7 @@ export function HomeScreen() {
 
   return (
     <Screen scroll>
-      <View style={{ gap: 16 }}>
+      <View style={{ gap: 20, width: '100%' }}>
         {header}
         {stats}
         {isDesktop ? (

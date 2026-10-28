@@ -219,10 +219,16 @@ export default function PracticeScreen() {
         });
       }
     } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : error && typeof error === 'object' && 'message' in error
+            ? String((error as { message?: string }).message ?? '')
+            : '';
       setResult({
         is_correct: false,
         correct_choice: '',
-        explanation: error instanceof Error ? error.message : 'Cevap kaydedilemedi',
+        explanation: message.trim() || 'Cevap kaydedilemedi. Sayfayı yenileyip tekrar dene.',
         xp_awarded: 0,
         difficulty: question.difficulty,
       });
@@ -291,7 +297,11 @@ export default function PracticeScreen() {
         <Card>
           <View style={{ gap: spacing.sm }}>
             <AppText tone={result.is_correct ? 'accent' : 'danger'}>
-              {result.is_correct ? 'Doğru' : `Yanlış. Doğru cevap ${result.correct_choice}`}
+              {result.is_correct
+                ? 'Doğru'
+                : result.correct_choice
+                  ? `Yanlış. Doğru cevap ${result.correct_choice}`
+                  : 'Cevap kaydedilemedi'}
             </AppText>
             <AppText tone="muted">{result.explanation}</AppText>
             <Button label={index + 1 >= questions.length ? 'Bitir' : 'Sonraki'} onPress={goNext} />

@@ -21,6 +21,8 @@ export async function getTopicQuestionSummary(canonicalTopicId: string) {
     needs_review: number;
     generated: number;
     published: number;
+    draft?: number;
+    exam_codes?: string[];
     final_count: number;
     checkpoint_count: number;
     pool_count: number;
@@ -52,6 +54,13 @@ export async function listTopicQuestions(canonicalTopicId: string, status?: stri
     recommended_strategy?: string | null;
     technique_role?: string | null;
     question_pattern_id?: string | null;
+    source?: string | null;
+    exam_codes?: string[];
+    updated_at?: string | null;
+    created_at?: string | null;
+    package_name?: string | null;
+    package_version?: string | null;
+    import_batch_id?: string | null;
   }>;
 }
 

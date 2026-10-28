@@ -94,6 +94,9 @@ export type StudyRoomMessage = {
   sender_id: string;
   body: string;
   created_at: string;
+  kind?: string;
+  event_type?: string | null;
+  metadata?: Record<string, unknown>;
 };
 
 function mapStudyError(message: string): string {
@@ -422,7 +425,7 @@ export function useStudyRoomMessages(sessionId: string | null) {
     queryFn: async () => {
       const { data, error } = await getSupabase()
         .from('study_session_messages')
-        .select('id, session_id, sender_id, body, created_at')
+        .select('id, session_id, sender_id, body, created_at, kind, event_type, metadata')
         .eq('session_id', sessionId!)
         .order('created_at', { ascending: true });
       if (error) throw error;
@@ -451,7 +454,29 @@ export function useStudyRoomMessages(sessionId: string | null) {
       });
       if (error) throw new Error(mapStudyError(error.message));
     },
-    onSuccess: () => client.invalidateQueries({ queryKey: ['study-room-messages', sessionId] }),
+    onMutate: async (body) => {
+      const key = ['study-room-messages', sessionId] as const;
+      await client.cancelQueries({ queryKey: key });
+      const prev = client.getQueryData<StudyRoomMessage[]>(key);
+      const userId = useAuthStore.getState().session?.user.id;
+      if (userId && sessionId) {
+        client.setQueryData<StudyRoomMessage[]>(key, [
+          ...(prev ?? []),
+          {
+            id: `local-${Date.now()}`,
+            session_id: sessionId,
+            sender_id: userId,
+            body: body.trim(),
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+      return { prev, key };
+    },
+    onError: (_error, _body, ctx) => {
+      if (ctx?.prev) client.setQueryData(ctx.key, ctx.prev);
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: ['study-room-messages', sessionId] }),
   });
 
   return { ...query, send };

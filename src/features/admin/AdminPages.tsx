@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
@@ -6,10 +6,8 @@ import { askConfirm, toastError, toastSuccess } from '@/src/components/ui/feedba
 import { getLevelFromXp } from '@/src/features/progress/xp';
 import { formatIstanbulDateTime } from '@/src/features/system-exams/examTime';
 import { getSupabase } from '@/src/lib/supabase/client';
-import { useAdminReports, useAdminStats, useAdminUsers } from '@/src/features/admin/useAdmin';
+import { useAdminStats, useAdminUsers } from '@/src/features/admin/useAdmin';
 import { mapAdminError } from '@/src/features/admin/roles';
-import { useSignedMediaUrl } from '@/src/features/media/useSignedMediaUrl';
-import { RemoteImage } from '@/src/components/ui/RemoteImage';
 
 export function AdminDashboardScreen() {
   const stats = useAdminStats();
@@ -114,89 +112,7 @@ export function AdminUsersScreen() {
   );
 }
 
-function ReportImage({ mediaId, contentType }: { mediaId: string; contentType: string }) {
-  const show = contentType.includes('image') || contentType.includes('dm') || contentType.includes('status');
-  const signed = useSignedMediaUrl(show ? mediaId : null);
-  if (!show) return null;
-  if (signed.data?.url) {
-    return <RemoteImage uri={signed.data.url} style={{ width: 160, height: 120, borderRadius: 8 }} resizeMode="contain" />;
-  }
-  return signed.isError ? <AppText variant="caption" tone="muted">Görsel yok veya imza alınamadı.</AppText> : null;
-}
-
-export function AdminReportsScreen() {
-  const [status, setStatus] = useState('open');
-  const [type, setType] = useState('');
-  const [reason, setReason] = useState('');
-  const reports = useAdminReports(status, type, reason);
-  const types = [
-    { id: '', label: 'tümü' },
-    { id: 'dm_message', label: 'chat' },
-    { id: 'status', label: 'status' },
-    { id: 'comment', label: 'comment' },
-    { id: 'group_message', label: 'image/group' },
-  ];
-  const reasons = ['', 'spam', 'harassment', 'sexual', 'other'];
-
-  const act = (id: string, action: string) => {
-    askConfirm({
-      title: 'İşlem onaylansın mı?',
-      subtitle: action,
-      danger: action === 'ban',
-      confirmLabel: 'Uygula',
-      onConfirm: () => {
-        void getSupabase()
-          .rpc('admin_review_report', { p_id: id, p_action: action })
-          .then(({ error }) => {
-            if (error) toastError(mapAdminError(error.message));
-            else void reports.refetch();
-          });
-      },
-    });
-  };
-
-  return (
-    <View style={{ gap: 12 }}>
-      <AppText variant="title">Şikayetler</AppText>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {['open', 'dismissed', 'warned', 'banned'].map((item) => (
-          <Pressable key={item} onPress={() => setStatus(item)}>
-            <AppText tone={status === item ? 'accent' : 'muted'}>{item}</AppText>
-          </Pressable>
-        ))}
-      </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {types.map((item) => (
-          <Pressable key={item.id} onPress={() => setType(item.id)}>
-            <AppText tone={type === item.id ? 'accent' : 'muted'}>{item.label}</AppText>
-          </Pressable>
-        ))}
-      </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {reasons.map((item) => (
-          <Pressable key={item || 'all-r'} onPress={() => setReason(item)}>
-            <AppText tone={reason === item ? 'accent' : 'muted'}>{item || 'reason'}</AppText>
-          </Pressable>
-        ))}
-      </View>
-      {reports.isError ? <AppText tone="danger">{reports.error instanceof Error ? reports.error.message : 'Liste alınamadı'}</AppText> : null}
-      {(reports.data ?? []).map((row) => (
-        <View key={String(row.id)} style={card}>
-          <AppText>{String(row.target)} · {String(row.content_type)} · {String(row.reason)}</AppText>
-          <AppText variant="caption" tone="muted">{String(row.reporter)} bildirdi</AppText>
-          <ReportImage mediaId={String(row.media_id ?? row.content_id)} contentType={String(row.content_type)} />
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 6 }}>
-            {['dismiss', 'warning', 'remove', 'restrict', 'ban'].map((action) => (
-              <Pressable key={action} onPress={() => act(String(row.id), action)}>
-                <AppText variant="caption" tone={action === 'ban' ? 'danger' : 'accent'}>{action}</AppText>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
+export { AdminReportsScreen } from '@/src/features/admin/AdminReportsScreen';
 
 export function AdminNotificationsScreen() {
   const [title, setTitle] = useState('');
@@ -260,12 +176,102 @@ export function AdminStatsScreen() {
 }
 
 export function AdminSettingsScreen() {
+  const [countdown, setCountdown] = useState('10');
+  const [pairMatch, setPairMatch] = useState(true);
+  const [searchSec, setSearchSec] = useState('12');
+  const [waitSec, setWaitSec] = useState('75');
+  const [graceSec, setGraceSec] = useState('75');
+  const [eventsOn, setEventsOn] = useState(true);
+  const [motivOn, setMotivOn] = useState(true);
+  const [topicShare, setTopicShare] = useState(true);
+  useEffect(() => {
+    void getSupabase()
+      .from('app_runtime_settings')
+      .select(
+        'default_next_lesson_countdown, pair_match_enabled, match_search_seconds, paired_question_wait_seconds, pair_reconnect_grace_seconds, pair_study_events_enabled, pair_motivation_enabled, pair_topic_share_enabled',
+      )
+      .eq('id', 1)
+      .maybeSingle()
+      .then(({ data }) => {
+        const row = data as Record<string, unknown> | null;
+        const value = Number(row?.default_next_lesson_countdown);
+        if (Number.isFinite(value)) setCountdown(String(value));
+        if (row) {
+          setPairMatch(row.pair_match_enabled !== false);
+          if (row.match_search_seconds != null) setSearchSec(String(row.match_search_seconds));
+          if (row.paired_question_wait_seconds != null) setWaitSec(String(row.paired_question_wait_seconds));
+          if (row.pair_reconnect_grace_seconds != null) setGraceSec(String(row.pair_reconnect_grace_seconds));
+          setEventsOn(row.pair_study_events_enabled !== false);
+          setMotivOn(row.pair_motivation_enabled !== false);
+          setTopicShare(row.pair_topic_share_enabled !== false);
+        }
+      });
+  }, []);
   return (
     <View style={{ gap: 10 }}>
       <AppText variant="title">Ayarlar</AppText>
       <AppText tone="muted">
         Sistem sınavı saati rastgele üretilmez. Europe/Istanbul slotları: 20:00, 20:30, 21:00, 21:30, 22:00.
       </AppText>
+      <AppText variant="label">Sıradaki derse geçiş sayacı (sn)</AppText>
+      <TextInput value={countdown} onChangeText={setCountdown} placeholder="10" style={field} />
+      <Pressable
+        onPress={() => {
+          const value = Math.min(30, Math.max(5, Number(countdown) || 10));
+          void getSupabase()
+            .from('app_runtime_settings')
+            .update({ default_next_lesson_countdown: value, updated_at: new Date().toISOString() })
+            .eq('id', 1)
+            .then(({ error }) => {
+              if (error) toastError(mapAdminError(error.message));
+              else {
+                setCountdown(String(value));
+                toastSuccess('Sayaç kaydedildi');
+              }
+            });
+        }}
+        style={btn}>
+        <AppText style={{ color: '#fff' }}>Kaydet</AppText>
+      </Pressable>
+      <AppText variant="subtitle">Eşleşmeli ders</AppText>
+      <Pressable onPress={() => setPairMatch((value) => !value)}>
+        <AppText>Eşleşme {pairMatch ? 'açık' : 'kapalı'}</AppText>
+      </Pressable>
+      <AppText variant="label">Arama süresi (sn)</AppText>
+      <TextInput value={searchSec} onChangeText={setSearchSec} style={field} keyboardType="number-pad" />
+      <AppText variant="label">Cevap bekleme (sn)</AppText>
+      <TextInput value={waitSec} onChangeText={setWaitSec} style={field} keyboardType="number-pad" />
+      <AppText variant="label">Yeniden bağlanma payı (sn)</AppText>
+      <TextInput value={graceSec} onChangeText={setGraceSec} style={field} keyboardType="number-pad" />
+      <Pressable onPress={() => setEventsOn((value) => !value)}>
+        <AppText>Otomatik çalışma mesajları {eventsOn ? 'açık' : 'kapalı'}</AppText>
+      </Pressable>
+      <Pressable onPress={() => setMotivOn((value) => !value)}>
+        <AppText>Motivasyon mesajları {motivOn ? 'açık' : 'kapalı'}</AppText>
+      </Pressable>
+      <Pressable onPress={() => setTopicShare((value) => !value)}>
+        <AppText>Konu durum paylaşımı {topicShare ? 'açık' : 'kapalı'}</AppText>
+      </Pressable>
+      <Pressable
+        onPress={() => {
+          void getSupabase()
+            .rpc('admin_set_pair_study_settings', {
+              p_match_enabled: pairMatch,
+              p_search_seconds: Math.min(30, Math.max(8, Number(searchSec) || 12)),
+              p_wait_seconds: Math.min(180, Math.max(30, Number(waitSec) || 75)),
+              p_grace_seconds: Math.min(180, Math.max(30, Number(graceSec) || 75)),
+              p_events: eventsOn,
+              p_motivation: motivOn,
+              p_topic_share: topicShare,
+            })
+            .then(({ error }) => {
+              if (error) toastError(mapAdminError(error.message));
+              else toastSuccess('Eşleşme ayarları kaydedildi');
+            });
+        }}
+        style={btn}>
+        <AppText style={{ color: '#fff' }}>Eşleşme ayarlarını kaydet</AppText>
+      </Pressable>
       <AppText variant="caption" tone="muted">
         Service role tarayıcıya konmaz. Rol değişimi yalnızca super_admin RPC ile yapılır.
       </AppText>

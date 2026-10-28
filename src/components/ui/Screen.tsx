@@ -7,7 +7,7 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets, type Edge } from 'react-native-safe-area-context';
 
 import { useBreakpoint } from '@/src/lib/layout/useBreakpoint';
 import { useAppTheme } from '@/src/lib/theme/ThemeProvider';
@@ -24,17 +24,22 @@ type Props = {
 export function Screen({ children, scroll, center, wide, style, safeEdges }: Props) {
   const { colors } = useAppTheme();
   const { showSidebar, showTopBar, contentMaxWidth, contentPad } = useBreakpoint();
+  const insets = useSafeAreaInsets();
   const edges: Edge[] = safeEdges ?? (showSidebar ? [] : ['top']);
-  const maxWidth = wide ? 1360 : contentMaxWidth;
+  const maxWidth = wide ? Math.max(contentMaxWidth, 1280) : contentMaxWidth;
+  const padLeft = Math.max(contentPad, showSidebar ? 0 : insets.left);
+  const padRight = Math.max(contentPad, showSidebar ? 0 : insets.right);
 
   const innerStyle: ViewStyle[] = [
     scroll ? styles.scroll : { flex: 1, minWidth: 0 },
     {
-      paddingHorizontal: contentPad,
+      paddingLeft: padLeft,
+      paddingRight: padRight,
       paddingTop: showTopBar ? 20 : contentPad,
       paddingBottom: 32,
       width: '100%',
       maxWidth,
+      marginHorizontal: 'auto',
       alignSelf: 'center',
       alignItems: 'stretch',
       justifyContent: center ? 'center' : undefined,

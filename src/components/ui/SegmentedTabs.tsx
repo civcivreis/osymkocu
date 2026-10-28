@@ -41,8 +41,10 @@ export function SegmentedTabs<T extends string>({ value, tabs, onChange }: Props
         flexDirection: 'row',
         backgroundColor: colors.bgMuted,
         borderRadius: 999,
+        borderWidth: 1,
+        borderColor: colors.border,
         padding: pad,
-        height: 44,
+        height: 46,
         overflow: 'hidden',
       }}>
       {pill > 0 ? (
@@ -68,7 +70,16 @@ export function SegmentedTabs<T extends string>({ value, tabs, onChange }: Props
           <Pressable
             key={tab.value}
             onPress={() => onChange(tab.value)}
-            style={{ flex: 1, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }}>
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => ({
+              flex: 1,
+              borderRadius: 999,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: pressed ? 0.82 : 1,
+              backgroundColor: !selected && hovered ? 'rgba(255,255,255,0.35)' : 'transparent',
+            })}>
             <AppText variant="label" tone={selected ? 'accent' : 'muted'} style={{ fontWeight: '700' }}>
               {tab.label}
             </AppText>

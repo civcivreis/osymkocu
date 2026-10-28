@@ -19,6 +19,8 @@ import {
 } from '@/src/features/web/landing/LandingPreviews';
 import { landing as T, landingSectionY } from '@/src/features/web/landing/tokens';
 import { APP_TAGLINE } from '@/src/lib/brand';
+import { isEmailVerified } from '@/src/lib/auth/emailVerification';
+import { useAuthStore } from '@/src/stores/authStore';
 
 const SEO_DESCRIPTION =
   'TYT, AYT ve KPSS için test, AI koç, sosyal çalışma, çalışma eşleşmeleri ve sistem sınavları. Aynı hesap telefon ve web’de.';
@@ -56,6 +58,8 @@ function Cta({
 }) {
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
       onPress={onPress}
       style={({ pressed }) => ({
         minHeight: 48,
@@ -161,6 +165,17 @@ export function LandingScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const offsets = useRef<Record<string, number>>({});
   const [menu, setMenu] = useState(false);
+  const session = useAuthStore((s) => s.session);
+  const signedIn = Boolean(session) && isEmailVerified(session);
+
+  const authActions = signedIn ? (
+    <Cta label="Uygulamaya Git" onPress={() => router.push('/home')} />
+  ) : (
+    <>
+      <Cta label="Kayıt Ol" onPress={() => router.push('/kayit')} />
+      <Cta label="Giriş Yap" variant="ghost" onPress={() => router.push('/giris')} />
+    </>
+  );
 
   const scrollTo = (id: string) => {
     setMenu(false);
@@ -186,8 +201,7 @@ export function LandingScreen() {
             {tablet ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, flexShrink: 1 }}>
                 {navLinks}
-                <Cta label="Giriş Yap" variant="ghost" onPress={() => router.push('/giris')} />
-                <Cta label="Ücretsiz Başla" onPress={() => router.push('/kayit')} />
+                {authActions}
               </View>
             ) : (
               <Pressable onPress={() => setMenu((v) => !v)} hitSlop={12} accessibilityLabel="Menü">
@@ -198,8 +212,7 @@ export function LandingScreen() {
           {menu && !tablet ? (
             <View style={{ paddingBottom: 16, gap: 14 }}>
               {navLinks}
-              <Cta label="Giriş Yap" variant="ghost" onPress={() => router.push('/giris')} />
-              <Cta label="Ücretsiz Başla" onPress={() => router.push('/kayit')} />
+              {authActions}
             </View>
           ) : null}
         </LandingContainer>
@@ -226,8 +239,7 @@ export function LandingScreen() {
                   Test çöz, gelişimini takip et, aynı konuyu çalışan öğrencilerle eşleş ve birlikte ilerle.
                 </Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 }}>
-                  <Cta label="Ücretsiz Başla" onPress={() => router.push('/kayit')} />
-                  <Cta label="Giriş Yap" variant="ghost" onPress={() => router.push('/giris')} />
+                  {authActions}
                 </View>
                 <Text style={{ color: T.muted, fontSize: 13, marginTop: 4 }}>Web ve mobilde aynı hesap.</Text>
               </View>
@@ -349,8 +361,8 @@ export function LandingScreen() {
             <Text style={{ color: '#E2E8F0', fontSize: 16, textAlign: 'center', maxWidth: 480, lineHeight: 24 }}>
               TYT, AYT veya KPSS hedefini seç ve ilerlemeni takip etmeye başla.
             </Text>
-            <View style={{ marginTop: 8 }}>
-              <Cta label="Ücretsiz Başla" onPress={() => router.push('/kayit')} />
+            <View style={{ marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
+              {authActions}
             </View>
           </View>
         </Band>
@@ -358,6 +370,9 @@ export function LandingScreen() {
         <View style={{ backgroundColor: T.cream, paddingBottom: 32, paddingTop: 8 }}>
           <LandingContainer width={width}>
             <BrandLogo variant="full" width={tablet ? 220 : 188} />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
+              {authActions}
+            </View>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 12 }}>
               <Link href="/gizlilik" style={{ color: T.muted, fontWeight: '600' }}>
                 Gizlilik

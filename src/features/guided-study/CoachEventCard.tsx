@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
@@ -15,6 +16,11 @@ export function CoachEventCard({
   onDismiss: () => void;
 }) {
   const { colors, radius } = useAppTheme();
+  useEffect(() => {
+    if (pause) return undefined;
+    const t = setTimeout(onDismiss, 3200);
+    return () => clearTimeout(t);
+  }, [onDismiss, pause]);
   return (
     <View
       pointerEvents="box-none"

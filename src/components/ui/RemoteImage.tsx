@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, View, type ImageStyle, type StyleProp } from 'react-native';
 
 import { AppText } from '@/src/components/ui/AppText';
@@ -12,6 +12,7 @@ export function RemoteImage({
   accessibilityLabel,
   resizeMode = 'cover',
   onPress,
+  onReady,
 }: {
   uri?: string | null;
   mediaId?: string | null;
@@ -19,12 +20,18 @@ export function RemoteImage({
   accessibilityLabel?: string;
   resizeMode?: 'cover' | 'contain' | 'stretch';
   onPress?: () => void;
+  onReady?: () => void;
 }) {
   const { colors } = useAppTheme();
   const signed = useSignedMediaUrl(mediaId ?? null);
   const resolved = mediaId ? signed.data?.url ?? null : uri ?? null;
   const [failed, setFailed] = useState(false);
   const waiting = Boolean(mediaId) && signed.isFetching && !resolved;
+
+  useEffect(() => {
+    setFailed(false);
+  }, [resolved, mediaId, uri]);
+
   const inner = (
     <View style={[{ backgroundColor: colors.bgMuted, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }, style]}>
       {resolved && !failed ? (
@@ -33,6 +40,8 @@ export function RemoteImage({
           accessibilityLabel={accessibilityLabel}
           resizeMode={resizeMode}
           style={{ width: '100%', height: '100%' }}
+          onLoad={() => onReady?.()}
+          onLoadEnd={() => onReady?.()}
           onError={() => setFailed(true)}
         />
       ) : waiting ? (

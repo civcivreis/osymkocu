@@ -28,6 +28,9 @@ export type FactorySettings = {
   text_workers?: number;
   image_workers?: number;
   tts_workers?: number;
+  autonomous_lesson_writing?: boolean;
+  max_active_media_lessons?: number;
+  max_pending_tts_jobs?: number;
   question_workers?: number;
   curriculum_sync_interval?: string;
   factory_run_job_cap?: number;

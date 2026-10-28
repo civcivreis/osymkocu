@@ -1,3 +1,3 @@
-import { AdminReportsScreen } from '@/src/features/admin/AdminPages';
+import { AdminReportsScreen } from '@/src/features/admin/AdminReportsScreen';
 
 export default AdminReportsScreen;

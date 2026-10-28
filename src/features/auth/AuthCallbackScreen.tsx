@@ -4,13 +4,15 @@ import { Platform } from 'react-native';
 
 import { StartupLoading } from '@/src/features/auth/StartupLoading';
 import { fetchAuthExtras } from '@/src/features/auth/useAuth';
+import * as Linking from 'expo-linking';
+
 import {
   clearPendingVerifyEmail,
   consumeAuthLinkError,
   isUserEmailVerified,
+  paramsFromHref,
   paramsFromLocation,
   stripAuthHashFromUrl,
-  verifiedHomeHref,
 } from '@/src/lib/auth/emailVerification';
 import { getSupabase } from '@/src/lib/supabase/client';
 import { useAuthStore } from '@/src/stores/authStore';
@@ -37,7 +39,7 @@ export function AuthCallbackScreen() {
     const goVerify = () => {
       setEmailLinkError(true);
       setFailed(true);
-      router.replace('/verify-email' as never);
+      router.replace('/email-confirmed' as never);
     };
 
     const run = async () => {
@@ -49,7 +51,7 @@ export function AuthCallbackScreen() {
       }
 
       const supabase = getSupabase();
-      const webParams = Platform.OS === 'web' ? paramsFromLocation() : new URLSearchParams();
+      const webParams = Platform.OS === 'web' ? paramsFromLocation() : paramsFromHref(await Linking.getInitialURL());
       const routeCode = Array.isArray(params.code) ? params.code[0] : params.code;
       const code = routeCode || webParams.get('code');
 
@@ -92,8 +94,7 @@ export function AuthCallbackScreen() {
           console.warn('auth callback profile', error);
         }
         if (cancelled) return;
-        const onboarded = Boolean(useAuthStore.getState().profile?.onboarding_completed_at);
-        router.replace(verifiedHomeHref(onboarded) as never);
+        router.replace('/email-confirmed' as never);
       } catch (error) {
         console.warn('auth callback', error);
         if (!cancelled) goVerify();

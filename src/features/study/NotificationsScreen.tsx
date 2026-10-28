@@ -111,7 +111,7 @@ function openNotification(item: AppNotification) {
       otherName: taggedName(payload.from_name, payload.from_tag),
       otherId: payload.from_user,
     });
-    router.push({ pathname: '/practice', params: { subjectId: payload.subject_id ?? '' } });
+    return;
   }
 }
 
@@ -250,7 +250,6 @@ export function NotificationsScreen() {
                       otherName: row.other_name,
                       otherId: row.other_id,
                     });
-                    router.push({ pathname: '/practice', params: { subjectId: row.subject_id } });
                   }
                   setSheet(null);
                 })

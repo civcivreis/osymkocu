@@ -44,7 +44,24 @@ export type SocialPost = {
   comment_count?: number;
   liked_by_me?: boolean;
   comment_preview?: PostComment[];
+  live_presence_state?: 'ACTIVE' | 'BREAK' | null;
+  live_subject_name?: string | null;
+  live_topic_name?: string | null;
+  live_subject_id?: string | null;
+  live_topic_id?: string | null;
   profiles?: SocialProfile | SocialProfile[] | null;
+};
+
+export type LiveStudyingUser = {
+  user_id: string;
+  display_name: string;
+  display_tag?: number | null;
+  presence_state?: string | null;
+  subject_id?: string | null;
+  topic_id?: string | null;
+  subject_name?: string | null;
+  topic_name?: string | null;
+  last_activity_at?: string | null;
 };
 
 export type PostComment = {
@@ -212,7 +229,9 @@ export function useSocialPosts() {
       channel
         .on('postgres_changes', { event: '*', schema: 'public', table: 'social_posts' }, invalidate)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'post_likes' }, invalidate)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'post_comments' }, invalidate),
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'post_comments' }, invalidate)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'study_presence' }, invalidate)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'user_follows' }, invalidate),
     );
   }, [client, userId]);
   return useQuery({
@@ -501,6 +520,68 @@ export function useOpenRooms() {
   return query;
 }
 
+export function useLiveStudying() {
+  const userId = useAuthStore((s) => s.session?.user.id);
+  const client = useQueryClient();
+  useEffect(() => {
+    if (!userId) return;
+    return retainChannel(`live-studying:${userId}`, (channel) =>
+      channel.on('postgres_changes', { event: '*', schema: 'public', table: 'study_presence' }, () => {
+        void client.invalidateQueries({ queryKey: ['live-studying', userId] });
+      }),
+    );
+  }, [client, userId]);
+  return useQuery({
+    queryKey: ['live-studying', userId],
+    enabled: Boolean(userId),
+    staleTime: 8_000,
+    refetchInterval: 20_000,
+    queryFn: async () => {
+      const { data, error } = await getSupabase().rpc('list_live_studying');
+      if (error) throw error;
+      return (Array.isArray(data) ? data : []) as LiveStudyingUser[];
+    },
+  });
+}
+
+export function useDeleteOwnComment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (commentId: string) => {
+      const { error } = await getSupabase().rpc('delete_own_comment', { p_comment: commentId });
+      if (error) throw new Error(mapSocialError(error.message));
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['social-posts'] });
+      void client.invalidateQueries({ queryKey: ['post-comments'] });
+    },
+  });
+}
+
+export function useShareAchievement() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      title: string;
+      body?: string | null;
+      subjectId?: string | null;
+      topicId?: string | null;
+    }) => {
+      const { error } = await getSupabase().rpc('share_study_achievement', {
+        p_title: input.title,
+        p_body: input.body ?? null,
+        p_subject_id: input.subjectId ?? null,
+        p_topic_id: input.topicId ?? null,
+        p_canonical_topic_id: null,
+      });
+      if (error) throw new Error(mapSocialError(error.message));
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['social-posts'] });
+    },
+  });
+}
+
 export function useTogglePostLike() {
   const client = useQueryClient();
   return useMutation({
@@ -624,44 +705,69 @@ export function useJoinExamGroup() {
   });
 }
 
+const GROUP_MESSAGE_WINDOW = 300;
+
+function takeNewest(rows: GroupMessage[]) {
+  return [...rows]
+    .sort((left, right) => {
+      const delta = Date.parse(left.created_at) - Date.parse(right.created_at);
+      return delta !== 0 ? delta : left.id.localeCompare(right.id);
+    })
+    .slice(-GROUP_MESSAGE_WINDOW);
+}
+
+async function fetchExamChatWindow(slug: string) {
+  const supabase = getSupabase();
+  const rpc = await supabase.rpc('get_exam_group_messages', {
+    p_slug: slug,
+    p_limit: GROUP_MESSAGE_WINDOW,
+  });
+  if (!rpc.error && Array.isArray(rpc.data)) {
+    return takeNewest(rpc.data as GroupMessage[]);
+  }
+  const until = new Date().toISOString();
+  const withMedia = await supabase
+    .from('exam_chat_messages')
+    .select('id, slug, sender_id, body, created_at, reply_to_id, kind, image_path, image_width, image_height, media_id')
+    .eq('slug', slug)
+    .lte('created_at', until)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(GROUP_MESSAGE_WINDOW);
+  const withReply =
+    withMedia.error && /kind|image_path|media_id/i.test(withMedia.error.message)
+      ? await supabase
+          .from('exam_chat_messages')
+          .select('id, slug, sender_id, body, created_at, reply_to_id')
+          .eq('slug', slug)
+          .lte('created_at', until)
+          .order('created_at', { ascending: false })
+          .limit(GROUP_MESSAGE_WINDOW)
+      : withMedia;
+  const result =
+    withReply.error && /reply_to_id/i.test(withReply.error.message)
+      ? await supabase
+          .from('exam_chat_messages')
+          .select('id, slug, sender_id, body, created_at')
+          .eq('slug', slug)
+          .lte('created_at', until)
+          .order('created_at', { ascending: false })
+          .limit(GROUP_MESSAGE_WINDOW)
+      : withReply;
+  if (result.error) throw result.error;
+  return takeNewest((result.data ?? []) as GroupMessage[]);
+}
+
 export function useGroupMessages(slug: string | null) {
   return useQuery({
-    queryKey: ['group-messages', slug],
+    queryKey: ['group-messages', slug, 'tail-v2'],
     enabled: Boolean(slug),
     refetchInterval: 4000,
     queryFn: async () => {
       const supabase = getSupabase();
       await supabase.rpc('pulse_exam_chats');
       void supabase.rpc('cleanup_chat_image_uploads');
-      const withMedia = await supabase
-        .from('exam_chat_messages')
-        .select('id, slug, sender_id, body, created_at, reply_to_id, kind, image_path, image_width, image_height, media_id')
-        .eq('slug', slug!)
-        .lte('created_at', new Date().toISOString())
-        .order('created_at', { ascending: true })
-        .limit(80);
-      const withReply =
-        withMedia.error && /kind|image_path|media_id/i.test(withMedia.error.message)
-          ? await supabase
-              .from('exam_chat_messages')
-              .select('id, slug, sender_id, body, created_at, reply_to_id')
-              .eq('slug', slug!)
-              .lte('created_at', new Date().toISOString())
-              .order('created_at', { ascending: true })
-              .limit(80)
-          : withMedia;
-      const result =
-        withReply.error && /reply_to_id/i.test(withReply.error.message)
-          ? await supabase
-              .from('exam_chat_messages')
-              .select('id, slug, sender_id, body, created_at')
-              .eq('slug', slug!)
-              .lte('created_at', new Date().toISOString())
-              .order('created_at', { ascending: true })
-              .limit(80)
-          : withReply;
-      if (result.error) throw result.error;
-      const rows = (result.data ?? []) as GroupMessage[];
+      const rows = await fetchExamChatWindow(slug!);
       const ids = [...new Set(rows.map((row) => row.sender_id))];
       if (ids.length === 0) return rows;
       const { data: people } = await supabase
@@ -785,6 +891,22 @@ export function useStories() {
   }, [client, query.data, userId]);
 
   return query;
+}
+
+export function useDeleteStory() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (storyId: string) => {
+      const invoked = await getSupabase().functions.invoke('media-upload', {
+        body: { action: 'delete_story', storyId },
+      });
+      const payload = invoked.data as { error?: { message?: string } } | null;
+      if (invoked.error || payload?.error) {
+        throw new Error(mapSocialError(payload?.error?.message ?? invoked.error?.message ?? 'STORY_DELETE_FAILED'));
+      }
+    },
+    onSuccess: () => client.invalidateQueries({ queryKey: ['stories'] }),
+  });
 }
 
 export function usePublishStory() {
@@ -911,6 +1033,7 @@ export function useUpdateOwnPost() {
 
 export function useSendDm() {
   const client = useQueryClient();
+  const userId = useAuthStore((s) => s.session?.user.id);
   return useMutation({
     mutationFn: async (input: {
       otherId: string;
@@ -937,11 +1060,34 @@ export function useSendDm() {
       if (error) throw new Error(mapSocialError(error.message));
       return data as string;
     },
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ['dm-conversations'] });
-      void client.invalidateQueries({ queryKey: ['dm-with'] });
-      void client.invalidateQueries({ queryKey: ['dm-messages'] });
-      void client.invalidateQueries({ queryKey: ['inbox'] });
+    onMutate: async (input) => {
+      const convo = client.getQueryData<DmConversation>(['dm-with', userId, input.otherId]);
+      if (!convo?.id || !userId) return undefined;
+      const key = ['dm-messages', convo.id] as const;
+      await client.cancelQueries({ queryKey: key });
+      const prev = client.getQueryData<DmMessage[]>(key);
+      client.setQueryData<DmMessage[]>(key, [
+        ...(prev ?? []),
+        {
+          id: `local-${Date.now()}`,
+          conversation_id: convo.id,
+          sender_id: userId,
+          body: input.body,
+          created_at: new Date().toISOString(),
+          kind: input.mediaId || input.imagePath ? 'image' : 'text',
+          media_id: input.mediaId ?? null,
+          image_width: input.width ?? null,
+          image_height: input.height ?? null,
+        },
+      ]);
+      return { key, prev };
+    },
+    onError: (_error, _input, ctx) => {
+      if (ctx?.prev) client.setQueryData(ctx.key, ctx.prev);
+    },
+    onSettled: (_data, _error, input) => {
+      const convo = client.getQueryData<DmConversation>(['dm-with', userId, input.otherId]);
+      if (convo?.id) void client.invalidateQueries({ queryKey: ['dm-messages', convo.id] });
     },
   });
 }
@@ -983,6 +1129,7 @@ export function usePublicProfile(userId: string | null) {
   return useQuery({
     queryKey: ['public-profile', userId],
     enabled: Boolean(userId),
+    staleTime: 60_000,
     queryFn: async () => {
       const supabase = getSupabase();
       const { data, error } = await supabase
@@ -1107,31 +1254,42 @@ export function useRecommendedPartners(input: {
 }
 
 export function useGroupMembers(slug: string | null) {
+  const me = useAuthStore((s) => s.session?.user.id);
   return useQuery({
-    queryKey: ['group-members', slug],
+    queryKey: ['group-members', slug, me],
     enabled: Boolean(slug),
     queryFn: async () => {
       const { data, error } = await getSupabase()
         .from('exam_chat_members')
         .select('user_id, joined_at')
         .eq('slug', slug!)
-        .limit(24);
+        .order('joined_at', { ascending: false })
+        .limit(80);
       if (error) throw error;
       const ids = (data ?? []).map((row) => row.user_id as string);
       if (ids.length === 0) return [];
       const profiles = await getSupabase()
         .from('profiles')
-        .select('id, display_name, display_tag')
+        .select('id, display_name, display_tag, is_bot')
         .in('id', ids);
       const byId = new Map((profiles.data ?? []).map((row) => [row.id as string, row]));
-      return (data ?? []).map((row) => {
-        const profile = byId.get(row.user_id as string);
-        return {
-          user_id: row.user_id as string,
-          display_name: (profile?.display_name as string | undefined) ?? 'Öğrenci',
-          display_tag: (profile?.display_tag as number | null | undefined) ?? null,
-        };
-      });
+      return (data ?? [])
+        .map((row) => {
+          const profile = byId.get(row.user_id as string);
+          return {
+            user_id: row.user_id as string,
+            display_name: (profile?.display_name as string | undefined) ?? 'Öğrenci',
+            display_tag: (profile?.display_tag as number | null | undefined) ?? null,
+            is_bot: Boolean(profile?.is_bot),
+            joined_at: row.joined_at as string,
+            is_me: row.user_id === me,
+          };
+        })
+        .sort((a, b) => {
+          if (a.is_me !== b.is_me) return a.is_me ? -1 : 1;
+          if (a.is_bot !== b.is_bot) return a.is_bot ? 1 : -1;
+          return Date.parse(b.joined_at) - Date.parse(a.joined_at);
+        });
     },
   });
 }

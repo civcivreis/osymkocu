@@ -130,7 +130,7 @@ export function VerifyEmailScreen() {
           </AppText>
           {expired ? (
             <AppText tone="muted" style={{ textAlign: 'center' }}>
-              Doğrulama bağlantısının süresi dolmuş veya geçersiz.
+              Bu doğrulama bağlantısının süresi dolmuş veya geçersiz.
             </AppText>
           ) : (
             <AppText tone="muted" style={{ textAlign: 'center' }}>
